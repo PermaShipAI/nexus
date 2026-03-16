@@ -1,0 +1,54 @@
+# ============================================================================
+# Dockerfile.agents — PermaShip AI Agents System
+# ============================================================================
+
+# ---------------------------------------------------------------------------
+# Stage 1: Build backend (TypeScript → JavaScript)
+# ---------------------------------------------------------------------------
+FROM node:20-bookworm-slim AS builder
+WORKDIR /app
+COPY package*.json ./
+RUN npm ci
+COPY tsconfig.json ./
+COPY src/ ./src/
+COPY agents/ ./agents/
+COPY personas/ ./personas/
+COPY config/ ./config/
+RUN npm run build
+
+# ---------------------------------------------------------------------------
+# Stage 2: Production image
+# ---------------------------------------------------------------------------
+FROM node:20-bookworm-slim AS production
+
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends curl git ca-certificates \
+    && rm -rf /var/lib/apt/lists/* \
+    && git config --system --add safe.directory '*'
+
+RUN addgroup --system agents \
+    && adduser --system --ingroup agents agents
+
+WORKDIR /app
+
+# Install production dependencies only
+COPY package*.json ./
+RUN npm ci --omit=dev && npm cache clean --force
+
+# Copy compiled backend structure
+COPY --from=builder /app/dist/ ./dist/
+
+# Copy static assets (needed at runtime)
+COPY personas/ ./personas/
+COPY config/ ./config/
+
+# Copy database migrations
+COPY src/db/migrations/ ./src/db/migrations/
+
+# Drop privileges
+USER agents
+
+EXPOSE 9000
+
+# Start system
+CMD ["node", "dist/src/index.js"]

@@ -1,0 +1,1 @@
+ALTER TABLE "pending_actions" ADD COLUMN "suggestion_id" text;

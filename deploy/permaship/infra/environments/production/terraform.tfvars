@@ -1,0 +1,5 @@
+project          = "agents"
+environment      = "production"
+aws_region       = "us-east-1"
+domain           = "agents.permaship.ai"
+hosted_zone_name = "permaship.ai"

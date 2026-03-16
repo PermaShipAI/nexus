@@ -1,0 +1,245 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Nexus Command</title>
+  <link rel="icon" type="image/svg+xml" href="/favicon.svg">
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+  <div id="loading-overlay"><div class="loading-spinner"></div></div>
+  <div id="setup-overlay" class="hidden">
+    <div class="setup-card">
+      <div class="setup-brand">
+        <svg viewBox="0 0 32 32" width="40" height="40"><rect width="32" height="32" rx="6" fill="#e94560"/><circle cx="11" cy="14" r="3" fill="#fff"/><circle cx="21" cy="14" r="3" fill="#fff"/><path d="M10 22 Q16 26 22 22" stroke="#fff" stroke-width="2" fill="none" stroke-linecap="round"/></svg>
+        <h1>Nexus Command</h1>
+      </div>
+      <p>Choose a Nexus Command LLM provider and enter your API key to get started.</p>
+
+      <div class="setup-field">
+        <label for="setup-provider">Nexus Command LLM Provider</label>
+        <select id="setup-provider">
+          <option value="gemini">Google Gemini</option>
+          <option value="anthropic">Anthropic Claude</option>
+          <option value="openai">OpenAI</option>
+          <option value="ollama">Ollama (local, no key needed)</option>
+          <option value="openrouter">OpenRouter</option>
+        </select>
+      </div>
+
+      <div class="setup-field" id="setup-key-field">
+        <label for="setup-api-key">API Key</label>
+        <div class="input-with-toggle">
+          <input type="password" id="setup-api-key" placeholder="Paste your API key here" autocomplete="off">
+          <button type="button" id="toggle-key-vis" class="vis-toggle" title="Show/hide key">Show</button>
+        </div>
+        <div class="setup-hint" id="setup-hint">
+          Get a key at <a href="https://aistudio.google.com/apikey" target="_blank" rel="noopener">aistudio.google.com</a>
+        </div>
+      </div>
+
+      <button id="setup-submit" class="btn-approve setup-btn">Start</button>
+      <div id="setup-error" class="setup-error hidden"></div>
+    </div>
+  </div>
+
+  <div id="app">
+    <button id="hamburger" class="hamburger" aria-label="Toggle sidebar">&#9776;</button>
+    <aside id="sidebar">
+      <h2>Agents</h2>
+      <input type="text" id="agent-search" class="sidebar-search" placeholder="Filter agents..." aria-label="Filter agents">
+      <ul id="agent-list"></ul>
+
+      <h2>Missions</h2>
+      <ul id="mission-list"></ul>
+      <button id="new-mission-btn" class="sidebar-btn" aria-label="New mission">+ New Mission</button>
+
+      <h2>Projects</h2>
+      <ul id="project-list"></ul>
+      <button id="add-project-btn" class="sidebar-btn" aria-label="Add a project">+ Add Project</button>
+
+      <div id="add-project-form" class="hidden">
+        <input type="text" id="project-name" placeholder="Project name" autocomplete="off">
+        <div class="radio-group">
+          <label><input type="radio" name="source" value="local" checked> Local folder</label>
+          <label><input type="radio" name="source" value="git"> Git URL</label>
+        </div>
+        <input type="text" id="project-path" placeholder="/path/to/repo" autocomplete="off">
+        <div class="form-buttons">
+          <button id="project-submit" class="btn-approve">Add</button>
+          <button id="project-cancel" class="btn-reject">Cancel</button>
+        </div>
+      </div>
+
+      <div class="sidebar-bottom">
+        <button id="proposals-btn" class="sidebar-btn proposals-trigger" aria-label="View proposals">Proposals <span id="proposals-count" class="proposals-count hidden">0</span></button>
+        <button id="settings-btn" class="sidebar-btn settings-trigger" aria-label="Open settings (Ctrl+Comma)">Settings</button>
+        <div id="connection-status" class="status connected">Connected</div>
+      </div>
+    </aside>
+
+    <!-- Proposals Panel -->
+    <div id="proposals-panel" class="settings-panel hidden">
+      <div class="settings-header">
+        <div class="proposals-filters">
+          <button class="proposal-filter active" data-status="pending">Pending</button>
+          <button class="proposal-filter" data-status="nexus_review">In Review</button>
+          <button class="proposal-filter" data-status="approved">Approved</button>
+          <button class="proposal-filter" data-status="rejected">Rejected</button>
+          <button class="proposal-filter" data-status="">All</button>
+        </div>
+        <button id="proposals-close" aria-label="Close proposals">&times;</button>
+      </div>
+      <div class="settings-body">
+        <div id="proposals-list" style="max-width:672px;margin:0 auto;width:100%"></div>
+        <div id="proposals-empty" class="setting-desc" style="padding:16px 0;text-align:center;display:none">No proposals found.</div>
+      </div>
+    </div>
+
+    <!-- Settings Panel -->
+    <div id="settings-panel" class="settings-panel hidden">
+      <div class="settings-header">
+        <div class="settings-tabs">
+          <button class="settings-tab active" data-tab="general">General</button>
+          <button class="settings-tab" data-tab="agents">Agents</button>
+          <button class="settings-tab" data-tab="knowledge">Knowledge</button>
+          <button class="settings-tab" data-tab="heartbeats">Heartbeats</button>
+        </div>
+        <button id="settings-close" aria-label="Close settings">&times;</button>
+      </div>
+      <div class="settings-body">
+        <!-- General Tab -->
+        <div id="tab-general" class="tab-content active">
+          <div class="setting-row"><span class="setting-label">Nexus Command LLM Provider</span><span id="config-llm" class="config-value">-</span></div>
+          <div class="setting-row">
+            <span class="setting-label">Execution Backend</span>
+            <select id="executor-select" class="config-select">
+              <option value="noop">None (track only)</option>
+              <option value="claude-code">Claude Code</option>
+              <option value="gemini-cli">Gemini CLI</option>
+              <option value="codex-cli">Codex CLI</option>
+              <option value="openclaw">OpenClaw</option>
+              <option value="permaship">PermaShip</option>
+            </select>
+          </div>
+          <div id="executor-status" class="executor-status hidden"></div>
+          <div id="permaship-hint" class="config-hint hidden">
+            <a href="https://permaship.ai/pricing" target="_blank" rel="noopener">Sign up for PermaShip</a> for managed execution
+          </div>
+          <div class="setting-row">
+            <span class="setting-label">Autonomous Mode</span>
+            <label class="toggle"><input type="checkbox" id="autonomous-toggle" aria-label="Autonomous mode"><span class="toggle-slider"></span></label>
+          </div>
+          <div class="setting-desc">When on, agents create tickets without approval buttons.</div>
+        </div>
+        <!-- Agents Tab -->
+        <div id="tab-agents" class="tab-content">
+          <button id="import-agents-btn" class="sidebar-btn" style="margin-bottom:8px">Import from GitHub</button>
+          <div id="import-agents-form" class="hidden">
+            <input type="text" id="import-url" class="settings-input" placeholder="https://github.com/user/repo" value="https://github.com/msitarzewski/agency-agents">
+            <div class="form-buttons" style="margin-top:6px">
+              <button id="import-fetch" class="btn-approve">Browse Agents</button>
+              <button id="import-cancel" class="btn-reject">Cancel</button>
+            </div>
+            <div id="import-preview" class="hidden" style="margin-top:8px">
+              <div class="setting-desc" style="margin-bottom:6px">Select agents to import:</div>
+              <input type="text" id="import-search" class="settings-input" placeholder="Search agents..." style="margin-bottom:6px">
+              <div class="import-select-all" style="margin-bottom:4px">
+                <label style="font-size:12px;cursor:pointer"><input type="checkbox" id="import-select-all"> Select all</label>
+              </div>
+              <ul id="import-agent-list" class="import-list"></ul>
+              <button id="import-selected" class="btn-approve" style="width:100%;margin-top:8px">Import Selected</button>
+            </div>
+          </div>
+          <ul id="agent-settings-list"></ul>
+        </div>
+        <!-- Knowledge Tab -->
+        <div id="tab-knowledge" class="tab-content">
+          <div class="setting-desc" style="margin-bottom:10px">
+            Shared knowledge that all agents can access. Add documents about your team's mission, values, architecture, OKRs, or anything agents should know.
+          </div>
+          <div class="kb-suggestions">
+            <span class="setting-desc">Suggested topics:</span>
+            <div class="kb-suggestion-tags">
+              <button class="kb-tag" data-topic="Mission & Vision">Mission & Vision</button>
+              <button class="kb-tag" data-topic="Company Values">Values</button>
+              <button class="kb-tag" data-topic="OKRs & Goals">OKRs</button>
+              <button class="kb-tag" data-topic="Architecture Overview">Architecture</button>
+              <button class="kb-tag" data-topic="Team Structure">Team</button>
+              <button class="kb-tag" data-topic="Coding Standards">Standards</button>
+              <button class="kb-tag" data-topic="Incident Runbook">Runbooks</button>
+              <button class="kb-tag" data-topic="Release Process">Releases</button>
+            </div>
+          </div>
+          <div class="kb-add-form">
+            <input type="text" id="kb-topic" class="settings-input" placeholder="Topic (e.g., Company Mission)">
+            <textarea id="kb-content" class="settings-textarea" rows="4" placeholder="Content — paste your document, policy, or context here"></textarea>
+            <button id="kb-submit" class="btn-approve" style="width:100%;margin-top:6px">Add to Knowledge Base</button>
+          </div>
+          <div id="kb-entries" style="margin-top:12px"></div>
+        </div>
+        <!-- Heartbeats Tab -->
+        <div id="tab-heartbeats" class="tab-content">
+          <div class="setting-desc" style="margin-bottom:10px">How often background processes run.</div>
+          <div id="heartbeat-list"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Mission creation modal -->
+    <div id="mission-modal" class="modal-overlay hidden">
+      <div class="modal-card">
+        <h3>New Mission</h3>
+        <div class="setup-field">
+          <label for="mission-title">Title</label>
+          <input type="text" id="mission-title" placeholder="e.g., Improve API error handling" autocomplete="off">
+        </div>
+        <div class="setup-field">
+          <label for="mission-desc">Goal</label>
+          <textarea id="mission-desc" rows="4" placeholder="Describe the objective. Nexus will break this into verifiable checklist items." class="settings-textarea"></textarea>
+        </div>
+        <div class="setup-field">
+          <label>Projects (optional)</label>
+          <div id="mission-project-checkboxes" class="mission-project-list"></div>
+        </div>
+        <div class="form-buttons">
+          <button id="mission-create-btn" class="btn-approve">Create Mission</button>
+          <button id="mission-cancel-btn" class="btn-reject">Cancel</button>
+        </div>
+        <div id="mission-error" class="setup-error hidden"></div>
+      </div>
+    </div>
+
+    <main id="chat">
+      <div id="tab-bar">
+        <button class="chat-tab active" data-channel="local:general">General</button>
+      </div>
+      <div id="chat-header">
+        <input type="text" id="message-search" placeholder="Search messages..." aria-label="Search messages" class="chat-search">
+        <button id="theme-toggle" aria-label="Toggle theme" title="Toggle light/dark theme">Light</button>
+        <button id="clear-chat" aria-label="Clear chat history" title="Clear chat">Clear</button>
+      </div>
+      <div id="mission-checklist" class="mission-checklist hidden"></div>
+      <div id="messages" role="log" aria-live="polite">
+        <div id="empty-state" class="empty-state">
+          <svg viewBox="0 0 64 64" width="64" height="64" class="empty-icon">
+            <rect width="64" height="64" rx="12" fill="var(--surface-alt)"/>
+            <circle cx="22" cy="28" r="5" fill="var(--accent)"/>
+            <circle cx="42" cy="28" r="5" fill="var(--accent)"/>
+            <path d="M20 44 Q32 52 44 44" stroke="var(--accent)" stroke-width="3" fill="none" stroke-linecap="round"/>
+          </svg>
+          <p>Your AI team is ready.</p>
+          <p class="empty-hint">Type a message below to start a conversation.<br>Click <strong>+ Add Project</strong> to connect a codebase.</p>
+        </div>
+      </div>
+      <div id="thinking" class="thinking hidden">Agents are thinking...</div>
+      <form id="chat-form">
+        <textarea id="chat-input" placeholder="Message the agents... (Shift+Enter for new line, @agent to target)" rows="1" autocomplete="off" autofocus></textarea>
+        <button type="submit" title="Send (Enter)">Send</button>
+      </form>
+    </main>
+  </div>
+  <script src="/app.js"></script>
+</body>
+</html>

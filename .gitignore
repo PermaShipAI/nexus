@@ -1,0 +1,10 @@
+node_modules
+dist
+.env
+.env~
+*.log
+.DS_Store
+drizzle/
+src/db/migrations/meta
+coverage/
+data/
