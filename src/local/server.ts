@@ -10,7 +10,10 @@ import { getAllAgents, registerAgent } from '../agents/registry.js';
 import { db } from '../db/index.js';
 import { pendingActions, conversationHistory, agents as agentsTable, tickets as ticketsTable, knowledgeEntries } from '../db/schema.js';
 import { eq, and, desc } from 'drizzle-orm';
-import { getTicketTracker } from '../adapters/registry.js';
+import { getTicketTracker, setTicketTracker } from '../adapters/registry.js';
+import { createExecutionBackend } from './execution-backends/factory.js';
+import { LocalExecutingTicketTracker } from './executing-ticket-tracker.js';
+import { LocalTicketTracker } from './ticket-tracker.js';
 import { parseArgs } from '../utils/parse-args.js';
 import type { AgentId } from '../agents/types.js';
 import { stat, readFile, writeFile } from 'node:fs/promises';
@@ -606,7 +609,17 @@ export async function startLocalServer(port = 3000): Promise<void> {
       process.env.EXECUTION_BACKEND = backend;
       writeFileSecure(envPath, envContent.trim() + '\n');
 
-      logger.info({ backend }, 'Execution backend changed via UI');
+      // Hot-swap the ticket tracker so the new backend takes effect immediately
+      if (backend !== 'noop') {
+        const newBackend = createExecutionBackend(backend);
+        const execTracker = new LocalExecutingTicketTracker(newBackend, process.env.REPO_ROOT ?? '.');
+        setTicketTracker(execTracker);
+        logger.info({ backend }, 'Execution backend hot-swapped');
+      } else {
+        setTicketTracker(new LocalTicketTracker());
+        logger.info('Execution backend set to noop');
+      }
+
       broadcast('settings_changed', { executionBackend: backend });
       return { success: true, executionBackend: backend, testResult };
     } catch (err) {

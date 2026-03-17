@@ -63,6 +63,11 @@ export function getLLMProvider(): LLMProvider {
   return get().llmProvider;
 }
 
+/** Hot-swap the ticket tracker at runtime (used when executor backend changes) */
+export function setTicketTracker(tracker: TicketTracker): void {
+  get().ticketTracker = tracker;
+}
+
 /** Hot-swap the LLM provider at runtime (used by setup flow) */
 export function setLLMProvider(provider: LLMProvider): void {
   get().llmProvider = provider;
