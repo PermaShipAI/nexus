@@ -209,6 +209,10 @@ async function main() {
     const { startMissionScheduler } = await import('../missions/scheduler.js');
     await startMissionScheduler();
 
+    // Start idle timer (proactive agent analysis on heartbeat)
+    const { startIdleTimer } = await import('../idle/timer.js');
+    startIdleTimer();
+
     // Start knowledge sync (reads README/docs from connected projects)
     startKnowledgeSync();
 
