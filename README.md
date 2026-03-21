@@ -1,10 +1,9 @@
 <p align="center">
-  <img src="agents-in-action.gif" alt="Nexus Command — AI team for your codebase" width="720" />
+  <img src="https://nexus.permaship.ai/agents-in-action.gif" alt="Nexus Command — AI team for your codebase" width="720" />
 </p>
 
 <p align="center">
   <a href="#getting-started"><strong>Quickstart</strong></a> &middot;
-  <a href="docs/user-guide.md"><strong>User Guide</strong></a> &middot;
   <a href="https://discord.gg/JMMMT9EDVq"><strong>Discord</strong></a> &middot;
   <a href="CLAUDE.md"><strong>AI Setup Guide</strong></a>
 </p>
@@ -76,7 +75,7 @@ npm run dev
 
 Open **http://localhost:3000**. That's it — no Docker, no Postgres, no manual config.
 
-The interactive wizard prompts for your LLM API key on first run. The embedded database requires zero setup. See [QUICKSTART.md](QUICKSTART.md) for full setup guide and [docs/user-guide.md](docs/user-guide.md) for usage documentation.
+The interactive wizard prompts for your LLM API key on first run. The embedded database requires zero setup. See [QUICKSTART.md](QUICKSTART.md) for full setup guide.
 
 <br/>
 

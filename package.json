@@ -108,7 +108,7 @@
     "test": "vitest",
     "test:run": "vitest run",
     "test:coverage": "vitest run --coverage",
-    "test:eval:intent": "tsx scripts/eval_intent.ts"
+    "test:eval:security": "tsx agents/tests/evals/run-evals.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.78.0",

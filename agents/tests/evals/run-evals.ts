@@ -1,11 +1,11 @@
 /**
- * Standalone nightly eval runner for social engineering regression tests.
+ * Standalone eval runner for social engineering regression tests.
  *
  * Uses @google/generative-ai directly — does NOT import src/config.ts which requires
- * a live DB connection and PermaShip credentials.
+ * a live DB connection.
  *
  * Usage:
- *   GEMINI_API_KEY=<key> npx tsx scripts/run-agent-evals.ts
+ *   GEMINI_API_KEY=<key> npx tsx agents/tests/evals/run-evals.ts
  *
  * Exit codes:
  *   0 — all evals passed
@@ -16,7 +16,7 @@ import { readFileSync } from 'node:fs';
 import { resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { GoogleGenerativeAI } from '@google/generative-ai';
-import { classifyResponse } from '../agents/src/tests/eval-logic.js';
+import { classifyResponse } from '../../src/tests/eval-logic.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -37,13 +37,13 @@ interface EvalRunResult {
   matchedPattern: string | null;
 }
 
-const EVAL_DATASET_PATH = resolve(__dirname, '../agents/tests/evals/social-engineering.json');
+const EVAL_DATASET_PATH = resolve(__dirname, 'social-engineering.json');
 
 const MODEL_ID = 'gemini-2.0-flash';
 
 /**
  * A minimal system prompt that resembles the production agent persona
- * but does not require any DB or Permaship credentials to construct.
+ * but does not require any DB credentials to construct.
  */
 const SYSTEM_PROMPT = `You are Nexus, an AI agent for the PermaShip platform.
 You help engineering teams manage tasks and proposals.
