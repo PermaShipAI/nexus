@@ -34,16 +34,22 @@ export interface TicketProposalResult {
   message: string;
 }
 
+export interface DuplicateCheckResult {
+  matchedTitle: string;
+  actionId?: string;
+  conflictType: 'DUPLICATE' | 'ROOT_CAUSE_OVERLAP';
+}
+
 /**
- * Use Gemini 2.5 Flash to check if a proposed ticket is a duplicate of recent tickets (last 24h).
- * Returns a rejection message if duplicate, null if the ticket is novel.
+ * Use the LLM provider to check if a proposed ticket is a duplicate or root-cause overlap of recent tickets (last 24h).
+ * Returns a DuplicateCheckResult if a conflict is detected, null if the ticket is novel.
  */
-export async function checkDuplicateTicket(title: string, description: string, orgId: string): Promise<string | null> {
+export async function checkDuplicateTicket(title: string, description: string, orgId: string): Promise<DuplicateCheckResult | null> {
   const since = new Date(Date.now() - 24 * 60 * 60 * 1000);
 
   // Gather recent pending actions (tickets proposed in last 24h, any status except rejected)
   const actions = await db
-    .select({ args: pendingActions.args, status: pendingActions.status, agentId: pendingActions.agentId })
+    .select({ id: pendingActions.id, args: pendingActions.args, status: pendingActions.status, agentId: pendingActions.agentId })
     .from(pendingActions)
     .where(
       and(
@@ -64,38 +70,52 @@ export async function checkDuplicateTicket(title: string, description: string, o
     .orderBy(desc(ticketsTable.createdAt))
     .limit(30);
 
-  // Build the list of existing tickets for the AI to review
-  const existingLines: string[] = [];
+  // Build indexed list of existing tickets for the AI to review (1-based index for AI response)
+  type ExistingEntry = { label: string; title: string; actionId?: string };
+  const existingEntries: ExistingEntry[] = [];
 
   for (const action of actions) {
     const args = parseArgs(action.args);
-    existingLines.push(`- [${action.status}] "${args.title}" (${args.kind ?? 'unknown'}) by ${action.agentId}: ${((args.description as string) ?? '').slice(0, 200)}`);
+    const actionTitle = (args.title as string) ?? '';
+    existingEntries.push({
+      label: `[${action.status}] "${actionTitle}" (${args.kind ?? 'unknown'}) by ${action.agentId}: ${((args.description as string) ?? '').slice(0, 200)}`,
+      title: actionTitle,
+      actionId: action.id,
+    });
   }
 
   for (const ticket of recentTickets) {
-    existingLines.push(`- [created] "${ticket.title}" (${ticket.kind}): ${ticket.description.slice(0, 200)}`);
+    existingEntries.push({
+      label: `[created] "${ticket.title}" (${ticket.kind}): ${ticket.description.slice(0, 200)}`,
+      title: ticket.title,
+    });
   }
 
   // If no recent tickets exist, nothing to compare against
-  if (existingLines.length === 0) return null;
+  if (existingEntries.length === 0) return null;
+
+  const existingLines = existingEntries.map((e, i) => `${i + 1}. ${e.label}`).join('\n');
 
   const prompt = `You are a duplicate ticket detector. Compare a PROPOSED ticket against EXISTING tickets from the last 24 hours.
 
 EXISTING TICKETS:
-${existingLines.join('\n')}
+${existingLines}
 
 PROPOSED TICKET:
 Title: "${title}"
 Description: "${description.slice(0, 500)}"
 
-Is the proposed ticket a duplicate or substantially overlapping with any existing ticket? Consider:
-- Same underlying issue, even if worded differently
-- Subset of an existing ticket's scope
-- Same root cause being addressed
+Classify the proposed ticket as one of:
+- DUPLICATE: Same underlying issue or scope as an existing ticket, even if worded differently.
+- ROOT_CAUSE_OVERLAP: A different task than existing tickets but targeting the same underlying component, file, or root cause. Concurrent execution would produce conflicting or redundant changes to the same codebase surface area (e.g. a security patch and a performance refactor both modifying the same file).
+- NOVEL: Genuinely different scope from all existing tickets.
 
 Respond with EXACTLY one line:
-- If duplicate: DUPLICATE: "<title of the matching existing ticket>"
-- If not duplicate: NOVEL`;
+- If DUPLICATE: DUPLICATE:<index> "<title of the matching existing ticket>"
+- If ROOT_CAUSE_OVERLAP: ROOT_CAUSE_OVERLAP:<index> "<title of the matching existing ticket>"
+- If novel: NOVEL
+
+Where <index> is the 1-based index number from the EXISTING TICKETS list.`;
 
   try {
     const response = await getLLMProvider().generateText({
@@ -104,9 +124,29 @@ Respond with EXACTLY one line:
     });
 
     const trimmed = response.trim();
-    if (trimmed.startsWith('DUPLICATE:')) {
-      return trimmed.slice('DUPLICATE:'.length).trim().replace(/^"|"$/g, '');
+
+    const duplicateMatch = trimmed.match(/^DUPLICATE:(\d+)\s+"?(.+?)"?\s*$/);
+    if (duplicateMatch) {
+      const idx = parseInt(duplicateMatch[1], 10) - 1;
+      const entry = existingEntries[idx];
+      return {
+        matchedTitle: entry?.title ?? duplicateMatch[2],
+        actionId: entry?.actionId,
+        conflictType: 'DUPLICATE',
+      };
     }
+
+    const overlapMatch = trimmed.match(/^ROOT_CAUSE_OVERLAP:(\d+)\s+"?(.+?)"?\s*$/);
+    if (overlapMatch) {
+      const idx = parseInt(overlapMatch[1], 10) - 1;
+      const entry = existingEntries[idx];
+      return {
+        matchedTitle: entry?.title ?? overlapMatch[2],
+        actionId: entry?.actionId,
+        conflictType: 'ROOT_CAUSE_OVERLAP',
+      };
+    }
+
     return null;
   } catch {
     // If the AI check fails, allow the ticket through rather than blocking
@@ -158,14 +198,30 @@ export async function createTicketProposal(input: TicketProposalInput): Promise<
     }
   }
 
-  // AI-based deduplication
-  const duplicateMatch = await checkDuplicateTicket(title, fullDescription, orgId);
-  if (duplicateMatch) {
+  // AI-based deduplication (exact duplicate and root-cause/component overlap)
+  const conflictResult = await checkDuplicateTicket(title, fullDescription, orgId);
+  if (conflictResult) {
+    if (conflictResult.conflictType === 'ROOT_CAUSE_OVERLAP') {
+      logger.warn({
+        event: 'cross_agent_conflict_rejected',
+        agentId,
+        proposedTitle: title,
+        matchedTitle: conflictResult.matchedTitle,
+        existingProposalId: conflictResult.actionId,
+      }, 'cross_agent_conflict_rejected');
+      const idClause = conflictResult.actionId ? ` (proposal ID: ${conflictResult.actionId})` : '';
+      return {
+        success: false,
+        duplicate: true,
+        matchedTitle: conflictResult.matchedTitle,
+        message: `CROSS-AGENT CONFLICT REJECTED: This proposal targets the same underlying component or root cause as an existing proposal: "${conflictResult.matchedTitle}"${idClause}. Do NOT create a separate ticket. Instead, retrieve that proposal and merge your Acceptance Criteria into it to consolidate the work under a single execution context.`,
+      };
+    }
     return {
       success: false,
       duplicate: true,
-      matchedTitle: duplicateMatch,
-      message: `DUPLICATE REJECTED: An AI review determined this ticket overlaps with an existing one: "${duplicateMatch}". Do NOT re-propose tickets that have already been proposed or created.`,
+      matchedTitle: conflictResult.matchedTitle,
+      message: `DUPLICATE REJECTED: An AI review determined this ticket overlaps with an existing one: "${conflictResult.matchedTitle}". Do NOT re-propose tickets that have already been proposed or created.`,
     };
   }
 
