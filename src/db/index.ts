@@ -3,7 +3,7 @@ import { drizzle as drizzlePglite } from 'drizzle-orm/pglite';
 import { migrate as migratePg } from 'drizzle-orm/postgres-js/migrator';
 import { PGlite } from '@electric-sql/pglite';
 import postgres from 'postgres';
-import { mkdirSync, readFileSync, readdirSync } from 'node:fs';
+import { mkdirSync, readFileSync, readdirSync, existsSync, unlinkSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 import * as schema from './schema.js';
 import { sql } from 'drizzle-orm';
@@ -70,8 +70,29 @@ function createDb(): PostgresJsDatabase<typeof schema> {
 
   // Embedded PGlite (zero-config default)
   const dataDir = join(process.cwd(), 'data', 'pglite');
-  mkdirSync(dataDir, { recursive: true, mode: 0o700 }); // M5: restrict permissions
-  _pgliteClient = new PGlite(dataDir);
+  mkdirSync(dataDir, { recursive: true, mode: 0o700 });
+
+  // Remove stale lock from previous crash
+  const pidFile = join(dataDir, 'postmaster.pid');
+  if (existsSync(pidFile)) {
+    try { unlinkSync(pidFile); } catch { /* ok */ }
+    logger.info('Removed stale PGlite postmaster.pid');
+  }
+
+  try {
+    _pgliteClient = new PGlite(dataDir);
+  } catch (err) {
+    // PGlite data corrupted — attempt recovery by resetting
+    logger.error({ err }, 'PGlite failed to open — data may be corrupted, resetting database');
+    console.error('\n  ⚠ Database corrupted — resetting. Previous data has been lost.');
+    console.error('  To prevent this, avoid kill -9 on the process. Use Ctrl+C for graceful shutdown.\n');
+    try {
+      rmSync(dataDir, { recursive: true, force: true });
+      mkdirSync(dataDir, { recursive: true, mode: 0o700 });
+    } catch { /* ok */ }
+    _pgliteClient = new PGlite(dataDir);
+  }
+
   const pgliteDb = drizzlePglite(_pgliteClient, { schema });
   _migrateFn = manualMigratePglite;
 
