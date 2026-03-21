@@ -40,6 +40,12 @@ const envSchema = z.object({
   SECURITY_DIGEST_INTERVAL_MS: z.coerce.number().default(7 * 24 * 60 * 60 * 1000),
   SECURITY_DIGEST_CHECK_INTERVAL_MS: z.coerce.number().default(3_600_000),
 
+  // AgentOps evaluation scheduler
+  AGENTOPS_EVAL_INTERVAL_MS: z.coerce.number().default(7 * 24 * 60 * 60 * 1000), // 7 days
+  AGENTOPS_EVAL_CHECK_INTERVAL_MS: z.coerce.number().default(3_600_000), // 1 hour
+  AGENTOPS_EVAL_WINDOW_DAYS: z.coerce.number().default(7), // look-back window
+  AGENTOPS_ADR_REJECTION_THRESHOLD: z.coerce.number().default(3), // trigger ADR draft after N rejections
+
   // Usage metering
   USAGE_FLUSH_INTERVAL_MS: z.coerce.number().default(60_000),
   USAGE_FLUSH_TURN_THRESHOLD: z.coerce.number().default(100),
