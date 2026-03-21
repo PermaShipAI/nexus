@@ -175,6 +175,28 @@ async function runMissionHeartbeat(mission: Mission): Promise<void> {
   }
 
   if (focusItem) {
+    // Check if there are actively running tickets for this item — if so, skip
+    // this heartbeat entirely to avoid burning tokens on "still running" messages
+    const keywords = focusItem.title.toLowerCase().split(/\s+/).filter(w => w.length > 3);
+    const orgTickets = await db.select({
+      executionStatus: tickets.executionStatus,
+      title: tickets.title,
+    }).from(tickets).where(eq(tickets.orgId, mission.orgId)).limit(50);
+
+    const hasRunningTicket = orgTickets.some(t => {
+      if (t.executionStatus !== 'running') return false;
+      const titleLower = t.title.toLowerCase();
+      return keywords.some(kw => titleLower.includes(kw));
+    });
+
+    if (hasRunningTicket) {
+      logger.info({ missionId: mission.id, focusItem: focusItem.title }, 'Skipping heartbeat — ticket still executing');
+      // Schedule next heartbeat and return without burning tokens
+      const nextAt = new Date(Date.now() + mission.heartbeatIntervalMs);
+      await recordHeartbeat(mission.id, nextAt);
+      return;
+    }
+
     // Route to best agent for this item
     const projectContext = projects.map((p) => p.name).join(', ');
     const checklistSummary = items
