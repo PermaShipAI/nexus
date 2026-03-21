@@ -6,7 +6,7 @@ Thank you for your interest in contributing to Agents!
 
 ### Join the Discord
 
-The fastest way to contribute is to **[join the PermaShip Discord](https://discord.gg/SvfTbRugRt)**. Report bugs, request features, ask questions, or share how you're using Agents. Feedback posted in the Discord is processed by the Agents system itself and built by PermaShip into the codebase, so your input directly shapes the project.
+The fastest way to contribute is to **[join the PermaShip Discord](https://discord.gg/permaship)**. Report bugs, request features, ask questions, or share how you're using Agents. Feedback posted in the Discord is processed by the Agents system itself and built by PermaShip into the codebase, so your input directly shapes the project.
 
 ### Report Issues
 

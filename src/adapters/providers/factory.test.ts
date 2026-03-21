@@ -25,6 +25,8 @@ const {
       LLM_API_KEY: 'test-api-key',
       GEMINI_API_KEY: 'test-gemini-key',
       OLLAMA_BASE_URL: 'http://localhost:11434',
+      LOG_LEVEL: 'info',
+      NODE_ENV: 'test',
     } as Record<string, string>,
   };
 });
