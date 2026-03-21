@@ -46,7 +46,7 @@ describe("handleConfirm", () => {
     const expectedResult = [{ agentId: "task-agent", intent: "ProposeTask", confidence: 1.0 }];
     const executor = vi.fn().mockResolvedValue(expectedResult);
 
-    const result = await handleConfirm(confirmation.id, executor);
+    const result = await handleConfirm(confirmation.id, executor, "u1");
 
     expect(executor).toHaveBeenCalledOnce();
     expect(executor).toHaveBeenCalledWith(confirmation);
@@ -64,7 +64,7 @@ describe("handleConfirm", () => {
     });
 
     const executor = vi.fn().mockResolvedValue([]);
-    await handleConfirm(confirmation.id, executor);
+    await handleConfirm(confirmation.id, executor, "u1");
 
     expect(logGuardrailEvent).toHaveBeenCalledOnce();
     const callArg = (logGuardrailEvent as ReturnType<typeof vi.fn>).mock.calls[0][0];
@@ -75,7 +75,7 @@ describe("handleConfirm", () => {
 
   it("throws ConfirmationNotFoundError for unknown ID without calling executor", async () => {
     const executor = vi.fn();
-    await expect(handleConfirm("unknown-id", executor)).rejects.toThrow(ConfirmationNotFoundError);
+    await expect(handleConfirm("unknown-id", executor, "u1")).rejects.toThrow(ConfirmationNotFoundError);
     expect(executor).not.toHaveBeenCalled();
   });
 
@@ -90,9 +90,75 @@ describe("handleConfirm", () => {
     });
 
     const executor = vi.fn().mockResolvedValue([]);
-    await handleConfirm(confirmation.id, executor);
+    await handleConfirm(confirmation.id, executor, "u1");
 
     expect(pendingConfirmationStore.has(confirmation.id)).toBe(false);
+  });
+
+  it("rejects confirmation from a different user", async () => {
+    const confirmation = createPendingConfirmation({
+      channelId: "ch1",
+      userId: "u1",
+      intent: "ProposeTask",
+      extractedEntities: {},
+      targetAgent: "task-agent",
+      confirmationPrompt: "Confirm?",
+    });
+
+    const executor = vi.fn();
+    await expect(
+      handleConfirm(confirmation.id, executor, "attacker-user"),
+    ).rejects.toThrow("User identity mismatch");
+    expect(executor).not.toHaveBeenCalled();
+    // Confirmation must remain in store for the legitimate user
+    expect(pendingConfirmationStore.has(confirmation.id)).toBe(true);
+  });
+
+  it("logs confirmation_identity_mismatch on userId mismatch", async () => {
+    const confirmation = createPendingConfirmation({
+      channelId: "ch1",
+      userId: "u1",
+      intent: "ProposeTask",
+      extractedEntities: {},
+      targetAgent: "task-agent",
+      confirmationPrompt: "Confirm?",
+    });
+
+    const executor = vi.fn();
+    try {
+      await handleConfirm(confirmation.id, executor, "attacker-user");
+    } catch { /* expected */ }
+
+    expect(logGuardrailEvent).toHaveBeenCalledWith(
+      expect.objectContaining({
+        event: "confirmation_identity_mismatch",
+        expectedUserId: "u1",
+        actualUserId: "attacker-user",
+        confirmationId: confirmation.id,
+      }),
+    );
+  });
+
+  it("allows the legitimate user to confirm after a mismatch rejection", async () => {
+    const confirmation = createPendingConfirmation({
+      channelId: "ch1",
+      userId: "u1",
+      intent: "ProposeTask",
+      extractedEntities: {},
+      targetAgent: "task-agent",
+      confirmationPrompt: "Confirm?",
+    });
+
+    const attackerExecutor = vi.fn();
+    try {
+      await handleConfirm(confirmation.id, attackerExecutor, "attacker-user");
+    } catch { /* expected */ }
+
+    // Legitimate user can still confirm
+    const legitimateExecutor = vi.fn().mockResolvedValue([{ agentId: "task-agent" }]);
+    const result = await handleConfirm(confirmation.id, legitimateExecutor, "u1");
+    expect(legitimateExecutor).toHaveBeenCalledOnce();
+    expect(result).toEqual([{ agentId: "task-agent" }]);
   });
 });
 

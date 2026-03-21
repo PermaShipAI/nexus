@@ -183,3 +183,85 @@ describe('checkForInjection', () => {
     expect(INJECTION_PATTERNS.length).toBeGreaterThanOrEqual(10);
   });
 });
+
+// ---------------------------------------------------------------------------
+// Property-based tests
+// ---------------------------------------------------------------------------
+import fc from 'fast-check';
+
+describe('checkForInjection property-based tests', () => {
+  it('benign technical phrases never trigger injection detection', () => {
+    const safePhraseArb = fc.constantFrom(
+      'deploy the service',
+      'fix the bug in production',
+      'run the tests and report results',
+      'check the database connection',
+      'update the config file',
+      'build the project from source',
+      'refactor the authentication module',
+      'review the PR changes',
+      'merge the feature branch',
+      'add a new REST endpoint',
+      'delete the unused CSS classes',
+      'optimize the SQL query performance',
+      'What is the status of the deployment pipeline?',
+      'Can you help me debug the TypeScript compiler error?',
+      'How do I configure the CI/CD workflow?',
+    );
+
+    fc.assert(
+      fc.property(safePhraseArb, (input) => {
+        return checkForInjection(input).detected === false;
+      }),
+      { numRuns: 500 },
+    );
+  });
+
+  it('known injection patterns trigger regardless of case variations', () => {
+    const injectionArb = fc.constantFrom(
+      'ignore previous instructions',
+      'jailbreak',
+      'DAN mode',
+      'do anything now',
+      'developer mode',
+      'god mode',
+      'you are now',
+    );
+
+    // Apply random case to each character
+    const caseVariantArb = injectionArb.chain((s) =>
+      fc.array(fc.boolean(), { minLength: s.length, maxLength: s.length }).map((bools) =>
+        s.split('').map((c, i) => (bools[i] ? c.toUpperCase() : c.toLowerCase())).join(''),
+      ),
+    );
+
+    fc.assert(
+      fc.property(caseVariantArb, (input) => {
+        return checkForInjection(input).detected === true;
+      }),
+      { numRuns: 200 },
+    );
+  });
+
+  it('null byte injection does not bypass detection', () => {
+    const injections = [
+      'jailbreak',
+      'DAN mode',
+      'ignore previous instructions',
+      'developer mode',
+    ];
+
+    const injectionsWithNullsArb = fc.constantFrom(...injections).chain((s) =>
+      fc.array(fc.boolean(), { minLength: s.length, maxLength: s.length }).map((bools) =>
+        s.split('').map((c, i) => (bools[i] ? '\x00' + c : c)).join(''),
+      ),
+    );
+
+    fc.assert(
+      fc.property(injectionsWithNullsArb, (input) => {
+        return checkForInjection(input).detected === true;
+      }),
+      { numRuns: 200 },
+    );
+  });
+});

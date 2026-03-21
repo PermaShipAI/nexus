@@ -83,13 +83,9 @@ describe('setSettingTool', () => {
 
   it('includes optional context in audit log when provided', async () => {
     const ctx = { requestId: 'req-123' };
-    await setSettingTool({ key: 'public_channels', value: ['#test'], agentId: 'nexus', context: ctx });
-    // This key was rate-limited after first set in a previous test, so if it fails that's ok
-    // but if it succeeds, check context
-    const calls = mockLogMutation.mock.calls;
-    if (calls.length > 0) {
-      // might have context
-    }
+    const result = await setSettingTool({ key: 'public_channels', value: ['#test'], agentId: 'nexus', context: ctx });
+    // May be rate-limited from a previous test, but should always return a result
+    expect(result).toBeDefined();
   });
 });
 

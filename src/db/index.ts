@@ -6,11 +6,9 @@ import postgres from 'postgres';
 import { mkdirSync, readFileSync, readdirSync, existsSync, unlinkSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 import * as schema from './schema.js';
-import { sql } from 'drizzle-orm';
 import { logger } from '../logger.js';
 
 const DATABASE_URL = process.env.DATABASE_URL;
-const isEmbedded = !DATABASE_URL;
 
 let _migrateFn: ((db: any, opts: { migrationsFolder: string }) => Promise<void>) | null = null;
 let _pgliteClient: PGlite | null = null;
@@ -69,7 +67,7 @@ function createDb(): PostgresJsDatabase<typeof schema> {
   }
 
   // Embedded PGlite (zero-config default)
-  const dataDir = join(process.cwd(), 'data', 'pglite');
+  const dataDir = process.env.PGLITE_DATA_DIR ?? join(process.cwd(), 'data', 'pglite');
   mkdirSync(dataDir, { recursive: true, mode: 0o700 });
 
   // Remove stale lock from previous crash
@@ -92,7 +90,6 @@ function createDb(): PostgresJsDatabase<typeof schema> {
     } catch { /* ok */ }
     _pgliteClient = new PGlite(dataDir);
   }
-
   const pgliteDb = drizzlePglite(_pgliteClient, { schema });
   _migrateFn = manualMigratePglite;
 

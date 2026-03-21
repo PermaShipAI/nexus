@@ -5,7 +5,6 @@ import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
 import { logger } from '../logger.js';
 import { processWebhookMessage, type UnifiedMessage } from '../bot/listener.js';
-import { getRecentMessages } from '../conversation/service.js';
 import { getAllAgents, registerAgent } from '../agents/registry.js';
 import { db } from '../db/index.js';
 import { pendingActions, conversationHistory, agents as agentsTable, tickets as ticketsTable, knowledgeEntries } from '../db/schema.js';
@@ -16,7 +15,7 @@ import { LocalExecutingTicketTracker } from './executing-ticket-tracker.js';
 import { LocalTicketTracker } from './ticket-tracker.js';
 import { parseArgs } from '../utils/parse-args.js';
 import type { AgentId } from '../agents/types.js';
-import { stat, readFile, writeFile } from 'node:fs/promises';
+import { stat, readFile } from 'node:fs/promises';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 
@@ -54,8 +53,12 @@ import {
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const UI_DIR = join(__dirname, '..', '..', 'ui');
 
-export async function startLocalServer(port = 3000): Promise<void> {
-  const sessionToken = generateSessionToken();
+/**
+ * Create and configure the Fastify server without starting it.
+ * Useful for testing with app.inject().
+ */
+export async function createLocalServer(_port = 3000) {
+  generateSessionToken();
 
   const server = Fastify({
     logger: false,
@@ -682,7 +685,7 @@ export async function startLocalServer(port = 3000): Promise<void> {
   /** Update an agent's persona */
   server.put('/api/agents/:id', async (request) => {
     const { id } = request.params as { id: string };
-    const { title, summary, personaMd } = request.body as { title?: string; summary?: string; personaMd?: string };
+    const { title, personaMd } = request.body as { title?: string; personaMd?: string };
     const updates: Record<string, unknown> = { updatedAt: new Date() };
     if (title) updates.title = title;
     if (personaMd) updates.personaMd = personaMd;
@@ -1013,7 +1016,11 @@ export async function startLocalServer(port = 3000): Promise<void> {
   /** Health check */
   server.get('/api/health', async () => ({ status: 'ok' }));
 
-  // ── Start ─────────────────────────────────────────────────────────────
+  return server;
+}
+
+export async function startLocalServer(port = 3000): Promise<void> {
+  const server = await createLocalServer(port);
 
   try {
     const address = await server.listen({ port, host: '0.0.0.0' });

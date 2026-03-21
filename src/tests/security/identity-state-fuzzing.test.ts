@@ -92,18 +92,9 @@ describe('Security: Identity State Fuzzing', () => {
   });
 
   // ---------------------------------------------------------------------------
-  // IS-006 (PF-001 regression): handleConfirm does not block mismatched userId
-  //
-  // CURRENT BEHAVIOR (insecure): handleConfirm accepts any executor regardless
-  // of the calling user's identity. There is no userId parameter to validate
-  // against the pending.userId stored at confirmation creation time.
-  //
-  // TODO (PF-001): Add a userId parameter to handleConfirm and validate that
-  // it matches pending.userId before executing. On mismatch: do not delete the
-  // pending entry, log an rbac_rejection telemetry event, and throw an error.
-  // See: docs/security/red-teaming-playbook.md, Section 6 (Known Findings), PF-001
+  // IS-006 (PF-001 remediated): handleConfirm blocks mismatched userId
   // ---------------------------------------------------------------------------
-  it('IS-006 (PF-001): handleConfirm does not block mismatched userId — documents current insecure behavior', async () => {
+  it('IS-006 (PF-001): handleConfirm blocks mismatched userId', async () => {
     const confirmation = createPendingConfirmation({
       channelId: 'ch-sec-2',
       userId: 'admin-user-456',
@@ -113,18 +104,14 @@ describe('Security: Identity State Fuzzing', () => {
       confirmationPrompt: 'Do you want me to create a new task? [Confirm] [Cancel]',
     });
 
-    // An attacker with a different userId obtains the confirmationId and calls handleConfirm.
-    // The current implementation has no userId parameter — it executes the action regardless.
     const attackerExecutor = vi.fn().mockResolvedValue([]);
 
-    // This should throw once PF-001 is remediated.
-    // For now it resolves, documenting the insecure current behavior.
     await expect(
-      handleConfirm(confirmation.id, attackerExecutor),
-    ).resolves.toBeDefined();
+      handleConfirm(confirmation.id, attackerExecutor, 'attacker-user-789'),
+    ).rejects.toThrow('User identity mismatch');
 
-    // The executor fires even though the calling context is a different user.
-    // Once PF-001 is fixed, this assertion should be: expect(attackerExecutor).not.toHaveBeenCalled()
-    expect(attackerExecutor).toHaveBeenCalledOnce();
+    expect(attackerExecutor).not.toHaveBeenCalled();
+    // Confirmation remains available for the legitimate user
+    expect(pendingConfirmationStore.has(confirmation.id)).toBe(true);
   });
 });

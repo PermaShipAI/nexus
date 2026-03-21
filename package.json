@@ -107,8 +107,12 @@
     "format:write": "prettier --write \"src/**/*.ts\"",
     "test": "vitest",
     "test:run": "vitest run",
+    "test:unit": "vitest run --exclude '**/security-integration.test.ts' --exclude '**/integration/**'",
+    "test:integration": "vitest run src/local/security-integration.test.ts src/tests/integration/",
+    "test:security": "vitest run src/tests/security/",
     "test:coverage": "vitest run --coverage",
-    "test:eval:security": "tsx agents/tests/evals/run-evals.ts"
+    "test:eval:security": "tsx agents/tests/evals/run-evals.ts",
+    "prepare": "husky"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.78.0",
@@ -140,6 +144,8 @@
     "eslint-config-prettier": "^10.1.8",
     "eslint-plugin-prettier": "^5.5.5",
     "eslint-plugin-vitest": "^0.5.4",
+    "fast-check": "^4.6.0",
+    "husky": "^9.1.7",
     "prettier": "^3.8.1",
     "tsx": "^4.19.0",
     "typescript": "^5.9.3",

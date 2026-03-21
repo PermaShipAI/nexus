@@ -15,11 +15,25 @@ export interface RouteResult {
   [key: string]: unknown;
 }
 
-export async function handleConfirm(confirmationId: string, executor: RouteExecutor): Promise<RouteResult[]> {
+export async function handleConfirm(confirmationId: string, executor: RouteExecutor, userId: string): Promise<RouteResult[]> {
   const confirmation = getPendingConfirmation(confirmationId);
   if (!confirmation) {
     throw new ConfirmationNotFoundError();
   }
+
+  // PF-001: Validate that the confirming user matches the original requester
+  if (confirmation.userId !== userId) {
+    logGuardrailEvent({
+      event: "confirmation_identity_mismatch",
+      confirmationId,
+      expectedUserId: confirmation.userId,
+      actualUserId: userId,
+      channelId: confirmation.channelId,
+      intent: confirmation.intent,
+    });
+    throw new Error("User identity mismatch: you cannot confirm another user's action");
+  }
+
   removePendingConfirmation(confirmationId);
   const elapsedMs = Date.now() - confirmation.createdAt.getTime();
   logGuardrailEvent({
