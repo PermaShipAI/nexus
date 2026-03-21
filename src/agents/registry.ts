@@ -121,6 +121,7 @@ export async function initializeAgents(): Promise<AgentDefinition[]> {
       const def: AgentDefinition = {
         id: row.id as AgentId,
         title: row.title,
+        summary: row.title,
         personaMd: row.personaMd,
       };
       registry.set(def.id, def);

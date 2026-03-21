@@ -18,7 +18,7 @@ import { checkMissionCompletion, planMission } from './lifecycle.js';
 import type { Mission } from '../db/schema.js';
 import { db } from '../db/index.js';
 import { tickets } from '../db/schema.js';
-import { eq, and } from 'drizzle-orm';
+import { eq } from 'drizzle-orm';
 
 let heartbeatHandle: NodeJS.Timeout | null = null;
 const missionDebounceMap = new Map<string, NodeJS.Timeout>();
