@@ -12,7 +12,7 @@ import { createTicketProposal } from '../tools/proposal-service.js';
 
 import type { TicketProposalInput } from '../tools/proposal-service.js';
 import { getTicketTracker } from '../adapters/registry.js';
-import { isAutonomousMode } from '../settings/service.js';
+import { resolveAutonomousMode } from '../settings/service.js';
 import { updateProjectSettings } from '../tools/update_project_settings.js';
 import { getMissionItem, updateMissionItem } from '../missions/service.js';
 import { onMissionItemChanged } from '../missions/scheduler.js';
@@ -220,7 +220,7 @@ Please refine your proposal based on this feedback.
 
           // Immediately create suggestion / ticket for the approved proposal
           try {
-            const autonomous = await isAutonomousMode(orgId);
+            const autonomous = await resolveAutonomousMode({ orgId, channelId, repoKey: updatedArgs['repo-key'] as string | undefined });
             if (autonomous) {
               // Auto-create ticket
               const ticketResult = await getTicketTracker().createTicket({
@@ -660,7 +660,7 @@ async function processDeepResearchResult(input: ExecuteAgentInput, response: str
 
 /** Deep research mode: clone workspace and explore with extended tools and budget. */
 async function executeDeepResearch(input: ExecuteAgentInput): Promise<string | null> {
-  const { orgId, agentId, channelId, userMessage, steering, source } = input;
+  const { orgId, agentId, channelId, userMessage, steering } = input;
   logger.info({ orgId, agentId }, 'Deep research: starting');
   const executionStart = new Date();
 

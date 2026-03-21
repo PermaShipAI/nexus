@@ -17,6 +17,7 @@ export async function createMission(input: {
   projectIds?: string[];
   heartbeatIntervalMs?: number;
   cronExpression?: string;
+  autonomousMode?: boolean | null;
 }): Promise<Mission> {
   const id = crypto.randomUUID();
   const channelId = `mission:${id}`;
@@ -31,6 +32,7 @@ export async function createMission(input: {
       description: input.description,
       heartbeatIntervalMs: input.heartbeatIntervalMs ?? 600_000,
       cronExpression: input.cronExpression ?? null,
+      autonomousMode: input.autonomousMode ?? null,
     })
     .returning();
 

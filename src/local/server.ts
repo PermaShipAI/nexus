@@ -7,7 +7,7 @@ import { logger } from '../logger.js';
 import { processWebhookMessage, type UnifiedMessage } from '../bot/listener.js';
 import { getAllAgents, registerAgent } from '../agents/registry.js';
 import { db } from '../db/index.js';
-import { pendingActions, conversationHistory, agents as agentsTable, tickets as ticketsTable, knowledgeEntries } from '../db/schema.js';
+import { pendingActions, conversationHistory, agents as agentsTable, tickets as ticketsTable, knowledgeEntries, missions as missionsSchema, localProjects as localProjectsSchema } from '../db/schema.js';
 import { eq, and, desc } from 'drizzle-orm';
 import { getTicketTracker, setTicketTracker } from '../adapters/registry.js';
 import { createExecutionBackend } from './execution-backends/factory.js';
@@ -871,12 +871,13 @@ export async function createLocalServer(_port = 3000) {
 
   /** Create a new mission */
   server.post('/api/missions', async (request) => {
-    const { title, description, projectIds, heartbeatIntervalMs, cronExpression } = request.body as {
+    const { title, description, projectIds, heartbeatIntervalMs, cronExpression, autonomousMode } = request.body as {
       title: string;
       description: string;
       projectIds?: string[];
       heartbeatIntervalMs?: number;
       cronExpression?: string;
+      autonomousMode?: boolean | null;
     };
 
     if (!title?.trim()) return { success: false, error: 'Title is required' };
@@ -891,6 +892,7 @@ export async function createLocalServer(_port = 3000) {
       projectIds,
       heartbeatIntervalMs,
       cronExpression,
+      autonomousMode: autonomousMode ?? null,
     });
 
     broadcast('mission_created', mission);
@@ -1011,6 +1013,40 @@ export async function createLocalServer(_port = 3000) {
 
     broadcast('mission_updated', { id, heartbeatIntervalMs: intervalMs });
     return { success: true };
+  });
+
+  /** Toggle autonomous mode for a mission */
+  server.put('/api/missions/:id/autonomous', async (request) => {
+    const { id } = request.params as { id: string };
+    const { enabled } = request.body as { enabled: boolean | null };
+    const value = enabled === null ? null : !!enabled;
+
+    const [mission] = await db
+      .update(missionsSchema)
+      .set({ autonomousMode: value, updatedAt: new Date() })
+      .where(and(eq(missionsSchema.id, id), eq(missionsSchema.orgId, LOCAL_ORG_ID)))
+      .returning();
+
+    if (!mission) return { success: false, error: 'Mission not found' };
+    broadcast('mission_updated', mission);
+    return { success: true, autonomousMode: mission.autonomousMode };
+  });
+
+  /** Toggle autonomous mode for a project */
+  server.put('/api/projects/:id/autonomous', async (request) => {
+    const { id } = request.params as { id: string };
+    const { enabled } = request.body as { enabled: boolean | null };
+    const value = enabled === null ? null : !!enabled;
+
+    const [project] = await db
+      .update(localProjectsSchema)
+      .set({ autonomousMode: value, updatedAt: new Date() })
+      .where(and(eq(localProjectsSchema.id, id), eq(localProjectsSchema.orgId, LOCAL_ORG_ID)))
+      .returning();
+
+    if (!project) return { success: false, error: 'Project not found' };
+    broadcast('settings_changed', { projectAutonomous: { id, enabled: project.autonomousMode } });
+    return { success: true, autonomousMode: project.autonomousMode };
   });
 
   /** Health check */

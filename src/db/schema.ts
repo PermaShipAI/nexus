@@ -368,6 +368,7 @@ export const localProjects = pgTable(
     repoKey: text('repo_key').notNull(),
     cloneStatus: text('clone_status').notNull().default('ready'), // 'ready' | 'cloning' | 'error'
     cloneError: text('clone_error'),
+    autonomousMode: boolean('autonomous_mode'), // null = inherit from org
     createdAt: timestamp('created_at').notNull().defaultNow(),
     updatedAt: timestamp('updated_at').notNull().defaultNow(),
   },
@@ -396,6 +397,7 @@ export const missions = pgTable(
     nextHeartbeatAt: timestamp('next_heartbeat_at'),
     cronExpression: text('cron_expression'),
     recurringParentId: uuid('recurring_parent_id'),
+    autonomousMode: boolean('autonomous_mode'), // null = inherit from org
     completedAt: timestamp('completed_at'),
     cancelledAt: timestamp('cancelled_at'),
     createdAt: timestamp('created_at').notNull().defaultNow(),

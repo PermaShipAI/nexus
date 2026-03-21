@@ -1,5 +1,5 @@
 import { db } from '../db/index.js';
-import { botSettings, publicChannels } from '../db/schema.js';
+import { botSettings, publicChannels, missions, localProjects } from '../db/schema.js';
 import { eq, and } from 'drizzle-orm';
 import { logger } from '../logger.js';
 
@@ -40,6 +40,48 @@ export async function setSetting(
 export async function isAutonomousMode(orgId: string): Promise<boolean> {
   const value = await getSetting('autonomous_mode', orgId);
   return value === true;
+}
+
+export interface AutonomousContext {
+  orgId: string;
+  channelId?: string | null;
+  repoKey?: string | null;
+}
+
+/**
+ * Resolve autonomous mode with scoped overrides.
+ * Resolution order: Mission > Project > Global org setting > false.
+ * NULL at any level means "inherit from next level."
+ */
+export async function resolveAutonomousMode(ctx: AutonomousContext): Promise<boolean> {
+  const { orgId, channelId, repoKey } = ctx;
+
+  // 1. Mission-level override (highest specificity)
+  if (channelId && channelId.startsWith('mission:')) {
+    const [m] = await db
+      .select({ autonomousMode: missions.autonomousMode })
+      .from(missions)
+      .where(eq(missions.channelId, channelId))
+      .limit(1);
+    if (m?.autonomousMode !== null && m?.autonomousMode !== undefined) {
+      return m.autonomousMode;
+    }
+  }
+
+  // 2. Project-level override
+  if (repoKey) {
+    const [p] = await db
+      .select({ autonomousMode: localProjects.autonomousMode })
+      .from(localProjects)
+      .where(and(eq(localProjects.repoKey, repoKey), eq(localProjects.orgId, orgId)))
+      .limit(1);
+    if (p?.autonomousMode !== null && p?.autonomousMode !== undefined) {
+      return p.autonomousMode;
+    }
+  }
+
+  // 3. Global org-level fallback
+  return isAutonomousMode(orgId);
 }
 
 export async function getPublicChannels(orgId: string): Promise<{ channelId: string }[]> {

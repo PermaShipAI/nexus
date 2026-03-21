@@ -10,9 +10,9 @@ import { eq, and, lte } from 'drizzle-orm';
 import { config } from '../config.js';
 import { logger } from '../logger.js';
 import type { AgentId } from '../agents/types.js';
-import { 
-  isAutonomousMode, 
-  isNexusReportsEnabled 
+import {
+  resolveAutonomousMode,
+  isNexusReportsEnabled
 } from '../settings/service.js';
 import { getTicketTracker } from '../adapters/registry.js';
 import { parseArgs } from '../utils/parse-args.js';
@@ -138,7 +138,7 @@ You MUST include exactly one of the above blocks.`;
   }
 
   // Agent also failed to produce a structured decision — force-resolve
-  const autonomous = await isAutonomousMode(orgId);
+  const autonomous = await resolveAutonomousMode({ orgId, channelId: proposal.channelId, repoKey: args['repo-key'] as string | undefined });
   if (autonomous) {
     // In autonomous mode, trust the original agent's judgement — create ticket directly
     logger.warn({ proposalId: proposal.id }, 'Force-approving stuck proposal (autonomous mode)');
@@ -243,7 +243,7 @@ OR — if the proposal is incomplete, unclear, or missing required information (
 Do NOT respond conversationally. Output exactly one decision block above and a brief summary.`;
 
       try {
-        const autonomous = await isAutonomousMode(orgId);
+        const autonomous = await resolveAutonomousMode({ orgId, channelId: proposal.channelId, repoKey: args['repo-key'] as string | undefined });
 
         const response = await executeAgent({
           orgId,

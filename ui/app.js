@@ -803,12 +803,33 @@ async function loadProjects() {
       const badgeClass = p.cloneStatus === 'cloning' ? 'project-badge cloning' :
                          p.cloneStatus === 'error' ? 'project-badge error' : 'project-badge';
       const badge = p.sourceType === 'git' ? `<span class="${badgeClass}">${p.cloneStatus === 'ready' ? 'git' : p.cloneStatus}</span>` : '<span class="project-badge">local</span>';
-      li.innerHTML = `<span><span class="project-name">${escapeHtml(p.name)}</span>${badge}</span><button class="remove-btn" onclick="removeProject('${p.id}')" title="Remove">&times;</button>`;
+      const autoIcon = p.autonomousMode === true ? 'A' : p.autonomousMode === false ? 'M' : '';
+      const autoTitle = p.autonomousMode === true ? 'Autonomous (click to change to Manual)'
+        : p.autonomousMode === false ? 'Manual (click to clear override)' : 'Inherit global (click to set Autonomous)';
+      const autoBadge = `<span class="project-badge" style="cursor:pointer;${p.autonomousMode === true ? 'background:#2d6a4f;' : p.autonomousMode === false ? 'background:#6c3a2a;' : ''}" onclick="cycleProjectAutonomous('${p.id}',${JSON.stringify(p.autonomousMode)})" title="${autoTitle}">${autoIcon || '\u2022'}</span>`;
+      li.innerHTML = `<span><span class="project-name">${escapeHtml(p.name)}</span>${badge}${autoBadge}</span><button class="remove-btn" onclick="removeProject('${p.id}')" title="Remove">&times;</button>`;
       projectListEl.appendChild(li);
     }
   } catch (err) {
     // Projects not loaded — not critical
   }
+}
+
+async function setMissionAutonomous(missionId, value) {
+  const enabled = value === 'null' ? null : value === 'true';
+  await apiFetch(`/api/missions/${missionId}/autonomous`, {
+    method: 'PUT',
+    body: JSON.stringify({ enabled }),
+  });
+}
+
+async function cycleProjectAutonomous(projectId, current) {
+  const next = current === null ? true : current === true ? false : null;
+  await apiFetch(`/api/projects/${projectId}/autonomous`, {
+    method: 'PUT',
+    body: JSON.stringify({ enabled: next }),
+  });
+  loadProjects();
 }
 
 async function removeProject(id) {
@@ -1641,7 +1662,16 @@ async function loadMissionChecklist(missionId) {
       return;
     }
 
+    const mId = data.mission.id;
+    const autoVal = data.mission.autonomousMode;
     let html = `<h4>Checklist — ${escapeHtml(data.mission.title)}</h4>`;
+    html += `<div style="margin-bottom:8px;font-size:12px;display:flex;align-items:center;gap:6px">`;
+    html += `<span style="color:var(--text-muted)">Autonomous:</span>`;
+    html += `<select class="config-select" style="font-size:11px;padding:2px 4px" onchange="setMissionAutonomous('${mId}',this.value)">`;
+    html += `<option value="null"${autoVal == null ? ' selected' : ''}>Inherit</option>`;
+    html += `<option value="true"${autoVal === true ? ' selected' : ''}>On</option>`;
+    html += `<option value="false"${autoVal === false ? ' selected' : ''}>Off</option>`;
+    html += `</select></div>`;
     for (const item of items) {
       const marker = item.status === 'verified' ? '[x]'
         : item.status === 'agent_complete' ? '[?]'
@@ -1711,12 +1741,14 @@ if (missionCreateBtn) {
 
     const checkboxes = document.querySelectorAll('#mission-project-checkboxes input:checked');
     const projectIds = Array.from(checkboxes).map(cb => cb.value);
+    const autonomousEl = document.getElementById('mission-autonomous');
+    const autonomousMode = autonomousEl && autonomousEl.checked ? true : null;
 
     missionCreateBtn.disabled = true;
     try {
       const resp = await apiFetch('/api/missions', {
         method: 'POST',
-        body: JSON.stringify({ title, description, projectIds }),
+        body: JSON.stringify({ title, description, projectIds, autonomousMode }),
       });
       const data = await resp.json();
       if (data.success) {
