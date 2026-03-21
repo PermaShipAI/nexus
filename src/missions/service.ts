@@ -174,11 +174,16 @@ export async function getMissionItem(itemId: string): Promise<MissionItem | null
 
 export async function updateMissionItem(
   itemId: string,
-  updates: Partial<Pick<MissionItem, 'status' | 'assignedAgentId' | 'completedByAgentId' | 'verifiedAt'>>,
+  updates: Partial<Pick<MissionItem, 'status' | 'assignedAgentId' | 'completedByAgentId' | 'verifiedAt' | 'heartbeatCount'>>,
 ): Promise<MissionItem | null> {
+  // Filter out undefined values so we don't overwrite fields with null
+  const cleanUpdates: Record<string, unknown> = { updatedAt: new Date() };
+  for (const [k, v] of Object.entries(updates)) {
+    if (v !== undefined) cleanUpdates[k] = v;
+  }
   const [item] = await db
     .update(missionItems)
-    .set({ ...updates, updatedAt: new Date() })
+    .set(cleanUpdates)
     .where(eq(missionItems.id, itemId))
     .returning();
   return item ?? null;
