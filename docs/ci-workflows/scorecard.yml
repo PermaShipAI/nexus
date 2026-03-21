@@ -1,0 +1,42 @@
+# OpenSSF Scorecard — supply-chain security analysis
+# Runs weekly on the default branch to surface risky patterns
+# (branch protection gaps, token permissions, dependency issues, etc.)
+# Results are published to the GitHub Security tab.
+
+name: Scorecard
+
+on:
+  schedule:
+    - cron: "30 1 * * 1"   # Every Monday at 01:30 UTC
+  push:
+    branches:
+      - main
+
+permissions: read-all
+
+jobs:
+  scorecard:
+    name: OpenSSF Scorecard
+    runs-on: ubuntu-latest
+    permissions:
+      security-events: write   # upload SARIF results
+      id-token: write          # publish results to OSSF API
+      contents: read
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Run Scorecard analysis
+        uses: ossf/scorecard-action@v2.4.0
+        with:
+          results_file: scorecard-results.sarif
+          results_format: sarif
+          publish_results: true
+
+      - name: Upload SARIF to GitHub Security tab
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: scorecard-results.sarif
+          category: scorecard

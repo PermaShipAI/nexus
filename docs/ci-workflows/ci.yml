@@ -1,0 +1,141 @@
+# CI pipeline — hardened for public fork contributions
+#
+# Security model:
+#  - GITHUB_TOKEN is read-only for all PR builds (contents: read)
+#  - No production secrets are injected; tests rely on mocks only
+#  - PRs from external forks require explicit team approval via the
+#    `pr-fork-approval` environment before compute-heavy jobs run
+#  - DCO sign-off is verified before any code is executed
+#
+# Trigger: pull_request (NOT pull_request_target) prevents fork code from
+# accessing repository secrets while still running checks on the PR branch.
+
+name: CI
+
+on:
+  push:
+    branches:
+      - main
+      - "ai/**"
+  pull_request:
+    branches:
+      - main
+
+# Read-only token for all jobs in this workflow.
+# Individual jobs may not escalate these permissions.
+permissions:
+  contents: read
+  pull-requests: read
+
+jobs:
+
+  # ── 1. DCO sign-off check ─────────────────────────────────────────────────
+  # Must pass before any compute-heavy job is allowed to run (see `needs`).
+  dco:
+    name: DCO Sign-off
+    runs-on: ubuntu-latest
+    # Permissions required by the DCO action to read commit metadata
+    permissions:
+      contents: read
+      pull-requests: read
+    steps:
+      - name: Check DCO sign-off
+        uses: dco-org/enforce-dco@v1
+
+  # ── 2. Fork approval gate ─────────────────────────────────────────────────
+  # For PRs from external forks, pause here and require a team member to
+  # approve via the `pr-fork-approval` GitHub Environment before proceeding.
+  # Configure that environment in: Settings → Environments → pr-fork-approval
+  # with "Required reviewers" set to your security or triage team.
+  #
+  # PRs from branches within this repository (trusted contributors) skip
+  # this gate automatically.
+  fork-approval-gate:
+    name: Fork PR Approval Gate
+    runs-on: ubuntu-latest
+    needs: [dco]
+    # Only activate the approval environment for external fork PRs.
+    # Same-repo PRs (push events + internal PRs) bypass this gate.
+    environment: ${{ (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository) && 'pr-fork-approval' || '' }}
+    steps:
+      - name: Approval granted (or internal PR — no gate required)
+        run: echo "Proceeding with CI for ${{ github.event.pull_request.head.repo.full_name || 'internal push' }}"
+
+  # ── 3. Lint & static analysis ─────────────────────────────────────────────
+  lint:
+    name: Lint & Type Check
+    runs-on: ubuntu-latest
+    needs: [fork-approval-gate]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Prettier format check
+        run: npm run format:check
+
+      - name: ESLint
+        run: npm run lint
+
+      - name: TypeScript type check
+        run: npm run typecheck
+
+  # ── 4. Unit & integration tests ───────────────────────────────────────────
+  test:
+    name: Test
+    runs-on: ubuntu-latest
+    needs: [fork-approval-gate]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run tests
+        run: npm run test:run
+        env:
+          # Enforce test mode — prevents any live API calls.
+          # All external dependencies (LLM APIs, Discord, etc.) must be mocked.
+          # Production secrets (LLM_API_KEY, DISCORD_BOT_TOKEN, etc.) are
+          # intentionally absent from this environment.
+          NODE_ENV: test
+
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: junit-results
+          path: junit.xml
+          if-no-files-found: ignore
+
+  # ── 5. Build verification ─────────────────────────────────────────────────
+  build:
+    name: Build
+    runs-on: ubuntu-latest
+    needs: [lint, test]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Compile TypeScript
+        run: npm run build
+        env:
+          NODE_ENV: production
