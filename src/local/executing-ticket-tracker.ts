@@ -261,7 +261,24 @@ export class LocalExecutingTicketTracker extends LocalTicketTracker {
         } catch { /* base branch doesn't exist, try next */ }
       }
 
-      // Fallback: if no merge-base found, diff last commit
+      // Fallback: if no merge-base found (no main/master branch), diff from empty tree
+      // This captures ALL changes in the repo — handles repos where the executor
+      // created branches from the initial commit with no base branch to diff against
+      if (!diffContent) {
+        try {
+          const { stdout: emptyTree } = await execFileAsync(
+            'git', ['hash-object', '-t', 'tree', '/dev/null'], { cwd: repoPath },
+          );
+          if (emptyTree.trim()) {
+            const { stdout } = await execFileAsync(
+              'git', ['diff', emptyTree.trim(), 'HEAD'], { cwd: repoPath },
+            );
+            diffContent = stdout;
+          }
+        } catch { /* ok */ }
+      }
+
+      // Last resort: just the most recent commit
       if (!diffContent) {
         const { stdout } = await execFileAsync(
           'git', ['diff', 'HEAD~1', 'HEAD'], { cwd: repoPath },
