@@ -60,4 +60,39 @@ describe('prompt-builder', () => {
     expect(prompt).toContain('You are Nexus.');
     expect(prompt).toContain('Nexus Director');
   });
+
+  it('matches snapshot for basic agent prompt', async () => {
+    const prompt = await buildAgentPrompt('nexus', 'chan-1', 'org-1');
+    expect(prompt).toMatchSnapshot();
+  });
+
+  it('matches snapshot with tasks and knowledge', async () => {
+    vi.mocked(listTasks).mockResolvedValue([
+      { id: 't1', title: 'Fix login bug', status: 'open', priority: 1 } as any,
+    ]);
+    vi.mocked(getSharedKnowledge).mockResolvedValue([
+      { id: 'k1', topic: 'API Standards', content: 'Use REST with JSON responses' } as any,
+    ]);
+    const prompt = await buildAgentPrompt('nexus', 'chan-1', 'org-1');
+    expect(prompt).toMatchSnapshot();
+  });
+
+  it('matches snapshot with conversation history', async () => {
+    vi.mocked(getRecentMessages).mockResolvedValue([
+      { role: 'user', parts: [{ text: 'What is the project status?' }] } as any,
+      { role: 'model', parts: [{ text: 'The project is on track.' }] } as any,
+    ]);
+    const prompt = await buildAgentPrompt('nexus', 'chan-1', 'org-1');
+    expect(prompt).toMatchSnapshot();
+  });
+
+  it('matches snapshot with empty state', async () => {
+    vi.mocked(getAgent).mockReturnValue({
+      ...mockAgent,
+      personaMd: '',
+      summary: '',
+    } as any);
+    const prompt = await buildAgentPrompt('nexus', 'chan-1', 'org-1');
+    expect(prompt).toMatchSnapshot();
+  });
 });
