@@ -946,12 +946,86 @@ body::before {
 
 .mission-checklist.hidden { display: none; }
 
-.mission-checklist h4 {
+.checklist-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 8px;
+}
+
+.checklist-header h4 {
   font-size: 12px;
   color: var(--accent);
-  margin-bottom: 8px;
   text-transform: uppercase;
   letter-spacing: 1px;
+  font-family: var(--mono);
+  margin: 0;
+}
+
+.checklist-status-badge {
+  font-size: 10px;
+  font-family: var(--mono);
+  padding: 2px 8px;
+  border-radius: 3px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.checklist-status-badge.active { background: rgba(63, 185, 80, 0.15); color: var(--success); }
+.checklist-status-badge.planning { background: rgba(255, 193, 7, 0.15); color: #ffc107; }
+.checklist-status-badge.paused { background: rgba(255, 193, 7, 0.15); color: #ffc107; }
+.checklist-status-badge.completed { background: rgba(63, 185, 80, 0.15); color: var(--success); }
+.checklist-status-badge.draft { background: rgba(122, 133, 153, 0.15); color: var(--text-muted); }
+
+.checklist-progress {
+  margin-bottom: 8px;
+}
+
+.checklist-progress-bar {
+  height: 4px;
+  background: var(--border);
+  border-radius: 2px;
+  overflow: hidden;
+  margin-bottom: 4px;
+}
+
+.checklist-progress-fill {
+  height: 100%;
+  background: var(--success);
+  border-radius: 2px;
+  transition: width 0.5s ease;
+}
+
+.checklist-progress-text {
+  font-size: 10px;
+  font-family: var(--mono);
+  color: var(--text-muted);
+}
+
+.checklist-planning {
+  font-size: 12px;
+  color: var(--text-muted);
+  padding: 8px 0;
+  font-style: italic;
+}
+
+.checklist-replan-btn {
+  background: none;
+  border: 1px solid var(--border);
+  color: var(--accent);
+  font-size: 11px;
+  padding: 2px 8px;
+  border-radius: 4px;
+  cursor: pointer;
+  margin-left: 8px;
+}
+
+.checklist-replan-btn:hover { border-color: var(--accent); }
+
+.checklist-assignee {
+  font-size: 10px;
+  color: var(--text-muted);
+  margin-left: 6px;
   font-family: var(--mono);
 }
 

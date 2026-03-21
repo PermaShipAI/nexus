@@ -1656,15 +1656,27 @@ async function loadMissionChecklist(missionId) {
     const data = await resp.json();
     if (!data.mission || !missionChecklistEl) return;
 
-    const items = data.items || [];
+    const m = data.mission;
+    const items = m.items || [];
+
+    let html = `<div class="checklist-header">
+      <h4>${escapeHtml(m.title)}</h4>
+      <span class="checklist-status-badge ${m.status}">${m.status}</span>
+    </div>`;
+
     if (items.length === 0) {
-      missionChecklistEl.classList.add('hidden');
+      if (m.status === 'planning' || m.status === 'draft') {
+        html += `<div class="checklist-planning">Nexus is generating a plan...</div>`;
+      } else {
+        html += `<div class="checklist-planning">No checklist items yet. <button class="checklist-replan-btn" onclick="replanMission('${missionId}')">Generate Plan</button></div>`;
+      }
+      missionChecklistEl.innerHTML = html;
+      missionChecklistEl.classList.remove('hidden');
       return;
     }
 
     const mId = data.mission.id;
     const autoVal = data.mission.autonomousMode;
-    let html = `<h4>Checklist — ${escapeHtml(data.mission.title)}</h4>`;
     html += `<div style="margin-bottom:8px;font-size:12px;display:flex;align-items:center;gap:6px">`;
     html += `<span style="color:var(--text-muted)">Autonomous:</span>`;
     html += `<select class="config-select" style="font-size:11px;padding:2px 4px" onchange="setMissionAutonomous('${mId}',this.value)">`;
@@ -1672,19 +1684,50 @@ async function loadMissionChecklist(missionId) {
     html += `<option value="true"${autoVal === true ? ' selected' : ''}>On</option>`;
     html += `<option value="false"${autoVal === false ? ' selected' : ''}>Off</option>`;
     html += `</select></div>`;
+
+    // Progress stats
+    const verified = items.filter(i => i.status === 'verified').length;
+    const agentDone = items.filter(i => i.status === 'agent_complete').length;
+    const inProgress = items.filter(i => i.status === 'in_progress').length;
+    const total = items.length;
+    const pct = Math.round(((verified + agentDone * 0.5) / total) * 100);
+
+    html += `<div class="checklist-progress">
+      <div class="checklist-progress-bar"><div class="checklist-progress-fill" style="width:${pct}%"></div></div>
+      <span class="checklist-progress-text">${verified}/${total} verified${agentDone ? ` (${agentDone} awaiting review)` : ''}${inProgress ? ` (${inProgress} in progress)` : ''}</span>
+    </div>`;
     for (const item of items) {
-      const marker = item.status === 'verified' ? '[x]'
-        : item.status === 'agent_complete' ? '[?]'
-        : item.status === 'in_progress' ? '[~]' : '[ ]';
+      const marker = item.status === 'verified' ? '&#10003;'
+        : item.status === 'agent_complete' ? '?'
+        : item.status === 'in_progress' ? '~' : '&#9675;';
       const markerClass = item.status === 'verified' ? 'verified'
         : item.status === 'agent_complete' ? 'agent-complete'
         : item.status === 'in_progress' ? 'in-progress' : '';
       const textClass = item.status === 'verified' ? 'verified' : '';
-      html += `<div class="checklist-item"><span class="checklist-marker ${markerClass}">${marker}</span><span class="checklist-text ${textClass}">${escapeHtml(item.title)}</span></div>`;
+      const assignee = item.assignedAgentId ? `<span class="checklist-assignee">${escapeHtml(item.assignedAgentId)}</span>` : '';
+      html += `<div class="checklist-item"><span class="checklist-marker ${markerClass}">${marker}</span><span class="checklist-text ${textClass}">${escapeHtml(item.title)}</span>${assignee}</div>`;
     }
+
     missionChecklistEl.innerHTML = html;
     missionChecklistEl.classList.remove('hidden');
+
+    // Auto-refresh checklist every 30s while viewing a mission
+    clearTimeout(missionChecklistEl._refreshTimer);
+    missionChecklistEl._refreshTimer = setTimeout(() => {
+      if (activeChannelId === `mission:${missionId}`) loadMissionChecklist(missionId);
+    }, 30_000);
   } catch { /* not critical */ }
+}
+
+async function replanMission(missionId) {
+  appendSystemMessage('Requesting Nexus to generate a plan...');
+  try {
+    await apiFetch(`/api/missions/${missionId}/plan`, { method: 'POST', body: '{}' });
+    // Reload after a delay to let planning complete
+    setTimeout(() => loadMissionChecklist(missionId), 15_000);
+  } catch {
+    appendSystemMessage('Failed to trigger planning.');
+  }
 }
 
 // General tab click
@@ -1755,6 +1798,7 @@ if (missionCreateBtn) {
         missionModal.classList.add('hidden');
         await loadMissions();
         switchToChannel(data.mission.channelId);
+        appendSystemMessage('Mission created. Nexus is generating a checklist — this may take a moment...');
       } else {
         errorEl.textContent = data.error || 'Failed to create mission';
         errorEl.classList.remove('hidden');

@@ -120,12 +120,22 @@ export async function addMissionItems(
   items: Array<{ title: string; description: string; assignedAgentId?: string }>,
 ): Promise<MissionItem[]> {
   if (items.length === 0) return [];
-  const values = items.map((item, i) => ({
+
+  // Dedup: skip items that already exist for this mission (by title)
+  const existing = await db.select({ title: missionItems.title })
+    .from(missionItems)
+    .where(eq(missionItems.missionId, missionId));
+  const existingTitles = new Set(existing.map(e => e.title));
+  const newItems = items.filter(i => !existingTitles.has(i.title));
+
+  if (newItems.length === 0) return [];
+
+  const values = newItems.map((item, i) => ({
     missionId,
     title: item.title,
     description: item.description,
     assignedAgentId: item.assignedAgentId ?? null,
-    sortOrder: i,
+    sortOrder: existing.length + i,
   }));
   return db.insert(missionItems).values(values).returning();
 }
