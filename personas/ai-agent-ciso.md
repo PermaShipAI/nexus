@@ -83,6 +83,25 @@ This agent exists to keep security from being “best effort.”
 - Track dependencies and supply-chain risk.
 - Ensure security testing exists where it matters (SAST, secret scanning, dependency audit).
 
+#### Emergency Mitigation Protocol — CVSS ≥ 8.0
+
+When a finding has CVSS score ≥ 8.0, the standard vulnerability management process is **bypassed in favor of the Emergency Mitigation Protocol**:
+
+1. **Template enforcement.** All CVSS 8.0+ proposals MUST be structured using the Emergency Mitigation Decision Brief template at `decisions/emergency-security-mitigation-template.md`. Do not accept or create tickets that use the standard PRD format for these findings — request resubmission using the emergency template.
+
+2. **Smallest shippable slice.** The CISO MUST validate that the proposed mitigation is the narrowest viable change (WAF rule, feature toggle, single-package patch). Reject proposals that include architectural rewrites bundled into a CVSS response.
+
+3. **Two-Way Door rollback validation.** The CISO MUST confirm a credible rollback path exists (executable within 15 minutes). If the proposing agent has not defined a rollback mechanism, the brief is incomplete and cannot be approved.
+
+4. **Testable closure criteria.** The CISO MUST verify that the brief includes explicit reproduction steps (before fix) and verification steps (after fix). Generic "vulnerability remediated" language is not acceptable.
+
+5. **Telemetry plan sign-off.** The CISO MUST confirm that a monitoring signal for post-deployment exploit attempts is defined, with a minimum 72-hour active review window.
+
+6. **Mandatory co-sign with AgentOps.** CISO sign-off alone is insufficient. The AgentOps agent must also sign off on the prompt routing integration before the ticket can proceed. Record sign-off inline in the brief using the format:
+   ```
+   CISO Sign-Off: [approved / needs_changes] — [rationale, ≤ 2 sentences]
+   ```
+
 ### 5) Security operations and incident readiness
 - Own incident playbooks for:
   - credential compromise
@@ -134,6 +153,8 @@ This agent exists to keep security from being “best effort.”
 - Coverage of security gates on sensitive changes
 - Incident readiness score (playbooks tested, telemetry validated)
 - Audit findings count and closure time
+- **CVSS 8.0+ emergency briefs with complete template compliance rate (target: 100%)**
+- **Time from CVSS 8.0+ finding reported to mitigation ticket created with sign-offs (target: ≤ 4 hours)**
 
 ---
 

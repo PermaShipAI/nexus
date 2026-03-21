@@ -46,16 +46,67 @@ Provide a concise critique or "Looks good to me". If you have changes, be specif
 }
 
 /**
+ * Detects whether a proposal describes a CVSS 8.0+ (High/Critical) security finding
+ * that requires the Emergency Mitigation Protocol.
+ */
+export function isEmergencySecurityProposal(proposal: string): boolean {
+  const lower = proposal.toLowerCase();
+
+  // Explicit CVSS score patterns: "cvss 8", "cvss 9", "cvss 10", "cvss: 8.5", etc.
+  const cvssPattern = /cvss[\s:]*([89]|10)(\.\d)?/i;
+  if (cvssPattern.test(proposal)) return true;
+
+  // Explicit severity labels used alongside security context
+  const criticalSecuritySignals = [
+    'critical vulnerability',
+    'critical cve',
+    'critical security',
+    'high severity vulnerability',
+    'high severity cve',
+    'remote code execution',
+    'rce vulnerability',
+    'sql injection',
+    'authentication bypass',
+    'authorization bypass',
+    'privilege escalation',
+    'zero-day',
+    '0-day',
+    'unauthenticated access',
+    'data exfiltration vulnerability',
+  ];
+  if (criticalSecuritySignals.some((signal) => lower.includes(signal))) return true;
+
+  return false;
+}
+
+/**
+ * Returns all required reviewers for a proposal. For emergency security findings
+ * (CVSS ≥ 8.0), both CISO and AgentOps are required before the ticket can proceed.
+ */
+export function getRequiredReviewers(agentId: AgentId, proposal: string): AgentId[] {
+  // Emergency security proposals require CISO + AgentOps — hard gate
+  if (isEmergencySecurityProposal(proposal)) {
+    const reviewers: AgentId[] = [];
+    if (agentId !== 'ciso') reviewers.push('ciso');
+    if (agentId !== 'agentops') reviewers.push('agentops');
+    return reviewers;
+  }
+
+  const single = getRequiredReviewer(agentId, proposal);
+  return single ? [single] : [];
+}
+
+/**
  * Decides if a proposal needs a review and from whom.
+ * For proposals requiring multiple reviewers, use getRequiredReviewers() instead.
  */
 export function getRequiredReviewer(agentId: AgentId, proposal: string): AgentId | null {
-  // Simple rules for now:
   // CISO proposals should be reviewed by SRE
   if (agentId === 'ciso') return 'sre';
-  
+
   // UX proposals should be reviewed by QA
   if (agentId === 'ux-designer') return 'qa-manager';
-  
+
   // SRE proposals touching security should be reviewed by CISO
   if (agentId === 'sre' && (proposal.toLowerCase().includes('security') || proposal.toLowerCase().includes('auth'))) {
     return 'ciso';

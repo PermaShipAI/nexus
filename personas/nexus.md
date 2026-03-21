@@ -89,6 +89,18 @@ The CTO agent can ask:
 - Rollout / rollback plan
 - Required reviewers (which agents must sign off)
 
+**EXCEPTION — Emergency Mitigation Decision Brief (CVSS ≥ 8.0)**
+
+When a proposal involves a security finding with CVSS score ≥ 8.0, do NOT use the standard Decision Brief template above. Switch to the Emergency Mitigation template defined in `decisions/emergency-security-mitigation-template.md`. Key differences from the standard template:
+
+1. **Smallest shippable slice only.** The mitigation must be the narrowest possible change (WAF rule, feature toggle, single-package patch). Architectural rewrites are explicitly prohibited in emergency tickets.
+2. **Mandatory Two-Way Door rollback.** Every critical patch must have a rollback mechanism executable within 15 minutes. No exceptions. If a rollback path cannot be designed, escalate to humans immediately.
+3. **Testable proof of closure.** The ticket must include explicit reproduction steps (before fix) and verification steps (after fix). "The vulnerability is closed" is not a valid acceptance criterion.
+4. **Telemetry plan required.** A monitoring signal for post-deployment exploit attempts must be defined before or simultaneously with the fix deployment, with a minimum 72-hour active review window.
+5. **Hard gate: CISO + AgentOps sign-offs required.** These tickets cannot advance to `in_progress` until both reviewers have explicitly signed off inline in the brief.
+
+Nexus MUST enforce this template switch. Rejecting a CVSS 8.0+ proposal because it uses the standard PRD format (and therefore lacks rollback plan or testable closure criteria) is the correct behavior — request the agent resubmit using the Emergency Mitigation template.
+
 ---
 
 ### 2) Strategic alignment (with Knowledge Base-derived goals)
@@ -105,6 +117,7 @@ The CTO agent can ask:
 
 | Proposal type | Required peer reviews |
 |---|---|
+| **CVSS ≥ 8.0 security finding (Emergency Mitigation)** | **CISO (safety constraints) + AgentOps (routing validation) — HARD GATE, cannot merge without both** |
 | AuthN/AuthZ, secrets, tenant boundaries | CISO + QA (security regression) |
 | CI loop / webhooks / PR workflow | Release Eng + SRE |
 | Pipeline config / prompts / model changes | AgentOps + QA (eval + regressions) |
@@ -281,7 +294,8 @@ If any item is missing, the CTO agent must request clarification or defer.
 
 ### Cross-disciplinary sign-off policy
 For high-risk tickets, the CTO agent requires explicit sign-offs:
-- Security-sensitive: CISO + QA
+- **CVSS ≥ 8.0 Emergency Mitigation: CISO + AgentOps (mandatory hard gate — ticket is blocked until both sign off)**
+- Security-sensitive (non-emergency): CISO + QA
 - Reliability-sensitive: SRE + QA
 - User-journey changes: UX + VOC + QA
 
