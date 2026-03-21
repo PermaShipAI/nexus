@@ -646,6 +646,47 @@ Use inline blocks in your response (NOT CLI commands). You MUST include exactly 
 const STRICT_CONSULTATION_NOTICE = 'STRICT CONSULTATION MODE ACTIVE: You MUST NOT create ticket proposals, approve proposals, reject proposals, or take any other mutative actions. Respond with analysis, advice, and information only.';
 
 /**
+ * Maximum characters allowed per conversation message before truncation.
+ * Prevents context-stuffing injection attacks via very large user messages.
+ */
+export const MAX_MESSAGE_CONTENT_CHARS = 4000;
+
+/**
+ * Truncates a single message's content to prevent context overflow / injection attacks.
+ */
+export function truncateMessageContent(content: string): string {
+  if (content.length <= MAX_MESSAGE_CONTENT_CHARS) return content;
+  return content.slice(0, MAX_MESSAGE_CONTENT_CHARS) + ' [TRUNCATED]';
+}
+
+/**
+ * Known API-key patterns that must never appear in a prompt sent to an LLM.
+ * Matches Anthropic (sk-ant-*), OpenAI (sk-*), and Google (AIzaSy*) key formats.
+ */
+const SECRET_PATTERNS: RegExp[] = [
+  /\bsk-ant-[A-Za-z0-9\-_]{20,}\b/g,
+  /\bsk-[A-Za-z0-9]{20,}\b/g,
+  /\bAIzaSy[A-Za-z0-9\-_]{20,}\b/g,
+];
+
+/**
+ * Deterministically redacts known secret patterns and explicitly provided secret
+ * values from a prompt string.  Pure function — no side effects.
+ */
+export function scrubSecretsFromPrompt(text: string, additionalSecrets: string[] = []): string {
+  let scrubbed = text;
+  for (const pattern of SECRET_PATTERNS) {
+    scrubbed = scrubbed.replace(pattern, '[REDACTED]');
+  }
+  for (const secret of additionalSecrets) {
+    if (secret && secret.length > 4) {
+      scrubbed = scrubbed.split(secret).join('[REDACTED]');
+    }
+  }
+  return scrubbed;
+}
+
+/**
  * Original prompt builder - still used if needed for non-CLI contexts.
  */
 export async function buildAgentPrompt(
@@ -701,10 +742,10 @@ export async function buildAgentPrompt(
     sections.push(`# Team Task Board\n${teamText}`);
   }
 
-  // Conversation history
+  // Conversation history — each message is truncated to prevent context-stuffing attacks
   if (conversation.length > 0) {
     const convText = conversation
-      .map((m) => `${m.authorName}: ${m.content}`)
+      .map((m) => `${m.authorName}: ${truncateMessageContent(m.content)}`)
       .join('\n');
     sections.push(`# Recent Conversation\n${convText}`);
   }
@@ -838,7 +879,13 @@ Use inline blocks to decide on proposals in the Nexus Review Queue. You MUST inc
 All require a substantive reason. Never respond without a decision block — that silently defers with no feedback.` : ''}`);
   }
 
-  return sections.join('\n\n---\n\n');
+  const rawPrompt = sections.join('\n\n---\n\n');
+  const envSecrets = [
+    process.env.LLM_API_KEY,
+    process.env.GEMINI_API_KEY,
+    process.env.INTERNAL_SECRET,
+  ].filter(Boolean) as string[];
+  return scrubSecretsFromPrompt(rawPrompt, envSecrets);
 }
 
 /**
