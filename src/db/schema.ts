@@ -216,6 +216,8 @@ export const tickets = pgTable(
     executionOutput: text('execution_output'),
     executionDiff: text('execution_diff'),
     executionReview: text('execution_review'),
+    executionBranch: text('execution_branch'),
+    mergeStatus: text('merge_status'),
     executedAt: timestamp('executed_at'),
     createdAt: timestamp('created_at').notNull().defaultNow(),
   },

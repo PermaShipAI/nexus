@@ -13,7 +13,8 @@ import { executeAgent } from '../agents/executor.js';
 import { sendAgentMessage } from '../bot/formatter.js';
 import { LOCAL_CHANNEL_ID } from './tenant-resolver.js';
 import { getProjectRegistry } from '../adapters/registry.js';
-import { getSetting } from '../settings/service.js';
+import { getSetting, resolveAutonomousMode } from '../settings/service.js';
+import { mergeTicketBranch, cleanupBranch, getMergeTargetBranch } from './branch-manager.js';
 
 const execFileAsync = promisify(execFile);
 
@@ -196,6 +197,7 @@ export class LocalExecutingTicketTracker extends LocalTicketTracker {
       executionBackend: this.backend.name,
       executionOutput: execResult.output?.slice(0, 50_000) ?? null,
       executionDiff: diff?.slice(0, 100_000) ?? null,
+      executionBranch: execResult.branch ?? null,
       executedAt: new Date(),
     }).where(eq(tickets.id, ticketId));
 
@@ -220,7 +222,7 @@ export class LocalExecutingTicketTracker extends LocalTicketTracker {
 
     // Trigger agent review of the work
     if (execResult.success && diff) {
-      await this.triggerReview(ticketId, input, diff, execResult);
+      await this.triggerReview(ticketId, input, diff, execResult, execPath);
     }
 
     logger.info({ ticketId, backend: this.backend.name, success: execResult.success },
@@ -279,6 +281,7 @@ export class LocalExecutingTicketTracker extends LocalTicketTracker {
     input: CreateTicketInput,
     diff: string,
     execResult: ExecutionResult,
+    repoPath?: string,
   ): Promise<void> {
     const reviewPrompt = `An execution backend (${this.backend.name}) has completed work on a ticket. Please review the changes and provide feedback.
 
@@ -347,14 +350,71 @@ Keep your review concise and actionable.`;
         } else if (reviewUpper.includes('APPROVE')) {
           await db.update(tickets).set({ executionStatus: 'review_approved' }).where(eq(tickets.id, ticketId));
 
-          localBus.emit('message', {
-            id: `review-approved-${ticketId}`,
-            content: `**[System]** Code review **APPROVED** for "${input.title}". Changes are ready on the local branch.`,
-            channel_id: LOCAL_CHANNEL_ID,
-            timestamp: new Date().toISOString(),
+          const branchName = execResult.branch;
+          const autonomous = await resolveAutonomousMode({
+            orgId: input.orgId,
+            repoKey: input.repoKey,
           });
 
-          logger.info({ ticketId }, 'Execution review: approved');
+          if (autonomous && branchName && repoPath) {
+            // Auto-merge in autonomous mode
+            const targetBranch = await getMergeTargetBranch(input.orgId, repoPath);
+            const mergeResult = await mergeTicketBranch(ticketId, input.orgId);
+
+            if (mergeResult.success) {
+              await cleanupBranch(repoPath, branchName);
+              localBus.emit('message', {
+                id: `merge-success-${ticketId}`,
+                content: `**[System]** Code review **APPROVED** and branch \`${branchName}\` auto-merged into \`${targetBranch}\` for "${input.title}".`,
+                channel_id: LOCAL_CHANNEL_ID,
+                timestamp: new Date().toISOString(),
+              });
+            } else if (mergeResult.reason === 'conflict') {
+              localBus.emit('message', {
+                id: `merge-conflict-${ticketId}`,
+                content: `**[System]** Code review **APPROVED** for "${input.title}" but merge conflict on \`${branchName}\`.${mergeResult.conflictFiles?.length ? ` Conflicting: ${mergeResult.conflictFiles.join(', ')}` : ''} Manual resolution needed.`,
+                merge_ticket_id: ticketId,
+                channel_id: LOCAL_CHANNEL_ID,
+                timestamp: new Date().toISOString(),
+              });
+            } else if (mergeResult.reason === 'dirty_worktree') {
+              localBus.emit('message', {
+                id: `merge-dirty-${ticketId}`,
+                content: `**[System]** Code review **APPROVED** for "${input.title}" but cannot auto-merge — uncommitted changes on \`${targetBranch}\`. Commit or stash first.`,
+                merge_ticket_id: ticketId,
+                channel_id: LOCAL_CHANNEL_ID,
+                timestamp: new Date().toISOString(),
+              });
+            } else {
+              localBus.emit('message', {
+                id: `merge-error-${ticketId}`,
+                content: `**[System]** Code review **APPROVED** for "${input.title}" but merge failed: ${mergeResult.error ?? mergeResult.reason ?? 'unknown'}`,
+                merge_ticket_id: ticketId,
+                channel_id: LOCAL_CHANNEL_ID,
+                timestamp: new Date().toISOString(),
+              });
+            }
+          } else if (branchName) {
+            // Non-autonomous: notify with merge button
+            const targetBranch = repoPath ? await getMergeTargetBranch(input.orgId, repoPath) : 'main';
+            localBus.emit('message', {
+              id: `review-approved-${ticketId}`,
+              content: `**[System]** Code review **APPROVED** for "${input.title}". Branch \`${branchName}\` is ready to merge.`,
+              merge_ticket_id: ticketId,
+              merge_target: targetBranch,
+              channel_id: LOCAL_CHANNEL_ID,
+              timestamp: new Date().toISOString(),
+            });
+          } else {
+            localBus.emit('message', {
+              id: `review-approved-${ticketId}`,
+              content: `**[System]** Code review **APPROVED** for "${input.title}". Changes are ready.`,
+              channel_id: LOCAL_CHANNEL_ID,
+              timestamp: new Date().toISOString(),
+            });
+          }
+
+          logger.info({ ticketId, autonomous, branchName }, 'Execution review: approved');
         }
       }
     } catch (err) {

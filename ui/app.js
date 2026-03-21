@@ -162,6 +162,10 @@ function connect() {
       case 'mission_updated':
         loadMissions();
         break;
+      case 'branch_merged':
+        if (branchesPanel && !branchesPanel.classList.contains('hidden')) loadBranches();
+        updateBranchesCount();
+        break;
       case 'settings_changed':
         if (data.autonomousMode !== undefined) autonomousToggle.checked = data.autonomousMode;
         if (data.executionBackend) {
@@ -287,6 +291,12 @@ function appendAgentMessage(data) {
   // Render retry button for failed executions
   if (data.retry_ticket_id) {
     html += `<div class="proposal-buttons"><button class="btn-approve" onclick="handleRetryExecution('${escapeHtml(data.retry_ticket_id)}', this)">Retry Execution</button></div>`;
+  }
+
+  // Render merge button for approved branches
+  if (data.merge_ticket_id) {
+    const target = data.merge_target || 'main';
+    html += `<div class="proposal-buttons"><button class="btn-approve" onclick="handleMergeBranch('${escapeHtml(data.merge_ticket_id)}', this)">Merge to ${escapeHtml(target)}</button></div>`;
   }
 
   // Render approve/reject buttons if components present
@@ -682,6 +692,155 @@ async function updateProposalsCount() {
 updateProposalsCount();
 setInterval(updateProposalsCount, 30_000);
 
+// ── Branch Management ────────────────────────────────────────────────────────
+
+const branchesPanel = document.getElementById('branches-panel');
+const branchesBtn = document.getElementById('branches-btn');
+const branchesClose = document.getElementById('branches-close');
+const branchesListEl = document.getElementById('branches-list');
+const branchesEmptyEl = document.getElementById('branches-empty');
+const branchesCountEl = document.getElementById('branches-count');
+let currentBranchFilter = '';
+
+if (branchesBtn) {
+  branchesBtn.addEventListener('click', () => {
+    // Close other panels
+    if (proposalsPanel && !proposalsPanel.classList.contains('hidden')) proposalsPanel.classList.add('hidden');
+    const sp = document.getElementById('settings-panel');
+    if (sp && !sp.classList.contains('hidden')) sp.classList.add('hidden');
+    branchesPanel.classList.toggle('hidden');
+    if (!branchesPanel.classList.contains('hidden')) loadBranches();
+  });
+}
+if (branchesClose) {
+  branchesClose.addEventListener('click', () => branchesPanel.classList.add('hidden'));
+}
+
+document.querySelectorAll('.branch-filter').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('.branch-filter').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    currentBranchFilter = btn.dataset.status;
+    loadBranches();
+  });
+});
+
+async function loadBranches() {
+  if (!branchesListEl) return;
+  try {
+    const resp = await apiFetch('/api/branches');
+    const { branches } = await resp.json();
+    branchesListEl.innerHTML = '';
+
+    // Filter
+    let filtered = branches || [];
+    if (currentBranchFilter === 'pending') {
+      filtered = filtered.filter(b => !b.mergeStatus || b.mergeStatus === 'conflict');
+    } else if (currentBranchFilter === 'merged') {
+      filtered = filtered.filter(b => b.mergeStatus === 'merged');
+    } else if (currentBranchFilter === 'conflict') {
+      filtered = filtered.filter(b => b.mergeStatus === 'conflict');
+    }
+
+    if (filtered.length === 0) {
+      branchesEmptyEl.style.display = 'block';
+      return;
+    }
+    branchesEmptyEl.style.display = 'none';
+
+    for (const b of filtered) {
+      const card = document.createElement('div');
+      card.className = 'proposal-card';
+
+      const statusLabel = b.mergeStatus || (b.executionStatus === 'review_approved' ? 'ready to merge' : b.executionStatus || 'pending');
+      const badgeClass = b.mergeStatus === 'merged' ? 'approved'
+        : b.mergeStatus === 'conflict' ? 'rejected'
+        : b.executionStatus === 'review_approved' ? 'pending'
+        : 'nexus_review';
+
+      let actionsHtml = '';
+      if (!b.mergeStatus || b.mergeStatus === 'conflict') {
+        actionsHtml = `<div class="proposal-card-actions">
+          <button class="btn-approve" onclick="handleMergeBranch('${b.ticketId}', this)">Merge</button>
+        </div>`;
+      } else if (b.mergeStatus === 'merged') {
+        actionsHtml = `<div class="proposal-card-actions">
+          <button class="btn-reject" onclick="handleCleanupBranch('${b.ticketId}', this)" style="font-size:10px;padding:3px 8px">Delete Branch</button>
+        </div>`;
+      }
+
+      card.innerHTML = `
+        <div class="proposal-card-header">
+          <span class="proposal-card-title">${escapeHtml(b.title)}</span>
+          <span class="proposal-card-badge ${badgeClass}">${escapeHtml(statusLabel)}</span>
+        </div>
+        <div class="proposal-card-meta">
+          <code style="font-size:11px;background:var(--surface-alt);padding:1px 4px;border-radius:3px">${escapeHtml(b.branch)}</code>
+          &middot; ${escapeHtml(b.repoKey)}
+        </div>
+        ${actionsHtml}
+      `;
+      branchesListEl.appendChild(card);
+    }
+  } catch { /* not critical */ }
+}
+
+async function handleMergeBranch(ticketId, btn) {
+  if (!ticketId) return;
+  btn.disabled = true;
+  btn.textContent = 'Merging...';
+  try {
+    const resp = await apiFetch(`/api/branches/${ticketId}/merge`, { method: 'POST', body: '{}' });
+    const data = await resp.json();
+    if (data.success) {
+      btn.textContent = 'Merged';
+      appendSystemMessage('Branch merged successfully.');
+      loadBranches();
+      updateBranchesCount();
+    } else {
+      btn.disabled = false;
+      btn.textContent = 'Merge';
+      const reason = data.reason === 'conflict' ? 'Merge conflict — resolve manually.'
+        : data.reason === 'dirty_worktree' ? 'Uncommitted changes on target branch. Commit or stash first.'
+        : data.error || data.reason || 'Unknown error';
+      appendSystemMessage(`Merge failed: ${reason}`);
+    }
+  } catch {
+    btn.disabled = false;
+    btn.textContent = 'Merge';
+    appendSystemMessage('Failed to merge branch.');
+  }
+}
+
+async function handleCleanupBranch(ticketId, btn) {
+  if (!ticketId) return;
+  btn.disabled = true;
+  btn.textContent = 'Deleting...';
+  try {
+    await apiFetch(`/api/branches/${ticketId}/cleanup`, { method: 'POST', body: '{}' });
+    btn.textContent = 'Deleted';
+    loadBranches();
+  } catch {
+    btn.disabled = false;
+    btn.textContent = 'Delete Branch';
+  }
+}
+
+async function updateBranchesCount() {
+  try {
+    const resp = await apiFetch('/api/branches');
+    const { branches } = await resp.json();
+    const pending = (branches || []).filter(b => !b.mergeStatus && b.executionStatus === 'review_approved').length;
+    if (branchesCountEl) {
+      branchesCountEl.textContent = pending;
+      branchesCountEl.classList.toggle('hidden', pending === 0);
+    }
+  } catch { /* not critical */ }
+}
+
+updateBranchesCount();
+setInterval(updateBranchesCount, 30_000);
+
 // ── Project Management ───────────────────────────────────────────────────────
 
 const projectListEl = document.getElementById('project-list');
@@ -972,6 +1131,7 @@ const settingsClose = document.getElementById('settings-close');
 
 settingsBtn.addEventListener('click', () => {
   if (proposalsPanel && !proposalsPanel.classList.contains('hidden')) proposalsPanel.classList.add('hidden');
+  if (branchesPanel && !branchesPanel.classList.contains('hidden')) branchesPanel.classList.add('hidden');
   settingsPanel.classList.toggle('hidden');
   if (!settingsPanel.classList.contains('hidden')) {
     loadAgentSettings();

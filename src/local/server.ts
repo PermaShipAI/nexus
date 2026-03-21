@@ -1068,6 +1068,60 @@ export async function createLocalServer(_port = 3000) {
     return { success: true, autonomousMode: project.autonomousMode };
   });
 
+  // ── REST: branch management ────────────────────────────────────────────
+
+  /** List branches with ticket data */
+  server.get('/api/branches', async () => {
+    const { listBranches } = await import('./branch-manager.js');
+    const branches = await listBranches(LOCAL_ORG_ID);
+    return { branches };
+  });
+
+  /** Merge a ticket's branch */
+  server.post('/api/branches/:ticketId/merge', async (request) => {
+    const { ticketId } = request.params as { ticketId: string };
+    const { mergeTicketBranch } = await import('./branch-manager.js');
+    const result = await mergeTicketBranch(ticketId, LOCAL_ORG_ID);
+    if (result.success) broadcast('branch_merged', { ticketId });
+    return result;
+  });
+
+  /** Clean up a merged branch */
+  server.post('/api/branches/:ticketId/cleanup', async (request) => {
+    const { ticketId } = request.params as { ticketId: string };
+    const [ticket] = await db.select().from(ticketsTable).where(eq(ticketsTable.id, ticketId)).limit(1);
+    if (!ticket?.executionBranch) return { success: false, error: 'No branch to clean up' };
+
+    const { getProjectRegistry: getPR } = await import('../adapters/registry.js');
+    const registry = getPR();
+    let repoPath: string | null = null;
+    if ('getProjectByRepoKey' in registry) {
+      const project = await (registry as any).getProjectByRepoKey(ticket.repoKey, LOCAL_ORG_ID);
+      repoPath = project?.localPath ?? null;
+    }
+    if (!repoPath) return { success: false, error: 'Project not found' };
+
+    const { cleanupBranch } = await import('./branch-manager.js');
+    await cleanupBranch(repoPath, ticket.executionBranch);
+    return { success: true };
+  });
+
+  /** Get merge target branch setting */
+  server.get('/api/settings/merge-target', async () => {
+    const { getSetting: getS } = await import('../settings/service.js');
+    const value = await getS('merge_target_branch', LOCAL_ORG_ID);
+    return { branch: value ?? null };
+  });
+
+  /** Set merge target branch */
+  server.post('/api/settings/merge-target', async (request) => {
+    const { branch } = request.body as { branch: string };
+    if (!branch?.trim()) return { success: false, error: 'Branch name required' };
+    const { setSetting: setS } = await import('../settings/service.js');
+    await setS('merge_target_branch', branch.trim(), LOCAL_ORG_ID, 'local-ui');
+    return { success: true, branch: branch.trim() };
+  });
+
   /** Health check */
   server.get('/api/health', async () => ({ status: 'ok' }));
 

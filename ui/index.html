@@ -74,10 +74,28 @@
 
       <div class="sidebar-bottom">
         <button id="proposals-btn" class="sidebar-btn proposals-trigger" aria-label="View proposals">Proposals <span id="proposals-count" class="proposals-count hidden">0</span></button>
+        <button id="branches-btn" class="sidebar-btn" aria-label="View branches">Branches <span id="branches-count" class="proposals-count hidden">0</span></button>
         <button id="settings-btn" class="sidebar-btn settings-trigger" aria-label="Open settings (Ctrl+Comma)">Settings</button>
         <div id="connection-status" class="status connected">Connected</div>
       </div>
     </aside>
+
+    <!-- Branches Panel -->
+    <div id="branches-panel" class="settings-panel hidden">
+      <div class="settings-header">
+        <div class="proposals-filters">
+          <button class="branch-filter active" data-status="">All</button>
+          <button class="branch-filter" data-status="pending">Pending Merge</button>
+          <button class="branch-filter" data-status="merged">Merged</button>
+          <button class="branch-filter" data-status="conflict">Conflicts</button>
+        </div>
+        <button id="branches-close" aria-label="Close branches">&times;</button>
+      </div>
+      <div class="settings-body">
+        <div id="branches-list" style="max-width:672px;margin:0 auto;width:100%"></div>
+        <div id="branches-empty" class="setting-desc" style="padding:16px 0;text-align:center;display:none">No branches found.</div>
+      </div>
+    </div>
 
     <!-- Proposals Panel -->
     <div id="proposals-panel" class="settings-panel hidden">
