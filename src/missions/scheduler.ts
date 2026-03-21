@@ -202,7 +202,7 @@ Please investigate and report your findings. If you've completed this item, decl
 async function verifyItem(
   mission: Mission,
   item: { id: string; title: string; description: string; completedByAgentId: string | null },
-  projects: Array<{ name: string }>,
+  _projects: Array<{ name: string }>,
 ): Promise<void> {
   const verifyPrompt = `An agent has declared this mission item complete. Please verify:
 

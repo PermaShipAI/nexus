@@ -1,4 +1,4 @@
-import { readFile, readdir, stat } from 'node:fs/promises';
+import { readdir, stat } from 'node:fs/promises';
 import { join, resolve, relative } from 'node:path';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';

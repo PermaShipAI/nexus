@@ -11,7 +11,6 @@ import { executeAgent } from '../agents/executor.js';
 import { getAgent } from '../agents/registry.js';
 import { logger } from '../logger.js';
 import { config } from '../config.js';
-import { sendApprovalMessage } from './interactions.js';
 import { synthesizePublicReply } from './sanitizer.js';
 import type { AgentResponse } from './sanitizer.js';
 
@@ -332,7 +331,7 @@ async function handleIncomingMessage(message: UnifiedMessage, isPublic: boolean,
     const agent = getAgent(route.agentId as AgentId);
     if (!agent) continue;
 
-    const autonomous = await isAutonomousMode(orgId);
+    await isAutonomousMode(orgId);
 
     const response = await executeAgent({
       orgId,

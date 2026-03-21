@@ -254,7 +254,7 @@ async function buildNexusContext(orgId: string): Promise<string[]> {
  * Build mission-specific context sections when the channel is a mission channel.
  * Returns null if this is not a mission channel.
  */
-async function buildMissionContext(channelId: string, orgId: string): Promise<string[] | null> {
+async function buildMissionContext(channelId: string, _orgId: string): Promise<string[] | null> {
   if (!channelId.startsWith('mission:')) return null;
 
   const mission = await getMissionByChannelId(channelId);

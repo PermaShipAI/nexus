@@ -294,7 +294,7 @@ export async function startServer(): Promise<void> {
   try {
     const port = 9000;
 
-    server.addHook('onClose', async (instance) => {
+    server.addHook('onClose', async (_instance) => {
       logger.warn('Webhook server is CLOSING');
     });
 
@@ -318,6 +318,6 @@ process.on('uncaughtException', (err) => {
   process.exit(1);
 });
 
-process.on('unhandledRejection', (reason, promise) => {
+process.on('unhandledRejection', (reason, _promise) => {
   logger.error({ reason }, 'UNHANDLED REJECTION');
 });

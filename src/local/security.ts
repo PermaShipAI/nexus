@@ -1,7 +1,5 @@
 import { randomBytes, createCipheriv, createDecipheriv, createHash } from 'node:crypto';
-import { writeFileSync, chmodSync, mkdirSync } from 'node:fs';
-import { join } from 'node:path';
-import { logger } from '../logger.js';
+import { writeFileSync, mkdirSync } from 'node:fs';
 
 // ── Session token for local UI auth ─────────────────────────────────────────
 

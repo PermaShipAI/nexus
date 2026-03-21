@@ -6,7 +6,6 @@ import {
   getMissionProjects,
   addMissionItems,
   updateMissionStatus,
-  updateMissionItem,
 } from './service.js';
 import type { AgentId } from '../agents/types.js';
 

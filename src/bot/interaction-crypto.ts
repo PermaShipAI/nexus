@@ -1,4 +1,4 @@
-import { createHmac, timingSafeEqual } from 'node:crypto';
+import { createHmac, timingSafeEqual, randomBytes } from 'node:crypto';
 import { config } from '../config.js';
 
 const TOKEN_TTL_MS = 300_000; // 5 minutes
@@ -9,7 +9,7 @@ function getSigningKey(): string {
   if (!key) {
     // M7: Use a random key if none configured (local-only mode)
     // This ensures signatures are cryptographically valid but session-scoped
-    if (!_fallbackKey) _fallbackKey = require('node:crypto').randomBytes(32).toString('hex');
+    if (!_fallbackKey) _fallbackKey = randomBytes(32).toString('hex');
     return _fallbackKey!;
   }
   return key;

@@ -1,7 +1,5 @@
 import type {
   LLMProvider,
-  GenerateTextOptions,
-  GenerateWithToolsOptions,
   LLMToolCallResult,
 } from '../adapters/interfaces/llm-provider.js';
 

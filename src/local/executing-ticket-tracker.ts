@@ -11,7 +11,7 @@ import type { ExecutionBackend, ExecutionResult } from './execution-backends/ind
 import { localBus } from './communication-adapter.js';
 import { executeAgent } from '../agents/executor.js';
 import { sendAgentMessage } from '../bot/formatter.js';
-import { LOCAL_ORG_ID, LOCAL_CHANNEL_ID } from './tenant-resolver.js';
+import { LOCAL_CHANNEL_ID } from './tenant-resolver.js';
 import { getProjectRegistry } from '../adapters/registry.js';
 import { getSetting } from '../settings/service.js';
 
