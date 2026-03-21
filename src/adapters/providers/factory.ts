@@ -5,6 +5,7 @@ import { AnthropicProvider } from './anthropic.js';
 import { OpenAIProvider } from './openai.js';
 import { OllamaProvider } from './ollama.js';
 import { MultiProvider } from './multi.js';
+import { SecretRedactionProvider } from './secret-redaction.js';
 
 function buildSingleProvider(name: string, apiKey: string): LLMProvider {
   switch (name) {
@@ -61,10 +62,13 @@ function buildMultiProvider(): LLMProvider {
 export function createLLMProvider(): LLMProvider {
   const provider = config.LLM_PROVIDER;
 
+  let inner: LLMProvider;
   if (provider === 'multi') {
-    return buildMultiProvider();
+    inner = buildMultiProvider();
+  } else {
+    const apiKey = config.LLM_API_KEY || config.GEMINI_API_KEY || '';
+    inner = buildSingleProvider(provider, apiKey);
   }
 
-  const apiKey = config.LLM_API_KEY || config.GEMINI_API_KEY || '';
-  return buildSingleProvider(provider, apiKey);
+  return new SecretRedactionProvider(inner);
 }
