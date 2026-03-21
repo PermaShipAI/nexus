@@ -426,6 +426,7 @@ export const missionItems = pgTable(
     assignedAgentId: text('assigned_agent_id'),
     completedByAgentId: text('completed_by_agent_id'),
     verifiedAt: timestamp('verified_at'),
+    heartbeatCount: integer('heartbeat_count').notNull().default(0),
     sortOrder: integer('sort_order').notNull().default(0),
     createdAt: timestamp('created_at').notNull().defaultNow(),
     updatedAt: timestamp('updated_at').notNull().defaultNow(),

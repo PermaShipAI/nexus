@@ -119,6 +119,7 @@ async function reconcileItemsWithTickets(
         await updateMissionItem(item.id, {
           status: 'agent_complete',
           completedByAgentId: 'executor',
+          heartbeatCount: 0,
         });
         logger.info({ itemId: item.id, ticketId: ticket.id, itemTitle: item.title }, 'Mission item auto-marked as agent_complete from ticket execution');
       }
@@ -146,10 +147,25 @@ async function runMissionHeartbeat(mission: Mission): Promise<void> {
   // Re-fetch items after reconciliation may have updated statuses
   items = await getMissionItems(mission.id);
 
-  // Find the first non-verified item to focus on
+  // Find the first non-verified item to focus on, skipping stalled items
+  // An item is "stalled" if it's been heartbeated 3+ times with no progress
+  const MAX_HEARTBEATS_BEFORE_SKIP = 3;
   const focusItem = items.find(
-    (i) => i.status === 'pending' || i.status === 'in_progress',
+    (i) => (i.status === 'pending' || i.status === 'in_progress')
+      && (i.heartbeatCount ?? 0) < MAX_HEARTBEATS_BEFORE_SKIP,
   );
+
+  // If all in-progress items are stalled, skip this entire heartbeat
+  // to avoid infinite loops. Items will unstall when execution completes
+  // or when reconciliation updates their status.
+  const activeItems = items.filter(i => i.status === 'pending' || i.status === 'in_progress');
+  const allStalled = activeItems.length > 0 && activeItems.every(i => (i.heartbeatCount ?? 0) >= MAX_HEARTBEATS_BEFORE_SKIP);
+  if (allStalled && activeItems.length > 0) {
+    logger.info({ missionId: mission.id, stalledCount: activeItems.length }, 'All active items stalled — skipping heartbeat');
+    const nextAt = new Date(Date.now() + mission.heartbeatIntervalMs * 2); // Double the interval
+    await recordHeartbeat(mission.id, nextAt);
+    return;
+  }
 
   // If any items are agent_complete, ask Nexus to verify
   const awaitingVerification = items.filter((i) => i.status === 'agent_complete');
@@ -224,10 +240,11 @@ If an executor has already completed work for this item (see Execution History a
 
 If the work still needs to be done, investigate and report your findings. If you've completed it yourself, use the block above.`;
 
-    // Mark as in_progress
-    if (focusItem.status === 'pending') {
-      await updateMissionItem(focusItem.id, { status: 'in_progress' });
-    }
+    // Mark as in_progress and increment heartbeat count
+    await updateMissionItem(focusItem.id, {
+      status: focusItem.status === 'pending' ? 'in_progress' : undefined,
+      heartbeatCount: (focusItem.heartbeatCount ?? 0) + 1,
+    });
 
     // Route to appropriate agent
     const routes = await routeMessage(
