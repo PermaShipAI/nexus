@@ -16,6 +16,9 @@ import {
 } from './service.js';
 import { checkMissionCompletion, planMission } from './lifecycle.js';
 import type { Mission } from '../db/schema.js';
+import { db } from '../db/index.js';
+import { tickets } from '../db/schema.js';
+import { eq, and } from 'drizzle-orm';
 
 let heartbeatHandle: NodeJS.Timeout | null = null;
 const missionDebounceMap = new Map<string, NodeJS.Timeout>();
@@ -77,9 +80,71 @@ async function checkMissionHeartbeats(): Promise<void> {
   }
 }
 
+/** Reconcile mission items with ticket execution results */
+async function reconcileItemsWithTickets(
+  items: Awaited<ReturnType<typeof getMissionItems>>,
+  orgId: string,
+): Promise<{ executionContext: string }> {
+  // Get all tickets for this org
+  const orgTickets = await db.select({
+    id: tickets.id,
+    title: tickets.title,
+    executionStatus: tickets.executionStatus,
+    executionBranch: tickets.executionBranch,
+    mergeStatus: tickets.mergeStatus,
+    executionReview: tickets.executionReview,
+  }).from(tickets).where(eq(tickets.orgId, orgId)).limit(50);
+
+  const contextLines: string[] = [];
+
+  for (const item of items) {
+    if (item.status === 'verified') continue;
+
+    // Find matching tickets by fuzzy title match
+    const keywords = item.title.toLowerCase().split(/\s+/).filter(w => w.length > 3);
+    const matching = orgTickets.filter(t => {
+      const titleLower = t.title.toLowerCase();
+      return keywords.some(kw => titleLower.includes(kw));
+    });
+
+    if (matching.length === 0) continue;
+
+    for (const ticket of matching) {
+      const status = ticket.executionStatus;
+      const branch = ticket.executionBranch;
+      const merged = ticket.mergeStatus;
+
+      // Auto-mark items based on ticket status
+      if ((status === 'review_approved' || merged === 'merged') && item.status !== 'agent_complete' && item.status !== 'verified') {
+        await updateMissionItem(item.id, {
+          status: 'agent_complete',
+          completedByAgentId: 'executor',
+        });
+        logger.info({ itemId: item.id, ticketId: ticket.id, itemTitle: item.title }, 'Mission item auto-marked as agent_complete from ticket execution');
+      }
+
+      // Build context for the heartbeat prompt
+      const reviewSnippet = ticket.executionReview ? ticket.executionReview.slice(0, 200) : '';
+      contextLines.push(`- **${item.title}** → Ticket "${ticket.title}" [${status}]${branch ? ` branch: \`${branch}\`` : ''}${merged ? ` (${merged})` : ''}${reviewSnippet ? `\n  Review: ${reviewSnippet}` : ''}`);
+    }
+  }
+
+  return {
+    executionContext: contextLines.length > 0
+      ? `\n**Execution History (tickets related to this mission):**\n${contextLines.join('\n')}`
+      : '',
+  };
+}
+
 async function runMissionHeartbeat(mission: Mission): Promise<void> {
-  const items = await getMissionItems(mission.id);
+  let items = await getMissionItems(mission.id);
   const projects = await getMissionProjects(mission.id);
+
+  // Reconcile: auto-update mission items based on ticket execution results
+  const { executionContext } = await reconcileItemsWithTickets(items, mission.orgId);
+
+  // Re-fetch items after reconciliation may have updated statuses
+  items = await getMissionItems(mission.id);
 
   // Find the first non-verified item to focus on
   const focusItem = items.find(
@@ -128,11 +193,14 @@ async function runMissionHeartbeat(mission: Mission): Promise<void> {
 ${checklistSummary}
 
 **Projects:** ${projectContext || 'None'}
+${executionContext}
 
 ${focusItem.description}
 
-Please investigate and report your findings. If you've completed this item, declare it with:
-<mission-item-complete>{"itemId":"${focusItem.id}","summary":"Brief summary of what was done"}</mission-item-complete>`;
+If an executor has already completed work for this item (see Execution History above), you should declare it complete rather than re-doing the work:
+<mission-item-complete>{"itemId":"${focusItem.id}","summary":"Brief summary of what was done"}</mission-item-complete>
+
+If the work still needs to be done, investigate and report your findings. If you've completed it yourself, use the block above.`;
 
     // Mark as in_progress
     if (focusItem.status === 'pending') {
