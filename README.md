@@ -4,12 +4,12 @@
 
 <p align="center">
   <a href="#getting-started"><strong>Quickstart</strong></a> &middot;
-  <a href="https://discord.gg/JMMMT9EDVq"><strong>Discord</strong></a> &middot;
+  <a href="https://discord.gg/permaship"><strong>Discord</strong></a> &middot;
   <a href="CLAUDE.md"><strong>AI Setup Guide</strong></a>
 </p>
 
 <p align="center">
-  <a href="https://discord.gg/JMMMT9EDVq"><img src="https://img.shields.io/discord/1468008322144800944?color=5865F2&logo=discord&logoColor=white&label=Discord" alt="Discord" /></a>
+  <a href="https://discord.gg/permaship"><img src="https://img.shields.io/discord/1468008322144800944?color=5865F2&logo=discord&logoColor=white&label=Discord" alt="Discord" /></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue" alt="License" /></a>
   <a href="https://github.com/PermaShipAI/nexus/stargazers"><img src="https://img.shields.io/github/stars/PermaShipAI/nexus?style=flat" alt="Stars" /></a>
   <a href="https://img.shields.io/badge/PRs-welcome-brightgreen.svg"><img src="https://img.shields.io/badge/PRs-welcome-brightgreen.svg" alt="PRs Welcome" /></a>
@@ -233,7 +233,7 @@ personas/               Agent persona definitions
 
 ## Community
 
-<a href="https://discord.gg/JMMMT9EDVq">
+<a href="https://discord.gg/permaship">
   <img src="https://img.shields.io/discord/1377706636738166834?color=5865F2&logo=discord&logoColor=white&label=Join%20the%20Discord&style=for-the-badge" alt="Discord" />
 </a>
 
