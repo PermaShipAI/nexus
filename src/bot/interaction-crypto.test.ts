@@ -1,5 +1,6 @@
 import '../tests/env.js';
-import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import { describe, it, expect } from 'vitest';
+import { createHmac } from 'node:crypto';
 import { buildSignedCustomId, verifySignedCustomId } from './interaction-crypto.js';
 
 describe('interaction-crypto', () => {
@@ -77,7 +78,7 @@ describe('interaction-crypto', () => {
       const token = buildSignedCustomId('btn', 'escalate');
       const parts = token.split(':');
       // Produce a valid-looking HMAC but with the wrong key
-      const { createHmac } = require('node:crypto');
+      
       const wrongHmac = createHmac('sha256', 'wrong-key').update(`${parts[1]}:${parts[2]}`).digest('hex').slice(0, 32);
       parts[3] = wrongHmac;
       const result = verifySignedCustomId(parts.join(':'));
@@ -101,7 +102,7 @@ describe('interaction-crypto', () => {
       const oldTimestamp = (Date.now() - SIX_MINUTES_MS).toString();
 
       // Build a valid HMAC for the old timestamp using the real signing key
-      const { createHmac } = require('node:crypto');
+      
       const signingKey = process.env.INTERNAL_SECRET!;
       const hmac = createHmac('sha256', signingKey)
         .update(`approve:${oldTimestamp}`)
@@ -118,7 +119,7 @@ describe('interaction-crypto', () => {
       const TOKEN_TTL_MS = 300_000;
       const expiredTimestamp = (Date.now() - TOKEN_TTL_MS - 1000).toString();
 
-      const { createHmac } = require('node:crypto');
+      
       const signingKey = process.env.INTERNAL_SECRET!;
       const hmac = createHmac('sha256', signingKey)
         .update(`action:${expiredTimestamp}`)
@@ -134,7 +135,7 @@ describe('interaction-crypto', () => {
     it('rejects a token with a future timestamp (clock skew / replay guard)', () => {
       const futureTimestamp = (Date.now() + 60_000).toString();
 
-      const { createHmac } = require('node:crypto');
+      
       const signingKey = process.env.INTERNAL_SECRET!;
       const hmac = createHmac('sha256', signingKey)
         .update(`action:${futureTimestamp}`)

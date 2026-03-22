@@ -79,8 +79,8 @@ describe('prompt-builder', () => {
 
   it('matches snapshot with conversation history', async () => {
     vi.mocked(getRecentMessages).mockResolvedValue([
-      { role: 'user', parts: [{ text: 'What is the project status?' }] } as any,
-      { role: 'model', parts: [{ text: 'The project is on track.' }] } as any,
+      { authorName: 'user', content: 'What is the project status?', isAgent: false, agentId: null } as any,
+      { authorName: 'nexus', content: 'The project is on track.', isAgent: true, agentId: 'nexus' } as any,
     ]);
     const prompt = await buildAgentPrompt('nexus', 'chan-1', 'org-1');
     expect(prompt).toMatchSnapshot();
