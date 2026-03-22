@@ -18,6 +18,12 @@ export async function planMission(missionId: string, orgId: string): Promise<voi
   const mission = await getMission(missionId, orgId);
   if (!mission) throw new Error(`Mission ${missionId} not found`);
 
+  if (mission.status !== 'draft') {
+    throw new Error(
+      `Cannot plan mission ${missionId}: invalid state transition from '${mission.status}'. Expected 'draft'.`,
+    );
+  }
+
   // Clean up any duplicate items from previous planning runs
   const removed = await dedupMissionItems(missionId);
   if (removed > 0) logger.info({ missionId, removed }, 'Removed duplicate mission items');
