@@ -14,7 +14,7 @@ import type { TicketProposalInput } from '../tools/proposal-service.js';
 import { getTicketTracker } from '../adapters/registry.js';
 import { resolveAutonomousMode } from '../settings/service.js';
 import { updateProjectSettings } from '../tools/update_project_settings.js';
-import { getMissionItem, updateMissionItem, addMissionItems, getMissionItems, dedupMissionItems } from '../missions/service.js';
+import { getMissionItem, updateMissionItem, addMissionItems } from '../missions/service.js';
 import { onMissionItemChanged } from '../missions/scheduler.js';
 import { shouldCreateSuggestion } from '../idle/throttle.js';
 import { sendApprovalMessage, sendAutonomousNotification, sendPublicChannelAlerts } from '../bot/interactions.js';
