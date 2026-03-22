@@ -16,6 +16,7 @@ import { resolveAutonomousMode } from '../settings/service.js';
 import { updateProjectSettings } from '../tools/update_project_settings.js';
 import { getMissionItem, updateMissionItem, addMissionItems } from '../missions/service.js';
 import { onMissionItemChanged } from '../missions/scheduler.js';
+import { checkAndTriggerAdrDrafting } from './adr-service.js';
 import { shouldCreateSuggestion } from '../idle/throttle.js';
 import { sendApprovalMessage, sendAutonomousNotification, sendPublicChannelAlerts } from '../bot/interactions.js';
 import { getAgent } from './registry.js';
@@ -346,6 +347,11 @@ Please refine your proposal based on this feedback.
             .set({ status: 'rejected', args: updatedArgs, resolvedAt: new Date() })
             .where(eq(pendingActions.id, parsed.id));
           logger.info({ agentId, actionId: parsed.id }, 'Fast path: proposal rejected by Nexus');
+
+          // Async ADR pattern detection — does not block the response
+          checkAndTriggerAdrDrafting(orgId).catch((err) =>
+            logger.warn({ err, orgId }, 'ADR drafting check failed (non-fatal)'),
+          );
         } catch (err) {
           logger.warn({ err, agentId }, 'Failed to parse/process reject-proposal block');
         }

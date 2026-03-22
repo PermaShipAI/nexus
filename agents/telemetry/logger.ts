@@ -32,6 +32,13 @@ export function logAdministrativeIntentClarificationEvent(details: { confidenceS
   logger.info({ event: 'administrative_intent_clarification_triggered', ...details });
 }
 
+export function logAdrEvent(
+  event: 'adr_auto_drafted' | 'adr_human_approved' | 'duplicate_proposal_prevented',
+  details: Record<string, unknown>,
+): void {
+  logger.info({ event, ...details });
+}
+
 export function logEvalMetrics(metrics: {
   accuracy: number;
   drift: number;

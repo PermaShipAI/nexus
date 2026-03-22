@@ -453,3 +453,28 @@ export const missionProjects = pgTable(
 
 export type MissionProject = typeof missionProjects.$inferSelect;
 export type NewMissionProject = typeof missionProjects.$inferInsert;
+
+// --- ADR Drafts ---
+
+export const adrDrafts = pgTable(
+  'adr_drafts',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    orgId: uuid('org_id').notNull(),
+    title: text('title').notNull(),
+    content: text('content').notNull(), // Full ADR markdown
+    failureClass: text('failure_class').notNull(), // Semantic failure class label
+    evidenceActionIds: jsonb('evidence_action_ids').$type<string[]>().notNull().default([]),
+    status: text('status').notNull().default('pending_review'), // 'pending_review' | 'approved' | 'rejected'
+    committedPath: text('committed_path'), // e.g. agents/decisions/adr-001-no-auth-changes.md (set on approve)
+    createdAt: timestamp('created_at').notNull().defaultNow(),
+    updatedAt: timestamp('updated_at').notNull().defaultNow(),
+  },
+  (table) => ({
+    orgIdx: index('adr_draft_org_idx').on(table.orgId),
+    statusIdx: index('adr_draft_status_idx').on(table.status),
+  }),
+);
+
+export type AdrDraft = typeof adrDrafts.$inferSelect;
+export type NewAdrDraft = typeof adrDrafts.$inferInsert;

@@ -584,7 +584,7 @@ describe('routeMessage', () => {
       isStrategySession: false,
       requiresConfirmation: false,
     };
-    mockGenerateContent.mockResolvedValue({ text: JSON.stringify(geminiPayload) });
+    mockGenerateContent.mockResolvedValue({ response: { text: () => JSON.stringify(geminiPayload) } });
 
     const results = await routeMessage('change the log level', 'channel-22', 'user22');
 

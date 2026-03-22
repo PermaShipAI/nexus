@@ -7,7 +7,7 @@ import { logger } from '../logger.js';
 import { processWebhookMessage, type UnifiedMessage } from '../bot/listener.js';
 import { getAllAgents, registerAgent } from '../agents/registry.js';
 import { db } from '../db/index.js';
-import { pendingActions, conversationHistory, agents as agentsTable, tickets as ticketsTable, knowledgeEntries, missions as missionsSchema, localProjects as localProjectsSchema } from '../db/schema.js';
+import { pendingActions, conversationHistory, agents as agentsTable, tickets as ticketsTable, knowledgeEntries, missions as missionsSchema, localProjects as localProjectsSchema, adrDrafts } from '../db/schema.js';
 import { eq, and, desc } from 'drizzle-orm';
 import { getTicketTracker, setTicketTracker } from '../adapters/registry.js';
 import { createExecutionBackend } from './execution-backends/factory.js';
@@ -36,6 +36,7 @@ import {
   getMissionItems,
   getMissionProjects,
 } from '../missions/service.js';
+import { approveAdrDraft, rejectAdrDraft } from '../agents/adr-service.js';
 import { planMission } from '../missions/lifecycle.js';
 import { addSharedKnowledge, getSharedKnowledge } from '../knowledge/service.js';
 import type { WebSocket } from 'ws';
@@ -1140,6 +1141,60 @@ You can modify the checklist using these blocks:
     const { setSetting: setS } = await import('../settings/service.js');
     await setS('merge_target_branch', branch.trim(), LOCAL_ORG_ID, 'local-ui');
     return { success: true, branch: branch.trim() };
+  });
+
+  // ── REST: ADR drafts (automated ADR generation, HITL approval) ──────────
+
+  /** List ADR drafts (default: pending_review only) */
+  server.get('/api/adr-drafts', async (request) => {
+    const { status } = request.query as { status?: string };
+    const conditions = [eq(adrDrafts.orgId, LOCAL_ORG_ID)];
+    if (status) {
+      conditions.push(eq(adrDrafts.status, status));
+    } else {
+      conditions.push(eq(adrDrafts.status, 'pending_review'));
+    }
+
+    const drafts = await db
+      .select()
+      .from(adrDrafts)
+      .where(and(...conditions))
+      .orderBy(desc(adrDrafts.createdAt))
+      .limit(50);
+
+    return { drafts };
+  });
+
+  /** Get a single ADR draft */
+  server.get('/api/adr-drafts/:id', async (request) => {
+    const { id } = request.params as { id: string };
+    const [draft] = await db
+      .select()
+      .from(adrDrafts)
+      .where(and(eq(adrDrafts.id, id), eq(adrDrafts.orgId, LOCAL_ORG_ID)))
+      .limit(1);
+    if (!draft) return { error: 'ADR draft not found' };
+    return { draft };
+  });
+
+  /** Approve an ADR draft — commits it to agents/decisions/ (HITL gate) */
+  server.post('/api/adr-drafts/:id/approve', async (request) => {
+    const { id } = request.params as { id: string };
+    const result = await approveAdrDraft(id, LOCAL_ORG_ID);
+    if (result.success) {
+      broadcast('adr_draft_resolved', { id, status: 'approved', committedPath: result.committedPath });
+    }
+    return result;
+  });
+
+  /** Reject an ADR draft (human dismisses it) */
+  server.post('/api/adr-drafts/:id/reject', async (request) => {
+    const { id } = request.params as { id: string };
+    const result = await rejectAdrDraft(id, LOCAL_ORG_ID);
+    if (result.success) {
+      broadcast('adr_draft_resolved', { id, status: 'rejected' });
+    }
+    return result;
   });
 
   /** Health check */
