@@ -432,10 +432,11 @@ Please refine your proposal based on this feedback.
         try {
           const parsed = JSON.parse(match[1].trim()) as { itemId: string; reason: string };
           if (!parsed.itemId) continue;
-          const reopenedItem = await getMissionItem(parsed.itemId);
-          await updateMissionItem(parsed.itemId, { status: 'in_progress' });
+          await updateMissionItem(parsed.itemId, { status: 'in_progress', heartbeatCount: 1 });
           logger.info({ agentId, itemId: parsed.itemId, reason: parsed.reason }, 'Mission item reopened');
-          if (reopenedItem) onMissionItemChanged(reopenedItem.missionId);
+          // NOTE: do NOT trigger onMissionItemChanged here — reopening should
+          // wait for the normal heartbeat cycle, not trigger an early one that
+          // re-enters the verify loop.
         } catch (err) {
           logger.warn({ err, agentId }, 'Failed to parse/process mission-reopen block');
         }

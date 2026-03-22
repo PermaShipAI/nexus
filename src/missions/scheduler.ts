@@ -114,11 +114,11 @@ async function reconcileItemsWithTickets(
       const branch = ticket.executionBranch;
       const merged = ticket.mergeStatus;
 
-      // Auto-mark items based on ticket status — but only if the item hasn't
-      // already been through a verify/reopen cycle (heartbeatCount > 0 means
-      // an agent already evaluated this item and decided to keep it open)
-      const alreadyEvaluated = (item.heartbeatCount ?? 0) > 0;
-      if ((status === 'review_approved' || merged === 'merged') && item.status !== 'agent_complete' && item.status !== 'verified' && !alreadyEvaluated) {
+      // Auto-mark items based on ticket status — but ONLY for pending items.
+      // Items that are in_progress were either reopened by verification (meaning
+      // the work didn't actually meet criteria) or are being actively worked on.
+      // Re-marking them agent_complete creates a verify-reopen infinite loop.
+      if ((status === 'review_approved' || merged === 'merged') && item.status === 'pending') {
         await updateMissionItem(item.id, {
           status: 'agent_complete',
           completedByAgentId: 'executor',
@@ -216,10 +216,11 @@ If an item should be removed entirely (duplicate or no longer relevant):
     return;
   }
 
-  // If any items are agent_complete, ask Nexus to verify
+  // If any items are agent_complete, ask Nexus to verify ONE per heartbeat
+  // (verifying all at once creates cascading re-verify loops)
   const awaitingVerification = items.filter((i) => i.status === 'agent_complete');
-  for (const item of awaitingVerification) {
-    await verifyItem(mission, item, projects);
+  if (awaitingVerification.length > 0) {
+    await verifyItem(mission, awaitingVerification[0], projects);
   }
 
   // Check completion
