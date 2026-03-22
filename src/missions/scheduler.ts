@@ -114,8 +114,11 @@ async function reconcileItemsWithTickets(
       const branch = ticket.executionBranch;
       const merged = ticket.mergeStatus;
 
-      // Auto-mark items based on ticket status
-      if ((status === 'review_approved' || merged === 'merged') && item.status !== 'agent_complete' && item.status !== 'verified') {
+      // Auto-mark items based on ticket status — but only if the item hasn't
+      // already been through a verify/reopen cycle (heartbeatCount > 0 means
+      // an agent already evaluated this item and decided to keep it open)
+      const alreadyEvaluated = (item.heartbeatCount ?? 0) > 0;
+      if ((status === 'review_approved' || merged === 'merged') && item.status !== 'agent_complete' && item.status !== 'verified' && !alreadyEvaluated) {
         await updateMissionItem(item.id, {
           status: 'agent_complete',
           completedByAgentId: 'executor',
@@ -379,7 +382,7 @@ If it does NOT meet the criteria, reopen it:
 <mission-reopen>{"itemId":"${item.id}","reason":"What still needs to be done"}</mission-reopen>`;
 
   try {
-    await executeAgent({
+    const response = await executeAgent({
       orgId: mission.orgId,
       agentId: 'nexus' as AgentId,
       channelId: mission.channelId,
@@ -389,6 +392,20 @@ If it does NOT meet the criteria, reopen it:
       needsCodeAccess: false,
       source: 'idle',
     });
+
+    if (response && response !== '[error]') {
+      await sendAgentMessage(mission.channelId, 'Nexus (Verification)', response, mission.orgId);
+      await storeMessage({
+        orgId: mission.orgId,
+        channelId: mission.channelId,
+        discordMessageId: `mission-verify-${Date.now()}`,
+        authorId: 'agent',
+        authorName: 'Nexus (Verification)',
+        content: response,
+        isAgent: true,
+        agentId: 'nexus',
+      });
+    }
   } catch (err) {
     logger.error({ err, missionId: mission.id, itemId: item.id }, 'Item verification failed');
   }
