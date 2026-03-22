@@ -161,8 +161,54 @@ async function runMissionHeartbeat(mission: Mission): Promise<void> {
   const activeItems = items.filter(i => i.status === 'pending' || i.status === 'in_progress');
   const allStalled = activeItems.length > 0 && activeItems.every(i => (i.heartbeatCount ?? 0) >= MAX_HEARTBEATS_BEFORE_SKIP);
   if (allStalled && activeItems.length > 0) {
-    logger.info({ missionId: mission.id, stalledCount: activeItems.length }, 'All active items stalled — skipping heartbeat');
-    const nextAt = new Date(Date.now() + mission.heartbeatIntervalMs * 2); // Double the interval
+    logger.info({ missionId: mission.id, stalledCount: activeItems.length }, 'All active items stalled — asking Nexus to re-plan');
+
+    // Ask Nexus to break stalled items into smaller sub-tasks
+    const stalledList = activeItems.map(i => `- "${i.title}" (${i.heartbeatCount ?? 0} attempts, item ID: ${i.id})`).join('\n');
+    const replanPrompt = `The following mission items have stalled after multiple attempts with no progress:
+
+${stalledList}
+
+**Mission:** ${mission.title}
+
+These items are too large or complex for agents to complete in a single pass. Please break each stalled item into 2-3 smaller, concrete sub-items that can be tackled independently.
+
+For each stalled item, use this block to replace it with smaller sub-items:
+<mission-replace-item>{"itemId": "<original-item-id>", "reason": "Breaking into smaller tasks", "replacements": [{"title": "Sub-task title", "description": "How to verify this is done"}, ...]}</mission-replace-item>
+
+If an item should be removed entirely (duplicate or no longer relevant):
+<mission-remove-item>{"itemId": "<item-id>", "reason": "Why it should be removed"}</mission-remove-item>`;
+
+    try {
+      const response = await executeAgent({
+        orgId: mission.orgId,
+        agentId: 'nexus' as AgentId,
+        channelId: mission.channelId,
+        userId: 'system',
+        userName: 'Mission Re-planner',
+        userMessage: replanPrompt,
+        needsCodeAccess: false,
+        source: 'idle',
+      });
+
+      if (response) {
+        await sendAgentMessage(mission.channelId, 'Nexus', response, mission.orgId);
+        await storeMessage({
+          orgId: mission.orgId,
+          channelId: mission.channelId,
+          discordMessageId: `mission-replan-${Date.now()}`,
+          authorId: 'agent',
+          authorName: 'Nexus',
+          content: response,
+          isAgent: true,
+          agentId: 'nexus',
+        });
+      }
+    } catch (err) {
+      logger.error({ err, missionId: mission.id }, 'Mission re-planning failed');
+    }
+
+    const nextAt = new Date(Date.now() + mission.heartbeatIntervalMs);
     await recordHeartbeat(mission.id, nextAt);
     return;
   }
@@ -225,7 +271,7 @@ async function runMissionHeartbeat(mission: Mission): Promise<void> {
       })
       .join('\n');
 
-    const heartbeatMessage = `Checking in on Mission "${mission.title}" — focusing on: **${focusItem.title}**
+    const heartbeatMessage = `Checking in on Mission "${mission.title}" — focusing on: **${focusItem.title}** (item ID: \`${focusItem.id}\`)
 
 **Checklist:**
 ${checklistSummary}
@@ -235,10 +281,19 @@ ${executionContext}
 
 ${focusItem.description}
 
-If an executor has already completed work for this item (see Execution History above), you should declare it complete rather than re-doing the work:
+**Available actions:**
+
+If an executor has already completed work for this item (see Execution History above), declare it complete:
 <mission-item-complete>{"itemId":"${focusItem.id}","summary":"Brief summary of what was done"}</mission-item-complete>
 
-If the work still needs to be done, investigate and report your findings. If you've completed it yourself, use the block above.`;
+If this item is too large, break it into smaller sub-items:
+<mission-replace-item>{"itemId":"${focusItem.id}","reason":"Why it needs breakdown","replacements":[{"title":"Sub-task","description":"Verification criteria"}]}</mission-replace-item>
+
+If this item is a duplicate or no longer relevant:
+<mission-remove-item>{"itemId":"${focusItem.id}","reason":"Why"}</mission-remove-item>
+
+To add new items to the mission (mission ID: \`${mission.id}\`):
+<mission-add-items>{"missionId":"${mission.id}","items":[{"title":"New item","description":"Verification criteria"}]}</mission-add-items>`;
 
     // Mark as in_progress and increment heartbeat count
     await updateMissionItem(focusItem.id, {
