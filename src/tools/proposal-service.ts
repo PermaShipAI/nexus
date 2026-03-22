@@ -230,8 +230,11 @@ export async function createTicketProposal(input: TicketProposalInput): Promise<
     }
   }
 
-  // AI-based deduplication (exact duplicate and root-cause/component overlap)
-  const conflictResult = await checkDuplicateTicket(title, fullDescription, orgId);
+  // AI-based deduplication — skip for idle/mission-sourced proposals since the
+  // heartbeat system already manages what items need tickets. The AI duplicate
+  // checker was rejecting valid sub-task proposals as overlapping with failed
+  // parent tickets, blocking all mission progress.
+  const conflictResult = source === 'idle' ? null : await checkDuplicateTicket(title, fullDescription, orgId);
   if (conflictResult) {
     if (conflictResult.conflictType === 'ROOT_CAUSE_OVERLAP') {
       logger.warn({

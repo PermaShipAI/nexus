@@ -380,6 +380,25 @@ Output ONLY this block with a detailed description:
     }
   }
 
+  // Post a brief status summary so the user has visibility
+  const verified = items.filter(i => i.status === 'verified').length;
+  const total = items.length;
+  const statusLine = focusItem
+    ? `Heartbeat: working on **${focusItem.title}** (${verified}/${total} complete)`
+    : allStalled
+      ? `Heartbeat: all items stalled, requesting Nexus to re-plan (${verified}/${total} complete)`
+      : `Heartbeat: ${verified}/${total} items complete`;
+
+  // Only post if something meaningful happened (agent responded or status changed)
+  if (focusItem || allStalled) {
+    localBus.emit('message', {
+      id: `mission-status-${Date.now()}`,
+      content: `**[Status]** ${statusLine}`,
+      channel_id: mission.channelId,
+      timestamp: new Date().toISOString(),
+    });
+  }
+
   // Schedule next heartbeat
   const nextAt = new Date(Date.now() + mission.heartbeatIntervalMs);
   await recordHeartbeat(mission.id, nextAt);
