@@ -43,7 +43,8 @@ describe('coordinator', () => {
         channelId: 'chan-1',
       });
 
-      expect(result).toBe('Looks risky — the deployment window is too narrow.');
+      expect(result.feedback).toBe('Looks risky — the deployment window is too narrow.');
+      expect(result.timedOut).toBe(false);
 
       // Verify that executeAgent was called for the reviewer agent
       expect(mockExecuteAgent).toHaveBeenCalledOnce();
@@ -68,7 +69,8 @@ describe('coordinator', () => {
         channelId: 'chan-2',
       });
 
-      expect(result).toBe('No review feedback provided.');
+      expect(result.feedback).toBe('No review feedback provided.');
+      expect(result.timedOut).toBe(false);
     });
 
     it('should return an empty-string response as-is', async () => {
@@ -83,7 +85,8 @@ describe('coordinator', () => {
       });
 
       // Empty string is falsy — coordinator falls back to the default message
-      expect(result).toBe('No review feedback provided.');
+      expect(result.feedback).toBe('No review feedback provided.');
+      expect(result.timedOut).toBe(false);
     });
   });
 

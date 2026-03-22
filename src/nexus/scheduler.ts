@@ -9,6 +9,7 @@ import { pendingActions, workspaceLinks } from '../db/schema.js';
 import { eq, and, lte } from 'drizzle-orm';
 import { config } from '../config.js';
 import { logger } from '../logger.js';
+import { logCircuitBreakerTripped } from '../telemetry/cross-agent.js';
 import type { AgentId } from '../agents/types.js';
 import {
   resolveAutonomousMode,
@@ -183,6 +184,12 @@ You MUST include exactly one of the above blocks.`;
  */
 const NEXUS_STUCK_TTL_MS = 12 * 60 * 60 * 1000;
 
+/**
+ * Maximum number of Nexus ↔ agent review iterations before the circuit
+ * breaker trips and the ticket is escalated to human review.
+ */
+const MAX_REVIEW_CYCLES = 3;
+
 async function runNexusReviewCycle(orgId: string, channelId: string): Promise<void> {
   logger.info({ orgId }, 'Starting Nexus review cycle');
 
@@ -297,33 +304,67 @@ Do NOT respond conversationally. Output exactly one decision block above and a b
           if (decision === 'deferred' && parsedUpdatedArgs.ctoDeferralFeedback) {
             const feedback = parsedUpdatedArgs.ctoDeferralFeedback as string;
             const previousDescription = (args.description as string) ?? proposal.description;
+            const currentCycleCount = typeof parsedUpdatedArgs.reviewCycleCount === 'number'
+              ? parsedUpdatedArgs.reviewCycleCount
+              : 0;
+            const nextCycleCount = currentCycleCount + 1;
 
-            // Reject the old proposal so it doesn't get re-evaluated in a loop
-            await db.update(pendingActions)
-              .set({ status: 'rejected', resolvedAt: new Date() })
-              .where(eq(pendingActions.id, proposal.id));
+            if (nextCycleCount >= MAX_REVIEW_CYCLES) {
+              // Circuit breaker tripped — too many review cycles without resolution.
+              // Escalate to human review instead of dispatching another revision.
+              logCircuitBreakerTripped({
+                orgId,
+                proposalId: proposal.id,
+                agentId: proposal.agentId,
+                cycleCount: nextCycleCount,
+                maxCycles: MAX_REVIEW_CYCLES,
+              });
 
-            // Dispatch the original agent with steering to revise
-            executeAgent({
-              orgId,
-              agentId: proposal.agentId as AgentId,
-              channelId,
-              userId: 'system',
-              userName: 'Nexus (Revision Request)',
-              userMessage: 'Revise your proposal based on Nexus feedback.',
-              needsCodeAccess: false,
-              source: 'idle',
-              steering: {
-                originalActionId: proposal.id,
-                previousProposal: previousDescription,
-                userFeedback: feedback,
-              },
-            }).catch((err) => {
-              logger.error({ err, proposalId: proposal.id, agentId: proposal.agentId }, 'Failed to dispatch revision to agent');
-            });
+              await db.update(pendingActions)
+                .set({ status: 'waiting_for_human', resolvedAt: new Date() })
+                .where(eq(pendingActions.id, proposal.id));
 
-            decision = 'deferred — revision requested';
-            logger.info({ proposalId: proposal.id, agentId: proposal.agentId }, 'Deferred proposal: revision dispatched to original agent');
+              decision = `circuit breaker tripped — escalated to human (${nextCycleCount} cycles)`;
+              logger.warn(
+                { proposalId: proposal.id, agentId: proposal.agentId, cycleCount: nextCycleCount },
+                'Review circuit breaker tripped: proposal escalated to waiting_for_human',
+              );
+            } else {
+              // Persist the incremented cycle count before dispatching the revision
+              await db.update(pendingActions)
+                .set({ args: { ...parsedUpdatedArgs, reviewCycleCount: nextCycleCount } })
+                .where(eq(pendingActions.id, proposal.id));
+
+              // Reject the old proposal so it doesn't get re-evaluated in a loop
+              await db.update(pendingActions)
+                .set({ status: 'rejected', resolvedAt: new Date() })
+                .where(eq(pendingActions.id, proposal.id));
+
+              // Dispatch the original agent with steering to revise
+              executeAgent({
+                orgId,
+                agentId: proposal.agentId as AgentId,
+                channelId,
+                userId: 'system',
+                userName: 'Nexus (Revision Request)',
+                userMessage: 'Revise your proposal based on Nexus feedback.',
+                needsCodeAccess: false,
+                source: 'idle',
+                steering: {
+                  originalActionId: proposal.id,
+                  previousProposal: previousDescription,
+                  userFeedback: feedback,
+                },
+              }).catch((err) => {
+                logger.error({ err, proposalId: proposal.id, agentId: proposal.agentId }, 'Failed to dispatch revision to agent');
+              });
+
+              decision = 'deferred — revision requested';
+              logger.info(
+                { proposalId: proposal.id, agentId: proposal.agentId, cycleCount: nextCycleCount },
+                'Deferred proposal: revision dispatched to original agent',
+              );
+            }
           }
 
           if (autonomous && updated?.status === 'pending') {

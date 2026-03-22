@@ -1,7 +1,11 @@
 import { executeAgent } from './executor.js';
 import { getAgent } from './registry.js';
 import { logger } from '../logger.js';
+import { logAgentReviewTimeout } from '../telemetry/cross-agent.js';
 import type { AgentId } from './types.js';
+
+/** Timeout for a cross-agent review: 5 minutes. */
+const REVIEW_TIMEOUT_MS = 5 * 60 * 1000;
 
 export interface ReviewRequest {
   orgId: string;
@@ -9,12 +13,20 @@ export interface ReviewRequest {
   reviewerAgentId: AgentId;
   proposal: string;
   channelId: string;
+  /** Optional proposal ID for telemetry and circuit-breaker correlation. */
+  proposalId?: string;
 }
 
-export async function coordinateReview(request: ReviewRequest): Promise<string> {
+export interface ReviewResult {
+  feedback: string;
+  /** True when the reviewer agent did not respond within the timeout window. */
+  timedOut: boolean;
+}
+
+export async function coordinateReview(request: ReviewRequest): Promise<ReviewResult> {
   const reviewer = getAgent(request.reviewerAgentId);
   const proposer = getAgent(request.proposingAgentId);
-  
+
   logger.info(
     { proposer: request.proposingAgentId, reviewer: request.reviewerAgentId, orgId: request.orgId },
     'Coordinating cross-agent review'
@@ -25,7 +37,7 @@ You are the ${reviewer?.title}. Your colleague, the ${proposer?.title}, has prop
 
 "${request.proposal}"
 
-Please review this proposal from your perspective as ${reviewer?.title}. 
+Please review this proposal from your perspective as ${reviewer?.title}.
 - Is it feasible?
 - Are there risks or side effects they missed?
 - Do you have improvements?
@@ -33,16 +45,38 @@ Please review this proposal from your perspective as ${reviewer?.title}.
 Provide a concise critique or "Looks good to me". If you have changes, be specific.
 `.trim();
 
-  const reviewResponse = await executeAgent({
-    orgId: request.orgId,
-    agentId: request.reviewerAgentId,
-    channelId: request.channelId,
-    userId: 'system',
-    userName: `System (Review Coordinator)`,
-    userMessage: reviewPrompt,
-  });
+  const timeoutPromise = new Promise<never>((_, reject) =>
+    setTimeout(() => reject(new Error('review_timeout')), REVIEW_TIMEOUT_MS),
+  );
 
-  return reviewResponse || 'No review feedback provided.';
+  try {
+    const reviewResponse = await Promise.race([
+      executeAgent({
+        orgId: request.orgId,
+        agentId: request.reviewerAgentId,
+        channelId: request.channelId,
+        userId: 'system',
+        userName: `System (Review Coordinator)`,
+        userMessage: reviewPrompt,
+      }),
+      timeoutPromise,
+    ]);
+
+    return { feedback: reviewResponse || 'No review feedback provided.', timedOut: false };
+  } catch (err: unknown) {
+    const isTimeout = err instanceof Error && err.message === 'review_timeout';
+    if (isTimeout) {
+      logAgentReviewTimeout({
+        orgId: request.orgId,
+        proposingAgentId: request.proposingAgentId,
+        reviewerAgentId: request.reviewerAgentId,
+        timeoutMs: REVIEW_TIMEOUT_MS,
+        proposalId: request.proposalId,
+      });
+      return { feedback: 'Review skipped: secondary agent did not respond within the timeout window.', timedOut: true };
+    }
+    throw err;
+  }
 }
 
 /**
