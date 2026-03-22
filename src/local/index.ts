@@ -221,6 +221,10 @@ async function main() {
     // Start knowledge sync (reads README/docs from connected projects)
     startKnowledgeSync();
 
+    // Start AgentOps evaluation scheduler (aggregates human rejections weekly)
+    const { startAgentOpsEvaluationScheduler } = await import('../agentops/scheduler.js');
+    startAgentOpsEvaluationScheduler();
+
     // Start the local UI server
     const port = parseInt(process.env.LOCAL_UI_PORT ?? '3000', 10);
     await startLocalServer(port);

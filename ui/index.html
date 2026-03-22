@@ -210,6 +210,32 @@
       </div>
     </div>
 
+    <!-- Proposal rejection reason modal -->
+    <div id="rejection-modal" class="modal-overlay hidden">
+      <div class="modal-card">
+        <h3>Reject Proposal</h3>
+        <div class="setup-field">
+          <label for="rejection-reason">Reason</label>
+          <select id="rejection-reason" class="config-select">
+            <option value="Timing">Timing — not the right time</option>
+            <option value="Architecture">Architecture — conflicts with design decisions</option>
+            <option value="Out of Scope">Out of Scope — not aligned with current goals</option>
+            <option value="Duplicate">Duplicate — already addressed elsewhere</option>
+            <option value="Cost">Cost — too expensive in compute or effort</option>
+            <option value="Other">Other</option>
+          </select>
+        </div>
+        <div class="setup-field">
+          <label for="rejection-details">Details (optional)</label>
+          <textarea id="rejection-details" rows="3" placeholder="Additional context for the rejection..." class="settings-textarea"></textarea>
+        </div>
+        <div class="form-buttons">
+          <button id="rejection-confirm-btn" class="btn-reject">Reject Proposal</button>
+          <button id="rejection-cancel-btn" class="btn-approve">Cancel</button>
+        </div>
+      </div>
+    </div>
+
     <!-- Mission creation modal -->
     <div id="mission-modal" class="modal-overlay hidden">
       <div class="modal-card">

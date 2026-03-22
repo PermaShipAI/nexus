@@ -259,6 +259,9 @@ export async function createLocalServer(_port = 3000) {
   /** Reject a pending action */
   server.post('/api/proposals/:id/reject', async (request) => {
     const { id } = request.params as { id: string };
+    const body = request.body as { reason?: string; details?: string } | null ?? {};
+    const humanRejectionReason = body.reason ?? 'Other';
+    const humanRejectionDetails = body.details;
 
     const [action] = await db
       .select()
@@ -271,11 +274,28 @@ export async function createLocalServer(_port = 3000) {
       return { success: false, error: `Proposal is already ${action.status}` };
     }
 
+    const updatedArgs = {
+      ...(action.args as Record<string, unknown>),
+      humanRejectionReason,
+      ...(humanRejectionDetails ? { humanRejectionDetails } : {}),
+    };
+
     await db
       .update(pendingActions)
-      .set({ status: 'rejected', resolvedAt: new Date() })
+      .set({ status: 'rejected', resolvedAt: new Date(), args: updatedArgs })
       .where(eq(pendingActions.id, id));
-    broadcast('proposal_resolved', { id, status: 'rejected' });
+
+    const { logGuardrailEvent } = await import('../telemetry/index.js');
+    logGuardrailEvent({
+      event: 'proposal_rejected_human',
+      proposalId: id,
+      agentId: action.agentId,
+      orgId: action.orgId,
+      reason: humanRejectionReason,
+      ...(humanRejectionDetails ? { details: humanRejectionDetails } : {}),
+    });
+
+    broadcast('proposal_resolved', { id, status: 'rejected', reason: humanRejectionReason });
     return { success: true };
   });
 

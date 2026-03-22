@@ -648,24 +648,54 @@ async function approveProposal(id, btn) {
   }
 }
 
-async function rejectProposal(id, btn) {
-  btn.disabled = true;
-  btn.textContent = 'Rejecting...';
-  try {
-    const resp = await apiFetch(`/api/proposals/${id}/reject`, { method: 'POST', body: '{}' });
-    const data = await resp.json();
-    if (data.success) {
-      loadProposals();
-      appendSystemMessage('Proposal rejected.');
-    } else {
+function rejectProposal(id, btn) {
+  const modal = document.getElementById('rejection-modal');
+  const confirmBtn = document.getElementById('rejection-confirm-btn');
+  const cancelBtn = document.getElementById('rejection-cancel-btn');
+  const reasonSelect = document.getElementById('rejection-reason');
+  const detailsInput = document.getElementById('rejection-details');
+
+  // Reset fields
+  reasonSelect.value = 'Timing';
+  detailsInput.value = '';
+  modal.classList.remove('hidden');
+
+  function cleanup() {
+    modal.classList.add('hidden');
+    confirmBtn.removeEventListener('click', onConfirm);
+    cancelBtn.removeEventListener('click', onCancel);
+  }
+
+  async function onConfirm() {
+    cleanup();
+    btn.disabled = true;
+    btn.textContent = 'Rejecting...';
+    const reason = reasonSelect.value;
+    const details = detailsInput.value.trim();
+    try {
+      const body = JSON.stringify({ reason, details: details || undefined });
+      const resp = await apiFetch(`/api/proposals/${id}/reject`, { method: 'POST', body });
+      const data = await resp.json();
+      if (data.success) {
+        loadProposals();
+        appendSystemMessage(`Proposal rejected: ${reason}.`);
+      } else {
+        btn.disabled = false;
+        btn.textContent = 'Reject';
+        appendSystemMessage(`Rejection failed: ${data.error}`);
+      }
+    } catch {
       btn.disabled = false;
       btn.textContent = 'Reject';
-      appendSystemMessage(`Rejection failed: ${data.error}`);
     }
-  } catch {
-    btn.disabled = false;
-    btn.textContent = 'Reject';
   }
+
+  function onCancel() {
+    cleanup();
+  }
+
+  confirmBtn.addEventListener('click', onConfirm);
+  cancelBtn.addEventListener('click', onCancel);
 }
 
 // Update pending count badge
