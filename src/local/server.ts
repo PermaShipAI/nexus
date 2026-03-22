@@ -1004,6 +1004,26 @@ export async function createLocalServer(_port = 3000) {
       channel_id: mission.channelId,
     });
 
+    // Enrich with checklist context so Nexus can modify the checklist
+    const missionItems = await getMissionItems(id);
+    const itemsList = missionItems.map(i => {
+      const marker = i.status === 'verified' ? '[x]' : i.status === 'agent_complete' ? '[?]' : i.status === 'in_progress' ? '[~]' : '[ ]';
+      return `${marker} ${i.title} (ID: ${i.id})`;
+    }).join('\n');
+
+    unified.content = `[Mission: "${mission.title}" | ID: ${mission.id}]
+
+User message: ${content.trim()}
+
+**Current Checklist:**
+${itemsList || '(empty)'}
+
+You can modify the checklist using these blocks:
+<mission-add-items>{"missionId":"${mission.id}","items":[{"title":"...","description":"..."}]}</mission-add-items>
+<mission-replace-item>{"itemId":"<id>","reason":"...","replacements":[{"title":"...","description":"..."}]}</mission-replace-item>
+<mission-remove-item>{"itemId":"<id>","reason":"..."}</mission-remove-item>
+<mission-item-complete>{"itemId":"<id>","summary":"..."}</mission-item-complete>`;
+
     processWebhookMessage(unified).catch(err => {
       logger.error({ err }, 'Mission message processing failed');
       broadcast('error', { message: 'Message processing failed' });
