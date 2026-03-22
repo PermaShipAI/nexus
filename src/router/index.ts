@@ -4,6 +4,7 @@ import { logger } from '../logger.js';
 import { logRoutingDecision } from '../../agents/telemetry/logger.js';
 import type { RouteResult } from '../../agents/types/routing.js';
 import { getTenantResolver } from '../adapters/registry.js';
+import { getAllAgents } from '../agents/registry.js';
 
 export async function routeMessage(
   content: string,
@@ -22,23 +23,17 @@ export async function routeMessage(
       ? `RELEVANT KNOWLEDGE:\n${knowledge.map(k => `- ${k.topic}: ${k.content}`).join('\n')}`
       : 'No specific relevant knowledge found.';
 
+    // Build team members list dynamically from the agent registry
+    const agents = getAllAgents();
+    const teamList = agents.map(a => `- ${a.id}: ${a.title}`).join('\n');
+
     const prompt = `
 You are the ${orgName} Team Router. Your job is to analyze incoming messages and route them to the most appropriate AI specialist agent(s).
 
 ${knowledgeText}
 
 TEAM MEMBERS:
-- agentops: Agent operations and platform internal health
-- ciso: Security, auth, secrets, data isolation
-- finops: Billing, stripe, compute usage, cost optimization
-- product-manager: Feature design, business logic, PRD refinement
-- qa-manager: Testing, playwright, regressions, quality gates
-- release-engineering: Pipelines, deployments, git workflows
-- sre: Reliability, observability, performance, infrastructure
-- ux-designer: UI/UX, user flows, accessibility, design standards
-- voc: Voice of customer, support issues, user feedback patterns
-- nexus: Strategy sessions, high-level portfolio review, gatekeeper
-- support: Customer support requests, user account issues, access requests
+${teamList}
 
 INSTRUCTIONS:
 1. Identify the intent and technical domain of the user's message.
