@@ -148,7 +148,7 @@ async function runMissionHeartbeat(mission: Mission): Promise<void> {
   const projects = await getMissionProjects(mission.id);
 
   // Reconcile: auto-update mission items based on ticket execution results
-  const { executionContext } = await reconcileItemsWithTickets(items, mission.orgId);
+  await reconcileItemsWithTickets(items, mission.orgId);
 
   // Re-fetch items after reconciliation may have updated statuses
   items = await getMissionItems(mission.id);
@@ -239,7 +239,6 @@ If an item should be removed entirely (duplicate or no longer relevant):
   if (focusItem) {
     // Check if there are actively running tickets for this item — if so, skip
     // this heartbeat entirely to avoid burning tokens on "still running" messages
-    const keywords = focusItem.title.toLowerCase().split(/\s+/).filter(w => w.length > 3);
     const orgTickets = await db.select({
       executionStatus: tickets.executionStatus,
       title: tickets.title,
@@ -263,17 +262,6 @@ If an item should be removed entirely (duplicate or no longer relevant):
     }
 
     // Route to best agent for this item
-    const projectContext = projects.map((p) => p.name).join(', ');
-    const checklistSummary = items
-      .map((i) => {
-        const marker =
-          i.status === 'verified' ? '[x]' :
-          i.status === 'agent_complete' ? '[?]' :
-          i.status === 'in_progress' ? '[~]' : '[ ]';
-        return `${marker} ${i.title}`;
-      })
-      .join('\n');
-
     const projectName = projects[0]?.name ?? 'Unknown';
 
     // Check if a ticket already exists for this item

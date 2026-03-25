@@ -71,7 +71,7 @@ export async function checkDuplicateTicket(title: string, description: string, o
     (await db.select({ title: ticketsTable.title }).from(ticketsTable).where(
       and(eq(ticketsTable.orgId, orgId)),
     ).limit(50))
-      .filter(t => false) // will populate below
+      .filter(() => false) // will populate below
       .map(t => t.title.toLowerCase()),
   );
   const failedTickets = await db.select({ title: ticketsTable.title, executionStatus: ticketsTable.executionStatus })
