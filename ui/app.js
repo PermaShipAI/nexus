@@ -617,7 +617,7 @@ async function loadProposals() {
           <span>${escapeHtml(agent)}</span> &middot;
           <span>${created}</span>
         </div>
-        <div class="proposal-card-desc">${escapeHtml(desc.slice(0, 200))}${desc.length > 200 ? '...' : ''}</div>
+        <details class="proposal-card-details"><summary class="proposal-card-desc-summary">${escapeHtml(desc.slice(0, 150))}${desc.length > 150 ? '...' : ''}</summary><div class="proposal-card-desc-full">${renderMarkdown(desc)}</div></details>
         ${reasonHtml}
         ${actionsHtml}
       `;

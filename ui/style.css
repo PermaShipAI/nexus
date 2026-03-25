@@ -622,8 +622,25 @@ body::before {
   font-size: 12px;
   color: var(--text-muted);
   line-height: 1.5;
-  max-height: 60px;
-  overflow: hidden;
+}
+
+.proposal-card-details { margin-top: 4px; }
+
+.proposal-card-desc-summary {
+  font-size: 12px;
+  color: var(--text-muted);
+  cursor: pointer;
+  line-height: 1.5;
+}
+
+.proposal-card-desc-summary:hover { color: var(--text); }
+
+.proposal-card-desc-full {
+  font-size: 12px;
+  color: var(--text);
+  line-height: 1.6;
+  padding: 8px 0;
+  white-space: pre-wrap;
 }
 
 .proposal-card-actions {

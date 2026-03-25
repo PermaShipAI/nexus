@@ -1,5 +1,6 @@
 import { eq, and, lte, inArray } from 'drizzle-orm';
 import { db } from '../db/index.js';
+import { logger } from '../logger.js';
 import {
   missions,
   missionItems,
@@ -186,6 +187,9 @@ export async function updateMissionItem(
     .set(cleanUpdates)
     .where(eq(missionItems.id, itemId))
     .returning();
+  if (cleanUpdates.heartbeatCount !== undefined) {
+    logger.info({ itemId, heartbeatCount: cleanUpdates.heartbeatCount, returnedHb: item?.heartbeatCount }, 'updateMissionItem: heartbeat count update');
+  }
   return item ?? null;
 }
 

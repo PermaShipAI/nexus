@@ -46,10 +46,14 @@ export interface DuplicateCheckResult {
  * Returns a DuplicateCheckResult if a conflict is detected, null if the ticket is novel.
  */
 export async function checkDuplicateTicket(title: string, description: string, orgId: string): Promise<DuplicateCheckResult | null> {
-  const since = new Date(Date.now() - 24 * 60 * 60 * 1000);
+  // Only check very recent proposals (last 2 hours, not 24h).
+  // Older proposals that led to failed tickets shouldn't block new sub-task attempts.
+  const since = new Date(Date.now() - 2 * 60 * 60 * 1000);
 
-  // Gather recent pending actions (tickets proposed in last 24h, any status except rejected)
-  const actions = await db
+  // Gather recent pending actions (tickets proposed in last 24h)
+  // Exclude rejected proposals AND proposals whose tickets failed execution
+  // (failed tickets shouldn't block new sub-task proposals)
+  const allActions = await db
     .select({ id: pendingActions.id, args: pendingActions.args, status: pendingActions.status, agentId: pendingActions.agentId })
     .from(pendingActions)
     .where(
@@ -63,13 +67,41 @@ export async function checkDuplicateTicket(title: string, description: string, o
     .orderBy(desc(pendingActions.createdAt))
     .limit(30);
 
-  // Gather recently created tickets
+  // Cross-reference with tickets to exclude proposals that led to failed executions
+  const failedTicketTitles = new Set(
+    (await db.select({ title: ticketsTable.title }).from(ticketsTable).where(
+      and(eq(ticketsTable.orgId, orgId)),
+    ).limit(50))
+      .filter(() => false) // will populate below
+      .map(t => t.title.toLowerCase()),
+  );
+  const failedTickets = await db.select({ title: ticketsTable.title, executionStatus: ticketsTable.executionStatus })
+    .from(ticketsTable).where(eq(ticketsTable.orgId, orgId)).limit(50);
+  for (const t of failedTickets) {
+    if (t.executionStatus === 'failed' || t.executionStatus === 'review_failed') {
+      failedTicketTitles.add(t.title.toLowerCase());
+    }
+  }
+
+  const actions = allActions.filter(a => {
+    const args = parseArgs(a.args);
+    const actionTitle = ((args.title as string) ?? '').toLowerCase();
+    return !failedTicketTitles.has(actionTitle);
+  });
+
+  // Gather recently created tickets — exclude failed ones so that broken-down
+  // sub-tasks from a failed monolithic ticket aren't blocked by the original
   const recentTickets = await db
-    .select({ title: ticketsTable.title, kind: ticketsTable.kind, description: ticketsTable.description })
+    .select({ title: ticketsTable.title, kind: ticketsTable.kind, description: ticketsTable.description, executionStatus: ticketsTable.executionStatus })
     .from(ticketsTable)
     .where(and(eq(ticketsTable.orgId, orgId), gte(ticketsTable.createdAt, since)))
     .orderBy(desc(ticketsTable.createdAt))
     .limit(30);
+
+  // Filter out failed tickets — they shouldn't block new attempts
+  const activeTickets = recentTickets.filter(t =>
+    t.executionStatus !== 'failed' && t.executionStatus !== 'review_failed'
+  );
 
   // Build indexed list of existing tickets for the AI to review (1-based index for AI response)
   type ExistingEntry = { label: string; title: string; actionId?: string };
@@ -85,7 +117,7 @@ export async function checkDuplicateTicket(title: string, description: string, o
     });
   }
 
-  for (const ticket of recentTickets) {
+  for (const ticket of activeTickets) {
     existingEntries.push({
       label: `[created] "${ticket.title}" (${ticket.kind}): ${ticket.description.slice(0, 200)}`,
       title: ticket.title,
@@ -199,8 +231,11 @@ export async function createTicketProposal(input: TicketProposalInput): Promise<
     }
   }
 
-  // AI-based deduplication (exact duplicate and root-cause/component overlap)
-  const conflictResult = await checkDuplicateTicket(title, fullDescription, orgId);
+  // AI-based deduplication — skip for idle/mission-sourced proposals since the
+  // heartbeat system already manages what items need tickets. The AI duplicate
+  // checker was rejecting valid sub-task proposals as overlapping with failed
+  // parent tickets, blocking all mission progress.
+  const conflictResult = source === 'idle' ? null : await checkDuplicateTicket(title, fullDescription, orgId);
   if (conflictResult) {
     logCrossAgentConflictResolved({
       orgId,

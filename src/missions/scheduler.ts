@@ -1,5 +1,6 @@
 import { executeAgent } from '../agents/executor.js';
 import { sendAgentMessage } from '../bot/formatter.js';
+import { localBus } from '../local/communication-adapter.js';
 import { storeMessage } from '../conversation/service.js';
 import { routeMessage } from '../router/index.js';
 import { getAgent } from '../agents/registry.js';
@@ -100,11 +101,13 @@ async function reconcileItemsWithTickets(
   for (const item of items) {
     if (item.status === 'verified') continue;
 
-    // Find matching tickets by fuzzy title match
-    const keywords = item.title.toLowerCase().split(/\s+/).filter(w => w.length > 3);
+    // Find matching tickets — require at least 50% keyword overlap
+    const reconStopWords = new Set(['implement','create','build','add','update','with','from','into','the','and','for']);
+    const keywords = item.title.toLowerCase().split(/\s+/).filter(w => w.length > 3 && !reconStopWords.has(w));
+    const reconMinMatches = Math.max(2, Math.ceil(keywords.length * 0.5));
     const matching = orgTickets.filter(t => {
       const titleLower = t.title.toLowerCase();
-      return keywords.some(kw => titleLower.includes(kw));
+      return keywords.filter(kw => titleLower.includes(kw)).length >= reconMinMatches;
     });
 
     if (matching.length === 0) continue;
@@ -145,7 +148,7 @@ async function runMissionHeartbeat(mission: Mission): Promise<void> {
   const projects = await getMissionProjects(mission.id);
 
   // Reconcile: auto-update mission items based on ticket execution results
-  const { executionContext } = await reconcileItemsWithTickets(items, mission.orgId);
+  await reconcileItemsWithTickets(items, mission.orgId);
 
   // Re-fetch items after reconciliation may have updated statuses
   items = await getMissionItems(mission.id);
@@ -216,14 +219,7 @@ If an item should be removed entirely (duplicate or no longer relevant):
     return;
   }
 
-  // If any items are agent_complete, ask Nexus to verify ONE per heartbeat
-  // (verifying all at once creates cascading re-verify loops)
-  const awaitingVerification = items.filter((i) => i.status === 'agent_complete');
-  if (awaitingVerification.length > 0) {
-    await verifyItem(mission, awaitingVerification[0], projects);
-  }
-
-  // Check completion
+  // Check completion (before verification — some items may already be done)
   const completed = await checkMissionCompletion(mission.id, mission.orgId);
   if (completed) {
     await sendAgentMessage(
@@ -243,16 +239,18 @@ If an item should be removed entirely (duplicate or no longer relevant):
   if (focusItem) {
     // Check if there are actively running tickets for this item — if so, skip
     // this heartbeat entirely to avoid burning tokens on "still running" messages
-    const keywords = focusItem.title.toLowerCase().split(/\s+/).filter(w => w.length > 3);
     const orgTickets = await db.select({
       executionStatus: tickets.executionStatus,
       title: tickets.title,
     }).from(tickets).where(eq(tickets.orgId, mission.orgId)).limit(50);
 
+    const runStopWords = new Set(['implement','create','build','add','update','with','from','into','the','and','for']);
+    const runKeywords = focusItem.title.toLowerCase().split(/\s+/).filter(w => w.length > 3 && !runStopWords.has(w));
+    const runMinMatches = Math.max(2, Math.ceil(runKeywords.length * 0.5));
     const hasRunningTicket = orgTickets.some(t => {
       if (t.executionStatus !== 'running') return false;
       const titleLower = t.title.toLowerCase();
-      return keywords.some(kw => titleLower.includes(kw));
+      return runKeywords.filter(kw => titleLower.includes(kw)).length >= runMinMatches;
     });
 
     if (hasRunningTicket) {
@@ -264,40 +262,50 @@ If an item should be removed entirely (duplicate or no longer relevant):
     }
 
     // Route to best agent for this item
-    const projectContext = projects.map((p) => p.name).join(', ');
-    const checklistSummary = items
-      .map((i) => {
-        const marker =
-          i.status === 'verified' ? '[x]' :
-          i.status === 'agent_complete' ? '[?]' :
-          i.status === 'in_progress' ? '[~]' : '[ ]';
-        return `${marker} ${i.title}`;
-      })
-      .join('\n');
+    const projectName = projects[0]?.name ?? 'Unknown';
 
-    const heartbeatMessage = `Checking in on Mission "${mission.title}" — focusing on: **${focusItem.title}** (item ID: \`${focusItem.id}\`)
+    // Check if a ticket already exists for this item
+    const allTickets = await db.select({ title: tickets.title, executionStatus: tickets.executionStatus })
+      .from(tickets).where(eq(tickets.orgId, mission.orgId)).limit(50);
+    // Match items to tickets — require at least 50% of meaningful keywords to match
+    // (previous threshold of 2 keywords was too loose, matching unrelated items)
+    const stopWords = new Set(['implement','create','build','add','update','with','from','into','the','and','for']);
+    const itemKeywords = focusItem.title.toLowerCase().split(/\s+/).filter(w => w.length > 3 && !stopWords.has(w));
+    const minMatches = Math.max(2, Math.ceil(itemKeywords.length * 0.5));
+    const existingTicket = allTickets.find(t => {
+      const tl = t.title.toLowerCase();
+      return itemKeywords.filter(kw => tl.includes(kw)).length >= minMatches;
+    });
 
-**Checklist:**
-${checklistSummary}
+    let heartbeatMessage: string;
 
-**Projects:** ${projectContext || 'None'}
-${executionContext}
+    if (existingTicket) {
+      // Ticket exists — just check status and report
+      heartbeatMessage = `Mission "${mission.title}" — item **${focusItem.title}** has a matching ticket: "${existingTicket.title}" [${existingTicket.executionStatus}].
 
-${focusItem.description}
+${existingTicket.executionStatus === 'review_approved' || existingTicket.executionStatus === 'completed' ? `The ticket is done. Declare this item complete:
+<mission-item-complete>{"itemId":"${focusItem.id}","summary":"Ticket completed: ${existingTicket.title}"}</mission-item-complete>` :
+existingTicket.executionStatus === 'running' ? 'The executor is currently working on this. No action needed — will check again next heartbeat.' :
+existingTicket.executionStatus === 'failed' || existingTicket.executionStatus === 'review_failed' ? `The ticket failed. Either retry it or create a new, more focused ticket:
+<ticket-proposal>
+{"kind":"task","title":"${focusItem.title.slice(0, 80)}","description":"Reattempt with narrower scope. Acceptance criteria: ${focusItem.description.slice(0, 200)}","project":"${projectName}"}
+</ticket-proposal>` :
+`Ticket is ${existingTicket.executionStatus}. Waiting for it to progress.`}
 
-**Available actions:**
+If this item is a duplicate: <mission-remove-item>{"itemId":"${focusItem.id}","reason":"Why"}</mission-remove-item>`;
+    } else {
+      // No ticket — CREATE ONE. Short, directive prompt.
+      heartbeatMessage = `Create a ticket for: "${focusItem.title}"
 
-If an executor has already completed work for this item (see Execution History above), declare it complete:
-<mission-item-complete>{"itemId":"${focusItem.id}","summary":"Brief summary of what was done"}</mission-item-complete>
+Project: ${projectName}
+Criteria: ${focusItem.description}
 
-If this item is too large, break it into smaller sub-items:
-<mission-replace-item>{"itemId":"${focusItem.id}","reason":"Why it needs breakdown","replacements":[{"title":"Sub-task","description":"Verification criteria"}]}</mission-replace-item>
+Output ONLY this block with a detailed description:
 
-If this item is a duplicate or no longer relevant:
-<mission-remove-item>{"itemId":"${focusItem.id}","reason":"Why"}</mission-remove-item>
-
-To add new items to the mission (mission ID: \`${mission.id}\`):
-<mission-add-items>{"missionId":"${mission.id}","items":[{"title":"New item","description":"Verification criteria"}]}</mission-add-items>`;
+<ticket-proposal>
+{"kind":"task","title":"${focusItem.title.slice(0, 80)}","description":"WRITE DETAILED ACCEPTANCE CRITERIA HERE","project":"${projectName}"}
+</ticket-proposal>`;
+    }
 
     // Mark as in_progress and increment heartbeat count
     await updateMissionItem(focusItem.id, {
@@ -305,33 +313,25 @@ To add new items to the mission (mission ID: \`${mission.id}\`):
       heartbeatCount: (focusItem.heartbeatCount ?? 0) + 1,
     });
 
-    // Route to appropriate agent
-    const routes = await routeMessage(
-      heartbeatMessage,
-      mission.channelId,
-      'Nexus',
-      mission.orgId,
-    );
-
-    const route = routes[0];
-    const agentId = (route?.agentId ?? 'nexus') as AgentId;
+    // Pick the agent: for ticket creation, use an implementation agent (not Nexus).
+    // Nexus governs but won't create tickets — it reasons about dependencies instead.
+    // For items with existing tickets, route normally for status checks.
+    let agentId: AgentId;
+    if (!existingTicket) {
+      // No ticket — send to an implementation agent who will actually create one
+      const implAgents: AgentId[] = ['sre', 'product-manager', 'release-engineering', 'ux-designer'];
+      agentId = focusItem.assignedAgentId as AgentId ?? implAgents[Math.floor(Math.random() * implAgents.length)];
+      if (agentId === 'nexus') agentId = implAgents[0]; // Never send ticket creation to Nexus
+    } else {
+      // Existing ticket — route normally
+      const routes = await routeMessage(heartbeatMessage, mission.channelId, 'Nexus', mission.orgId);
+      agentId = (routes[0]?.agentId ?? 'sre') as AgentId;
+      if (agentId === 'nexus') agentId = 'sre' as AgentId; // Avoid Nexus for status checks too
+    }
     const agent = getAgent(agentId);
 
     // Update assignment
     await updateMissionItem(focusItem.id, { assignedAgentId: agentId });
-
-    // Send heartbeat as a message in the mission channel
-    await sendAgentMessage(mission.channelId, 'Nexus', heartbeatMessage, mission.orgId);
-    await storeMessage({
-      orgId: mission.orgId,
-      channelId: mission.channelId,
-      discordMessageId: `mission-hb-${Date.now()}`,
-      authorId: 'agent',
-      authorName: 'Nexus',
-      content: heartbeatMessage,
-      isAgent: true,
-      agentId: 'nexus',
-    });
 
     // Execute the agent
     const response = await executeAgent({
@@ -358,6 +358,34 @@ To add new items to the mission (mission ID: \`${mission.id}\`):
         agentId,
       });
     }
+  }
+
+  // Only verify agent_complete items if there are no pending/in_progress items to work on
+  // (ticket creation is higher priority than verification)
+  if (!focusItem) {
+    const awaitingVerification = items.filter((i) => i.status === 'agent_complete');
+    if (awaitingVerification.length > 0) {
+      await verifyItem(mission, awaitingVerification[0], projects);
+    }
+  }
+
+  // Post a brief status summary so the user has visibility
+  const verified = items.filter(i => i.status === 'verified').length;
+  const total = items.length;
+  const statusLine = focusItem
+    ? `Heartbeat: working on **${focusItem.title}** (${verified}/${total} complete)`
+    : allStalled
+      ? `Heartbeat: all items stalled, requesting Nexus to re-plan (${verified}/${total} complete)`
+      : `Heartbeat: ${verified}/${total} items complete`;
+
+  // Only post if something meaningful happened (agent responded or status changed)
+  if (focusItem || allStalled) {
+    localBus.emit('message', {
+      id: `mission-status-${Date.now()}`,
+      content: `**[Status]** ${statusLine}`,
+      channel_id: mission.channelId,
+      timestamp: new Date().toISOString(),
+    });
   }
 
   // Schedule next heartbeat
