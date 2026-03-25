@@ -6,7 +6,7 @@ import { listTasks } from '../tasks/service.js';
 import { getAgentMemories, getSharedKnowledge } from '../knowledge/service.js';
 import { db } from '../db/index.js';
 import { pendingActions, tickets as ticketsTable, tasks, activityLog, codebaseSnapshots } from '../db/schema.js';
-import { eq, desc, ne, and, gte, inArray, sql } from 'drizzle-orm';
+import { eq, desc, ne, and, gte, inArray } from 'drizzle-orm';
 import type { AgentId } from './types.js';
 import { getProjectRegistry, getTenantResolver } from '../adapters/registry.js';
 
