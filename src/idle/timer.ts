@@ -11,7 +11,8 @@ import { logger } from '../logger.js';
 import { isAutonomousMode } from '../settings/service.js';
 import { AGENT_IDS, type AgentId } from '../agents/types.js';
 import { db } from '../db/index.js';
-import { workspaceLinks } from '../db/schema.js';
+import { workspaceLinks, pendingActions } from '../db/schema.js';
+import { eq, and, gte } from 'drizzle-orm';
 import {
   BACKOFF_DELAYS_MS,
   getBackoffStep,
@@ -35,7 +36,7 @@ function getNextAgent(): AgentId {
   return agentId;
 }
 
-const IDLE_PROMPT = `The team has been idle. Identify the single highest priority item to address next (bug fix, improvement, or new feature).
+const IDLE_PROMPT_BASE = `The team has been idle. Identify the single highest priority item to address next (bug fix, improvement, or new feature).
 
 CRITICAL: You MUST include a <ticket-proposal> block in your response. This is the ONLY way to create work items. Without it, your response has no effect.
 
@@ -49,6 +50,40 @@ Brief explanation of why this matters.
 
 Do NOT narrate your investigation. Go straight to the proposal.`;
 
+async function buildIdlePrompt(orgId: string): Promise<string> {
+  try {
+    const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+    const proposals = await db
+      .select({ args: pendingActions.args })
+      .from(pendingActions)
+      .where(
+        and(
+          eq(pendingActions.orgId, orgId),
+          eq(pendingActions.command, 'create-ticket'),
+          gte(pendingActions.createdAt, sevenDaysAgo),
+        ),
+      );
+
+    if (proposals.length === 0) return IDLE_PROMPT_BASE;
+
+    const counts = new Map<string, number>();
+    for (const p of proposals) {
+      const args = p.args as Record<string, unknown>;
+      const project = (args.project as string) || (args['project-id'] as string) || 'unknown';
+      counts.set(project, (counts.get(project) ?? 0) + 1);
+    }
+
+    const lines = Array.from(counts.entries())
+      .sort((a, b) => b[1] - a[1])
+      .map(([name, count]) => `- ${name}: ${count} proposal${count !== 1 ? 's' : ''}`);
+
+    return `${IDLE_PROMPT_BASE}\n\nRecent proposal distribution (last 7 days):\n${lines.join('\n')}\nConsider targeting projects with fewer recent proposals.`;
+  } catch (err) {
+    logger.warn({ err }, 'Failed to build idle prompt distribution');
+    return IDLE_PROMPT_BASE;
+  }
+}
+
 const IDLE_REVIEW_PROMPT =
   'The team has been idle, but there are already many pending suggestions awaiting review. Instead of proposing new work, review the existing pending suggestions. Investigate the codebase and recent changes to determine if any pending suggestions are now outdated, redundant, or should be refined. If you find a suggestion that is no longer relevant due to code changes, use the withdraw-proposal command. If a suggestion could be improved or made more specific, note your findings. Do NOT propose new tickets — focus on quality over quantity. Your Discord message should summarize what you reviewed and any actions taken.';
 
@@ -61,7 +96,7 @@ async function runIdlePrompt(orgId: string, channelId: string, forceAgentId?: Ag
     return agentId;
   }
 
-  const prompt = reviewOnly ? IDLE_REVIEW_PROMPT : IDLE_PROMPT;
+  const prompt = reviewOnly ? IDLE_REVIEW_PROMPT : await buildIdlePrompt(orgId);
 
   logger.info(
     { orgId, agentId, shouldQueue, reviewOnly, forced: !!forceAgentId },

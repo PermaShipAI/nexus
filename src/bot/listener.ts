@@ -41,11 +41,12 @@ export interface UnifiedMessage {
   authorName: string;
   isThread: boolean;
   parentId?: string;
-  platform: 'discord' | 'slack';
+  platform: 'discord' | 'slack' | 'github';
   referenceId?: string;
   platformMessageId?: string; // Native platform message ID (Discord snowflake or Slack ts)
   orgId?: string; // Resolved from workspaceId
   enforceReadOnly?: boolean; // Advisory channels: no tickets, no proposals, no automated actions
+  projectHint?: string; // Channel-mapped project name from comms
 }
 
 /**
@@ -134,7 +135,7 @@ export async function processWebhookMessage(unified: UnifiedMessage): Promise<vo
 
   try {
     if (isInternalChannel && await handleAdminCommand(unified, orgId)) return;
-    await handleIncomingMessage(unified, isPublic, orgId, unified.enforceReadOnly);
+    await handleIncomingMessage(unified, isPublic, orgId, unified.enforceReadOnly, unified.projectHint);
   } catch (err) {
     logger.error({ err, messageId: unified.id }, 'Error handling webhook message');
   }
@@ -229,7 +230,7 @@ async function handleAdminCommand(message: UnifiedMessage, orgId: string): Promi
   return false;
 }
 
-async function handleIncomingMessage(message: UnifiedMessage, isPublic: boolean, orgId: string, enforceReadOnly?: boolean): Promise<void> {
+async function handleIncomingMessage(message: UnifiedMessage, isPublic: boolean, orgId: string, enforceReadOnly?: boolean, projectHint?: string): Promise<void> {
   const userName = message.authorName;
 
   // Handle !trigger command
@@ -346,6 +347,7 @@ async function handleIncomingMessage(message: UnifiedMessage, isPublic: boolean,
       source: 'user',
       steering: steeringContext,
       isStrictConsultation: enforceReadOnly || route.isStrictConsultation || false,
+      projectHint,
       // Approval messages are sent by the Nexus scheduler after review,
       // not here — sending here would show buttons before the agent's
       // response text and before Nexus has reviewed the proposal.
