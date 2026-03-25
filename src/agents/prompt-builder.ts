@@ -5,13 +5,67 @@ import { getRecentMessages } from '../conversation/service.js';
 import { listTasks } from '../tasks/service.js';
 import { getAgentMemories, getSharedKnowledge } from '../knowledge/service.js';
 import { db } from '../db/index.js';
-import { pendingActions, tickets as ticketsTable, tasks, activityLog } from '../db/schema.js';
+import { pendingActions, tickets as ticketsTable, tasks, activityLog, codebaseSnapshots } from '../db/schema.js';
 import { eq, desc, ne, and, gte, inArray } from 'drizzle-orm';
 import type { AgentId } from './types.js';
 import { getProjectRegistry, getTenantResolver } from '../adapters/registry.js';
 
 import { tmpdir } from 'node:os';
 import { getMissionByChannelId, getMissionItems, getMissionProjects } from '../missions/service.js';
+
+/**
+ * Query activity signals (commit frequency + recent proposal counts) per project.
+ */
+async function getProjectActivitySignals(
+  orgId: string,
+  projects: Array<{ id: string; repoKey?: string | null }>,
+): Promise<Map<string, { commitFrequency: number | null; recentProposals: number }>> {
+  const result = new Map<string, { commitFrequency: number | null; recentProposals: number }>();
+
+  // Commit frequency from codebase snapshots
+  const repoKeys = projects.map(p => p.repoKey).filter((k): k is string => !!k);
+  let commitMap = new Map<string, number>();
+  if (repoKeys.length > 0) {
+    const snapshots = await db
+      .select({ repoKey: codebaseSnapshots.repoKey, commitFrequency: codebaseSnapshots.commitFrequency })
+      .from(codebaseSnapshots)
+      .where(and(eq(codebaseSnapshots.orgId, orgId), inArray(codebaseSnapshots.repoKey, repoKeys)));
+    for (const s of snapshots) {
+      if (s.commitFrequency != null) commitMap.set(s.repoKey, s.commitFrequency);
+    }
+  }
+
+  // Proposal counts from pendingActions in last 7 days
+  const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+  const proposals = await db
+    .select({ args: pendingActions.args })
+    .from(pendingActions)
+    .where(
+      and(
+        eq(pendingActions.orgId, orgId),
+        eq(pendingActions.command, 'create-ticket'),
+        gte(pendingActions.createdAt, sevenDaysAgo),
+      ),
+    );
+
+  const proposalCounts = new Map<string, number>();
+  for (const p of proposals) {
+    const args = p.args as Record<string, unknown>;
+    const projectId = (args['project-id'] as string) || '';
+    if (projectId) {
+      proposalCounts.set(projectId, (proposalCounts.get(projectId) ?? 0) + 1);
+    }
+  }
+
+  for (const p of projects) {
+    result.set(p.id, {
+      commitFrequency: p.repoKey ? (commitMap.get(p.repoKey) ?? null) : null,
+      recentProposals: proposalCounts.get(p.id) ?? 0,
+    });
+  }
+
+  return result;
+}
 
 const WORKSPACE_ROOT = process.env.WORKSPACE_ROOT
   ?? (process.env.NODE_ENV === 'production' ? '/app' : process.cwd());
@@ -476,8 +530,16 @@ async function buildGeminiMd(agentId: AgentId, channelId: string, orgId: string)
   // Available projects for ticket proposals
   const cliProjects = await getProjectRegistry().listProjects(orgId);
   if (cliProjects.length > 0) {
-    const projectList = cliProjects.map(p => `- **${p.name}** (slug: \`${p.slug}\`)`).join('\n');
-    sections.push(`# Available Projects\nYou MUST use one of these exact project names when creating tickets. NEVER invent project names or IDs.\n${projectList}`);
+    const signals = await getProjectActivitySignals(orgId, cliProjects);
+    const projectList = cliProjects.map(p => {
+      const s = signals.get(p.id);
+      const parts: string[] = [];
+      if (s?.commitFrequency != null) parts.push(`${s.commitFrequency.toFixed(1)} commits/day`);
+      if (s?.recentProposals) parts.push(`${s.recentProposals} proposals this week`);
+      const suffix = parts.length > 0 ? ` — ${parts.join(', ')}` : '';
+      return `- **${p.name}** (slug: \`${p.slug}\`)${suffix}`;
+    }).join('\n');
+    sections.push(`# Available Projects\nConsider project activity when choosing targets — active projects with fewer proposals may need attention.\nYou MUST use one of these exact project names when creating tickets. NEVER invent project names or IDs.\n${projectList}`);
   } else {
     sections.push(`# Available Projects\nNo projects have been configured for this organization yet. You MUST NOT propose tickets, suggest code changes, or discuss specific repositories or codebases. You have no project context. If a user asks about projects or code, let them know that no projects are connected yet and suggest they add projects through the dashboard.`);
   }
@@ -693,7 +755,7 @@ export async function buildAgentPrompt(
   agentId: AgentId,
   channelId: string,
   orgId: string,
-  options?: { stripMutativeTools?: boolean; hasCodeTools?: boolean },
+  options?: { stripMutativeTools?: boolean; hasCodeTools?: boolean; projectHint?: string },
 ): Promise<string> {
   const agent = getAgent(agentId);
   if (!agent) throw new Error(`Agent ${agentId} not found`);
@@ -789,11 +851,24 @@ export async function buildAgentPrompt(
     sections.push(buildSupportInstructions());
   }
 
+  // Channel project context hint
+  if (options?.projectHint) {
+    sections.push(`# Channel Project Context\nThis channel is mapped to the **${options.projectHint}** project. Default to this project for proposals unless the discussion clearly relates to a different project.`);
+  }
+
   // Available projects for ticket proposals
   const projects = await getProjectRegistry().listProjects(orgId);
   if (projects.length > 0) {
-    const projectList = projects.map(p => `- **${p.name}** (slug: \`${p.slug}\`)`).join('\n');
-    sections.push(`# Available Projects\nYou MUST use one of these exact project names when creating ticket proposals. NEVER invent project names or IDs.\n${projectList}`);
+    const signals = await getProjectActivitySignals(orgId, projects);
+    const projectList = projects.map(p => {
+      const s = signals.get(p.id);
+      const parts: string[] = [];
+      if (s?.commitFrequency != null) parts.push(`${s.commitFrequency.toFixed(1)} commits/day`);
+      if (s?.recentProposals) parts.push(`${s.recentProposals} proposals this week`);
+      const suffix = parts.length > 0 ? ` — ${parts.join(', ')}` : '';
+      return `- **${p.name}** (slug: \`${p.slug}\`)${suffix}`;
+    }).join('\n');
+    sections.push(`# Available Projects\nConsider project activity when choosing targets — active projects with fewer proposals may need attention.\nYou MUST use one of these exact project names when creating ticket proposals. NEVER invent project names or IDs.\n${projectList}`);
   } else {
     sections.push(`# Available Projects\nNo projects have been configured for this organization yet. You MUST NOT propose tickets, suggest code changes, or discuss specific repositories or codebases. You have no project context. If a user asks about projects or code, let them know that no projects are connected yet and suggest they add projects through the dashboard.`);
   }

@@ -280,6 +280,7 @@ server.post('/v1/webhooks/comms', async (request) => {
     platformMessageId: body.message_id,
     orgId: body.org_id,
     enforceReadOnly: body.enforce_read_only === true || body.read_only === true,
+    projectHint: body.conductor_project_name || undefined,
   };
 
   // Process asynchronously — respond immediately so comms doesn't time out

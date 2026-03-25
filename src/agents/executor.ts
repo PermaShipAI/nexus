@@ -53,6 +53,8 @@ export interface ExecuteAgentInput {
   isStrictConsultation?: boolean;
   /** If true, use deep research mode with a cloned workspace (Plan B). */
   needsDeepResearch?: boolean;
+  /** Channel-mapped project name hint from comms. */
+  projectHint?: string;
 }
 
 export async function executeAgent(input: ExecuteAgentInput): Promise<string | null> {
@@ -82,7 +84,7 @@ export async function executeAgent(input: ExecuteAgentInput): Promise<string | n
 
 /** Fast API-based execution for conversational messages */
 async function executeFast(input: ExecuteAgentInput): Promise<string | null> {
-  const { orgId, agentId, channelId, userMessage, steering, source } = input;
+  const { orgId, agentId, channelId, userMessage, steering, source, projectHint } = input;
   logger.info({ orgId, agentId, messageLength: userMessage.length }, 'Fast path: calling Gemini API');
   const executionStart = new Date();
 
@@ -94,10 +96,10 @@ async function executeFast(input: ExecuteAgentInput): Promise<string | null> {
     const explorer = getSourceExplorer();
     const hasCodeTools = input.needsCodeAccess !== false && explorer !== null;
     const promptOptions = input.isStrictConsultation
-      ? { stripMutativeTools: true }
+      ? { stripMutativeTools: true, projectHint }
       : hasCodeTools
-        ? { hasCodeTools: true }
-        : undefined;
+        ? { hasCodeTools: true, projectHint }
+        : { projectHint };
     const systemPrompt = await buildAgentPrompt(agentId, channelId, orgId, promptOptions);
 
     let fullUserMessage = userMessage;
