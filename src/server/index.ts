@@ -130,6 +130,31 @@ server.post('/api/internal/trigger-idle', async (request, reply) => {
 });
 
 /**
+ * Trigger repo indexing for an org's repositories.
+ * Called when new repos are connected or on initial setup.
+ */
+server.post('/api/internal/trigger-indexing', async (request, reply) => {
+  const internalSecret = request.headers['x-internal-secret'] as string;
+  if (!config.INTERNAL_SECRET || internalSecret !== config.INTERNAL_SECRET) {
+    return reply.status(401).send({ error: 'Unauthorized' });
+  }
+
+  const body = request.body as { orgId?: string; installationId?: number; repos?: Array<{ id: number; fullName: string }> };
+  if (!body.orgId || !body.repos || body.repos.length === 0) {
+    return reply.status(400).send({ error: 'Missing orgId or repos' });
+  }
+
+  // Run async — don't block the response
+  import('../knowledge/repo-indexer.js').then(({ indexAllRepos }) => {
+    indexAllRepos(body.orgId!, body.repos!).catch(err => {
+      logger.error({ err, orgId: body.orgId }, 'Repo indexing failed');
+    });
+  });
+
+  return { success: true, message: 'Indexing started', repoCount: body.repos.length };
+});
+
+/**
  * Trigger Nexus review cycle immediately (for testing/manual use)
  */
 server.post('/api/internal/trigger-nexus', async (request, reply) => {
@@ -258,7 +283,8 @@ server.post('/v1/webhooks/comms', async (request) => {
   }
 
   // Ensure channel/thread IDs carry the platform prefix so replies route correctly
-  const platform = body.platform === 'slack' ? 'slack' : 'discord';
+  const platform: 'discord' | 'slack' | 'github' =
+    body.platform === 'slack' ? 'slack' : body.platform === 'github' ? 'github' : 'discord';
   const rawChannelId = body.channel_id || body.thread_id;
   const prefixedChannelId = rawChannelId?.includes(':') ? rawChannelId : `${platform}:${rawChannelId}`;
   const rawThreadId = body.thread_id;

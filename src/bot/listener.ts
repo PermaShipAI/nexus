@@ -40,7 +40,7 @@ export interface UnifiedMessage {
   authorName: string;
   isThread: boolean;
   parentId?: string;
-  platform: 'discord' | 'slack';
+  platform: 'discord' | 'slack' | 'github';
   referenceId?: string;
   platformMessageId?: string; // Native platform message ID (Discord snowflake or Slack ts)
   orgId?: string; // Resolved from workspaceId
