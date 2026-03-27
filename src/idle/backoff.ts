@@ -50,7 +50,7 @@ export async function resetBackoffStep(orgId: string): Promise<void> {
 
 /**
  * Get the effective daily idle cap for an org.
- * Priority: per-org bot_settings override → conductor API (plan tier + admin override) → hardcoded default.
+ * Priority: per-org bot_settings override → billing API (plan tier + admin override) → hardcoded default.
  */
 export async function getMaxIdlePer24h(orgId: string): Promise<number> {
   // 1. Local bot_settings override (highest priority)
@@ -63,7 +63,7 @@ export async function getMaxIdlePer24h(orgId: string): Promise<number> {
     logger.warn({ err, orgId }, 'Failed to read max_idle_per_24h setting');
   }
 
-  // 2. Conductor API (plan-tier-aware, with admin dashboard overrides)
+  // 2. Billing API via adapters (plan-tier-aware, with admin dashboard overrides)
   try {
     const mod = await (Function('return import("@permaship/agents-adapters")')() as Promise<Record<string, unknown>>);
     const fetch = mod.fetchAgentLimits as

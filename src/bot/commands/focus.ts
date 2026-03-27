@@ -167,7 +167,7 @@ async function handleFocusList(channelId: string, orgId: string): Promise<void> 
       return `${padRight(p.name, 20)} ${bar}  ${padRight(levelLabel, 20)} — ${todayLabel}`;
     });
 
-    // Get plan default from conductor forecast (if available)
+    // Get plan default from billing forecast (if available)
     const forecast = await fetchForecast(orgId);
     const planDailyDefault = forecast
       ? Math.round(forecast.planDefaultMonthly / 30)
@@ -272,7 +272,7 @@ interface ForecastResult {
   computeImpactPercent: number;
 }
 
-/** Fetch billing forecast from conductor via adapters (returns null in OSS mode) */
+/** Fetch billing forecast via adapters (returns null in OSS mode) */
 async function fetchForecast(orgId: string): Promise<ForecastResult | null> {
   try {
     const mod = await (Function('return import("@permaship/agents-adapters")')() as Promise<Record<string, unknown>>);
