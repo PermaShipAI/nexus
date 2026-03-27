@@ -2,7 +2,7 @@
 
 import { sendAgentMessage } from '../formatter.js';
 import { getAllocationOverview } from '../../idle/allocator.js';
-import { resolveProjectPolicy, setProjectPolicy, getAllProjectPolicies } from '../../idle/policy-resolver.js';
+import { resolveProjectPolicy, setProjectPolicy } from '../../idle/policy-resolver.js';
 import { getProjectSuppressionReport } from '../../idle/suppression.js';
 import { parseScheduleShorthand, getEffectiveTicketsPerDay, type FocusLevel, type ProjectPolicy } from '../../idle/project-policy.js';
 import { db } from '../../db/index.js';

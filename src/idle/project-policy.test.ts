@@ -6,7 +6,6 @@ import {
   parseScheduleShorthand,
   FOCUS_TICKETS_PER_DAY,
   DEFAULT_PROJECT_POLICY,
-  type ProjectPolicy,
   type OperatingWindow,
 } from './project-policy.js';
 

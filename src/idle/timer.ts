@@ -19,7 +19,6 @@ import {
   incrementBackoffStep,
   resetBackoffStep,
   getIdleInvocations24h,
-  getMaxIdlePer24h,
   getEffectiveDailyBudget,
 } from './backoff.js';
 import { allocateNextProject } from './allocator.js';

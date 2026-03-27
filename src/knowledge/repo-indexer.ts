@@ -7,7 +7,7 @@
  * 3. Generates a structured repo profile via LLM
  * 4. Stores results as knowledge entries for agent context injection
  */
-import { eq, and, like } from 'drizzle-orm';
+import { eq, and } from 'drizzle-orm';
 import { db } from '../db/index.js';
 import { knowledgeEntries } from '../db/schema.js';
 import { getSourceExplorer, getLLMProvider } from '../adapters/registry.js';
