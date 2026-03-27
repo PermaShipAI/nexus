@@ -19,8 +19,9 @@ import {
   incrementBackoffStep,
   resetBackoffStep,
   getIdleInvocations24h,
-  getMaxIdlePer24h,
+  getEffectiveDailyBudget,
 } from './backoff.js';
+import { allocateNextProject } from './allocator.js';
 
 
 const CHECK_INTERVAL_MS = 60_000; // Check every 60 seconds
@@ -50,7 +51,7 @@ Brief explanation of why this matters.
 
 Do NOT narrate your investigation. Go straight to the proposal.`;
 
-async function buildIdlePrompt(orgId: string): Promise<string> {
+async function buildIdlePrompt(orgId: string, targetProjectId?: string, targetProjectName?: string): Promise<string> {
   try {
     const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
     const proposals = await db
@@ -64,7 +65,13 @@ async function buildIdlePrompt(orgId: string): Promise<string> {
         ),
       );
 
-    if (proposals.length === 0) return IDLE_PROMPT_BASE;
+    if (proposals.length === 0) {
+      let base = IDLE_PROMPT_BASE;
+      if (targetProjectName) {
+        base += `\n\nYou MUST propose a ticket for the **${targetProjectName}** project. Do not propose for other projects.`;
+      }
+      return base;
+    }
 
     const counts = new Map<string, number>();
     for (const p of proposals) {
@@ -77,10 +84,20 @@ async function buildIdlePrompt(orgId: string): Promise<string> {
       .sort((a, b) => b[1] - a[1])
       .map(([name, count]) => `- ${name}: ${count} proposal${count !== 1 ? 's' : ''}`);
 
-    return `${IDLE_PROMPT_BASE}\n\nRecent proposal distribution (last 7 days):\n${lines.join('\n')}\nConsider targeting projects with fewer recent proposals.`;
+    let prompt = `${IDLE_PROMPT_BASE}\n\nRecent proposal distribution (last 7 days):\n${lines.join('\n')}\nConsider targeting projects with fewer recent proposals.`;
+
+    if (targetProjectName) {
+      prompt += `\n\nYou MUST propose a ticket for the **${targetProjectName}** project. Do not propose for other projects.`;
+    }
+
+    return prompt;
   } catch (err) {
     logger.warn({ err }, 'Failed to build idle prompt distribution');
-    return IDLE_PROMPT_BASE;
+    let base = IDLE_PROMPT_BASE;
+    if (targetProjectName) {
+      base += `\n\nYou MUST propose a ticket for the **${targetProjectName}** project. Do not propose for other projects.`;
+    }
+    return base;
   }
 }
 
@@ -88,7 +105,7 @@ const IDLE_REVIEW_PROMPT =
   'The team has been idle, but there are already many pending suggestions awaiting review. Instead of proposing new work, review the existing pending suggestions. Investigate the codebase and recent changes to determine if any pending suggestions are now outdated, redundant, or should be refined. If you find a suggestion that is no longer relevant due to code changes, use the withdraw-proposal command. If a suggestion could be improved or made more specific, note your findings. Do NOT propose new tickets — focus on quality over quantity. Your Discord message should summarize what you reviewed and any actions taken.';
 
 /** Core idle prompt logic shared by timer and manual trigger */
-async function runIdlePrompt(orgId: string, channelId: string, forceAgentId?: AgentId, shouldQueue = false, reviewOnly = false): Promise<AgentId> {
+async function runIdlePrompt(orgId: string, channelId: string, forceAgentId?: AgentId, shouldQueue = false, reviewOnly = false, projectId?: string, projectName?: string): Promise<AgentId> {
   const agentId = forceAgentId ?? getNextAgent();
   const agent = getAgent(agentId);
   if (!agent) {
@@ -96,7 +113,7 @@ async function runIdlePrompt(orgId: string, channelId: string, forceAgentId?: Ag
     return agentId;
   }
 
-  const prompt = reviewOnly ? IDLE_REVIEW_PROMPT : await buildIdlePrompt(orgId);
+  const prompt = reviewOnly ? IDLE_REVIEW_PROMPT : await buildIdlePrompt(orgId, projectId, projectName);
 
   logger.info(
     { orgId, agentId, shouldQueue, reviewOnly, forced: !!forceAgentId },
@@ -150,7 +167,9 @@ async function runIdlePrompt(orgId: string, channelId: string, forceAgentId?: Ag
     }
   }
 
-  await logActivity(shouldQueue ? 'idle_queued' : 'idle_prompt', agentId, channelId, orgId);
+  await logActivity(shouldQueue ? 'idle_queued' : 'idle_prompt', agentId, channelId, orgId,
+    projectId ? { projectId, projectName } : undefined,
+  );
   return agentId;
 }
 
@@ -184,17 +203,19 @@ async function checkIdle(): Promise<void> {
       const autonomous = await isAutonomousMode(orgId);
       const backoffStep = await getBackoffStep(orgId);
 
-      // In autonomous mode, skip exponential backoff — fire at IDLE_TIMEOUT_MS intervals.
-      // Non-autonomous orgs still get spacing via backoff.
-      if (!autonomous) {
-        const requiredDelay = BACKOFF_DELAYS_MS[backoffStep];
-        const elapsedSinceIdle = lastIdleTs ? now - lastIdleTs.getTime() : Infinity;
+      const elapsedSinceIdle = lastIdleTs ? now - lastIdleTs.getTime() : Infinity;
 
+      if (autonomous) {
+        // Autonomous mode: skip exponential backoff but enforce IDLE_TIMEOUT_MS spacing
+        if (elapsedSinceIdle < config.IDLE_TIMEOUT_MS) continue;
+      } else {
+        // Non-autonomous: exponential backoff spacing
+        const requiredDelay = BACKOFF_DELAYS_MS[backoffStep];
         if (elapsedSinceIdle < requiredDelay) continue;
       }
 
-      // Enforce rolling 24h cap (dynamic, plan-aware)
-      const maxIdlePer24h = await getMaxIdlePer24h(orgId);
+      // Enforce rolling 24h cap (pacing-aware, with plan-tier safety cap)
+      const maxIdlePer24h = await getEffectiveDailyBudget(orgId);
       const count24h = await getIdleInvocations24h(orgId);
       if (count24h >= maxIdlePer24h) {
         logger.warn({ event: 'agent_idle_cap_reached', orgId, count24h, limit: maxIdlePer24h });
@@ -216,8 +237,24 @@ async function checkIdle(): Promise<void> {
         reviewOnly = false;
       }
 
-      const shouldQueue = elapsedSinceHuman > QUEUE_THRESHOLD_MS;
-      const agentId = await runIdlePrompt(orgId, channelId, undefined, shouldQueue, reviewOnly);
+      // Try project-aware allocation (new system)
+      let allocatedProjectId: string | undefined;
+      let allocatedProjectName: string | undefined;
+      try {
+        const allocation = await allocateNextProject(orgId);
+        if (allocation) {
+          allocatedProjectId = allocation.projectId;
+          allocatedProjectName = allocation.projectName;
+          logger.info({ orgId, projectId: allocatedProjectId, projectName: allocatedProjectName }, 'Allocated project for idle prompt');
+        }
+        // allocation === null means either all suppressed or shadow mode — continue with old behavior
+      } catch (err) {
+        logger.warn({ err, orgId }, 'Project allocation failed, falling back to unscoped idle');
+      }
+
+      // In autonomous mode, always send to Discord — don't silently queue
+      const shouldQueue = !autonomous && elapsedSinceHuman > QUEUE_THRESHOLD_MS;
+      const agentId = await runIdlePrompt(orgId, channelId, undefined, shouldQueue, reviewOnly, allocatedProjectId, allocatedProjectName);
 
       // Increment backoff after a successful invocation
       await incrementBackoffStep(orgId);

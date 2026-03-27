@@ -1,7 +1,7 @@
 // src/idle/backoff.ts
 import { db } from '../db/index.js';
 import { activityLog } from '../db/schema.js';
-import { eq, and, gte, inArray, count } from 'drizzle-orm';
+import { eq, and, gte, inArray, count, sql } from 'drizzle-orm';
 import { getSetting, setSetting } from '../settings/service.js';
 import { logger } from '../logger.js';
 
@@ -48,9 +48,71 @@ export async function resetBackoffStep(orgId: string): Promise<void> {
   }
 }
 
-/** Get the effective daily idle cap for an org. */
-export async function getMaxIdlePer24h(_orgId: string): Promise<number> {
+/**
+ * Get the effective daily idle cap for an org.
+ * Priority: per-org bot_settings override → billing API (plan tier + admin override) → hardcoded default.
+ */
+export async function getMaxIdlePer24h(orgId: string): Promise<number> {
+  // 1. Local bot_settings override (highest priority)
+  try {
+    const raw = await getSetting('max_idle_per_24h', orgId);
+    // JSONB may return number or string depending on how the value was stored
+    const override = typeof raw === 'number' ? raw : typeof raw === 'string' ? parseInt(raw, 10) : NaN;
+    if (!isNaN(override) && override > 0) return override;
+  } catch (err) {
+    logger.warn({ err, orgId }, 'Failed to read max_idle_per_24h setting');
+  }
+
+  // 2. Billing API via adapters (plan-tier-aware, with admin dashboard overrides)
+  try {
+    const mod = await (Function('return import("@permaship/agents-adapters")')() as Promise<Record<string, unknown>>);
+    const fetch = mod.fetchAgentLimits as
+      ((id: string) => Promise<{ maxIdlePromptsPerDay: number } | null>) | undefined;
+    if (fetch) {
+      const limits = await fetch(orgId);
+      if (limits && limits.maxIdlePromptsPerDay > 0) return limits.maxIdlePromptsPerDay;
+    }
+  } catch {
+    // OSS mode — adapters package not installed, fall through to default
+  }
+
   return MAX_IDLE_PER_24H;
+}
+
+/** Count idle invocations for a specific project in the last 24h */
+export async function getProjectIdleInvocations24h(orgId: string, projectId: string): Promise<number> {
+  try {
+    const windowStart = new Date(Date.now() - 24 * 60 * 60 * 1000);
+    const [result] = await db
+      .select({ value: count() })
+      .from(activityLog)
+      .where(
+        and(
+          eq(activityLog.orgId, orgId),
+          inArray(activityLog.kind, ['idle_prompt', 'idle_queued']),
+          gte(activityLog.createdAt, windowStart),
+          // Filter on metadata->>'projectId' = projectId
+          sql`${activityLog.metadata}->>'projectId' = ${projectId}`,
+        ),
+      );
+    return result?.value ?? 0;
+  } catch (err) {
+    logger.warn({ err, orgId, projectId }, 'Failed to count project idle invocations');
+    return 0;
+  }
+}
+
+/**
+ * Get the effective daily budget using monthly pacing (preferred) or plan-tier cap.
+ * Falls back to getMaxIdlePer24h if monthly pacing module is unavailable.
+ */
+export async function getEffectiveDailyBudget(orgId: string): Promise<number> {
+  try {
+    const { getEffectiveDailyBudget: pacingBudget } = await import('./monthly-pacing.js');
+    return pacingBudget(orgId);
+  } catch {
+    return getMaxIdlePer24h(orgId);
+  }
 }
 
 export async function getIdleInvocations24h(orgId: string): Promise<number> {

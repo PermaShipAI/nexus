@@ -1,6 +1,6 @@
 import { db } from '../db/index.js';
 import { pendingActions } from '../db/schema.js';
-import { eq, gte, and, or, ne, count, isNotNull } from 'drizzle-orm';
+import { eq, gte, and, or, ne, count, isNotNull, inArray } from 'drizzle-orm';
 import { getProjectRegistry, getTicketTracker } from '../adapters/registry.js';
 import { getSetting, setSetting } from '../settings/service.js';
 import { logActivity } from './activity.js';
@@ -219,6 +219,43 @@ export async function computeThrottleLevel(orgId: string): Promise<ThrottleMetri
     velocityLevel,
     reason,
   };
+}
+
+// --- Per-project throttle ---
+
+const PROJECT_THROTTLE_CONFIG = {
+  backlog: { reduced: 5, review_only: 12, paused: 20 },
+};
+
+export interface ProjectThrottleMetrics {
+  level: ThrottleLevel;
+  pendingCount: number;
+  reason: string;
+}
+
+/** Compute throttle level for a specific project (smaller thresholds than org-wide) */
+export async function computeProjectThrottleLevel(orgId: string, projectId: string): Promise<ProjectThrottleMetrics> {
+  try {
+    const [result] = await db
+      .select({ value: count() })
+      .from(pendingActions)
+      .where(and(
+        eq(pendingActions.orgId, orgId),
+        eq(pendingActions.projectId, projectId),
+        inArray(pendingActions.status, ['pending', 'nexus_review']),
+      ));
+
+    const pendingCount = result?.value ?? 0;
+    const level = backlogToLevel(pendingCount, PROJECT_THROTTLE_CONFIG.backlog);
+    const reason = level !== 'normal'
+      ? `project backlog=${pendingCount} (${level})`
+      : 'project backlog normal';
+
+    return { level, pendingCount, reason };
+  } catch (err) {
+    logger.warn({ err, orgId, projectId }, 'Failed to compute project throttle level');
+    return { level: 'normal', pendingCount: 0, reason: 'error fallback' };
+  }
 }
 
 // --- Suggestion creation gate ---
