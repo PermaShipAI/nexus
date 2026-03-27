@@ -282,6 +282,7 @@ export const pendingActions = pgTable(
       commitSha?: string;
     }>(),
     source: text('source'), // 'user' | 'idle' | null (legacy, treated as 'idle')
+    projectId: uuid('project_id'), // Links to the target project for per-project tracking
     lastStalenessCheckAt: timestamp('last_staleness_check_at'),
     stalenessCount: integer('staleness_count').notNull().default(0),
     createdAt: timestamp('created_at').notNull().defaultNow(),
@@ -290,6 +291,7 @@ export const pendingActions = pgTable(
   (table) => ({
     orgIdx: index('pending_action_org_idx').on(table.orgId),
     statusIdx: index('pending_action_status_idx').on(table.status),
+    projectIdx: index('pending_action_project_idx').on(table.projectId),
   }),
 );
 
@@ -371,6 +373,7 @@ export const localProjects = pgTable(
     cloneStatus: text('clone_status').notNull().default('ready'), // 'ready' | 'cloning' | 'error'
     cloneError: text('clone_error'),
     autonomousMode: boolean('autonomous_mode'), // null = inherit from org
+    policy: jsonb('policy'), // ProjectPolicy JSON — focus level, operating window, etc.
     createdAt: timestamp('created_at').notNull().defaultNow(),
     updatedAt: timestamp('updated_at').notNull().defaultNow(),
   },
