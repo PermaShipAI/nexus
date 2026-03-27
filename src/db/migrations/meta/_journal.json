@@ -113,6 +113,48 @@
       "when": 1773963600000,
       "tag": "0015_execution_results",
       "breakpoints": true
+    },
+    {
+      "idx": 16,
+      "version": "6",
+      "when": 1774050000000,
+      "tag": "0016_missions",
+      "breakpoints": true
+    },
+    {
+      "idx": 17,
+      "version": "6",
+      "when": 1774136400000,
+      "tag": "0017_adr_drafts",
+      "breakpoints": true
+    },
+    {
+      "idx": 18,
+      "version": "6",
+      "when": 1774222800000,
+      "tag": "0017_scoped_autonomous_mode",
+      "breakpoints": true
+    },
+    {
+      "idx": 19,
+      "version": "6",
+      "when": 1774309200000,
+      "tag": "0018_branch_management",
+      "breakpoints": true
+    },
+    {
+      "idx": 20,
+      "version": "6",
+      "when": 1774395600000,
+      "tag": "0019_mission_item_heartbeat_count",
+      "breakpoints": true
+    },
+    {
+      "idx": 21,
+      "version": "6",
+      "when": 1774482000000,
+      "tag": "0020_project_policies",
+      "breakpoints": true
     }
   ]
 }
