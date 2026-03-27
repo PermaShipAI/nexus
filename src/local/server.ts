@@ -481,9 +481,66 @@ export async function createLocalServer(_port = 3000) {
     return { success: removed };
   });
 
+  // ── REST: project policies & focus ─────────────────────────────────────
+
+  const { resolveProjectPolicy, setProjectPolicy, getAllProjectPolicies } = await import('../idle/policy-resolver.js');
+  const { getAllocationOverview } = await import('../idle/allocator.js');
+  const { getProjectSuppressionReport, getAllSuppressionReports } = await import('../idle/suppression.js');
+
+  /** Get a project's resolved policy + backpressure + suppression */
+  server.get('/api/projects/:id/policy', async (request) => {
+    const { id } = request.params as { id: string };
+    const policy = await resolveProjectPolicy(LOCAL_ORG_ID, id);
+    const report = await getProjectSuppressionReport(LOCAL_ORG_ID, id);
+    return { policy, ...report };
+  });
+
+  /** Update a project's policy */
+  server.put('/api/projects/:id/policy', async (request) => {
+    const { id } = request.params as { id: string };
+    const body = request.body as Record<string, unknown>;
+
+    const current = await resolveProjectPolicy(LOCAL_ORG_ID, id);
+    const updated = { ...current, ...body } as import('../idle/project-policy.js').ProjectPolicy;
+    await setProjectPolicy(LOCAL_ORG_ID, id, updated);
+    broadcast('project_policy_changed', { projectId: id, policy: updated });
+    return { success: true, policy: updated };
+  });
+
+  /** Get org-level default policy */
+  server.get('/api/org/policy', async () => {
+    const policy = await getSetting('default_project_policy', LOCAL_ORG_ID);
+    const orgWindow = await getSetting('org_operating_window', LOCAL_ORG_ID);
+    return { policy: policy ?? null, operatingWindow: orgWindow ?? null };
+  });
+
+  /** Update org-level default policy */
+  server.put('/api/org/policy', async (request) => {
+    const body = request.body as { policy?: unknown; operatingWindow?: unknown };
+    if (body.policy !== undefined) {
+      await setSetting('default_project_policy', body.policy, LOCAL_ORG_ID, 'local-ui');
+    }
+    if (body.operatingWindow !== undefined) {
+      await setSetting('org_operating_window', body.operatingWindow, LOCAL_ORG_ID, 'local-ui');
+    }
+    broadcast('settings_changed', { orgPolicy: true });
+    return { success: true };
+  });
+
+  /** Get suppression reports for all projects */
+  server.get('/api/suppression', async () => {
+    const projects = await getAllProjectPolicies(LOCAL_ORG_ID);
+    const reports = await getAllSuppressionReports(LOCAL_ORG_ID, projects.map(p => p.id));
+    return { reports };
+  });
+
+  /** Get allocation overview (focus list data) */
+  server.get('/api/focus', async () => {
+    return getAllocationOverview(LOCAL_ORG_ID);
+  });
+
   // ── REST: config and settings ──────────────────────────────────────────
 
-  /** Get system configuration (read-only) */
   /** Get system configuration (read-only) */
   server.get('/api/config', async () => {
     const autonomous = await isAutonomousMode(LOCAL_ORG_ID);

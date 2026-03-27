@@ -177,6 +177,9 @@ function connect() {
         if (data.llmProvider) { configLlmEl.textContent = data.llmProvider; }
         if (data.needsSetup === false) setupOverlay.classList.add('hidden');
         break;
+      case 'project_policy_changed':
+        if (typeof loadFocusOverview === 'function') loadFocusOverview();
+        break;
       case 'knowledge_changed':
         loadKnowledge();
         break;
@@ -999,6 +1002,8 @@ async function loadProjects() {
       li.innerHTML = `<span><span class="project-name">${escapeHtml(p.name)}</span>${badge}${autoBadge}</span><button class="remove-btn" onclick="removeProject('${p.id}')" title="Remove">&times;</button>`;
       projectListEl.appendChild(li);
     }
+    // Re-render focus badges after project list is built
+    renderFocusBadges();
   } catch (err) {
     // Projects not loaded — not critical
   }
@@ -1029,6 +1034,120 @@ async function removeProject(id) {
   } catch (err) {
     appendSystemMessage('Failed to remove project.');
   }
+}
+
+// ── Focus Overview (Project Policies) ────────────────────────────────────────
+
+let focusOverviewData = null;
+
+async function loadFocusOverview() {
+  try {
+    const resp = await apiFetch('/api/focus');
+    focusOverviewData = await resp.json();
+    renderFocusBadges();
+  } catch { /* not critical */ }
+}
+
+function renderFocusBadges() {
+  if (!focusOverviewData) return;
+  // Update project list items with focus indicators
+  const items = projectListEl.querySelectorAll('li');
+  for (const li of items) {
+    const nameEl = li.querySelector('.project-name');
+    if (!nameEl) continue;
+    const name = nameEl.textContent;
+    const project = focusOverviewData.projects?.find(p => p.name === name);
+    if (!project) continue;
+
+    // Remove existing focus badge if any
+    const existing = li.querySelector('.focus-badge');
+    if (existing) existing.remove();
+
+    const badge = document.createElement('span');
+    badge.className = 'focus-badge';
+    badge.style.cssText = 'font-size:10px;margin-left:4px;cursor:pointer;opacity:0.7;';
+    const level = project.focusLevel;
+    const icon = project.suppressed ? '\u23f8' : // pause icon
+                 level === 'off' ? '\u23f8' :
+                 level === 'high' ? '\u26a1' :
+                 level === 'low' ? '\u25cb' : '\u25cf'; // circle icons
+    badge.textContent = icon;
+    badge.title = `Focus: ${level} (${project.ticketsPerDay}/day) | ${project.ticketsToday} today | BP: ${Math.round(project.backpressure * 100)}%`;
+    badge.onclick = (e) => { e.stopPropagation(); openProjectPolicyPopover(project, e.target); };
+    nameEl.after(badge);
+  }
+}
+
+function openProjectPolicyPopover(project, anchor) {
+  // Remove any existing popover
+  const existing = document.querySelector('.policy-popover');
+  if (existing) existing.remove();
+
+  const pop = document.createElement('div');
+  pop.className = 'policy-popover';
+  pop.style.cssText = 'position:fixed;z-index:1000;background:var(--bg-secondary,#1e1e1e);border:1px solid var(--border,#333);border-radius:8px;padding:12px;min-width:240px;box-shadow:0 4px 12px rgba(0,0,0,0.3);font-size:12px;';
+
+  const rect = anchor.getBoundingClientRect();
+  pop.style.top = (rect.bottom + 4) + 'px';
+  pop.style.left = rect.left + 'px';
+
+  pop.innerHTML = `
+    <div style="font-weight:600;margin-bottom:8px;">${escapeHtml(project.name)} — Focus</div>
+    <label style="display:block;margin-bottom:6px;">
+      Level:
+      <select id="policy-focus-level" style="margin-left:4px;background:var(--bg-primary,#111);color:var(--text-primary,#eee);border:1px solid var(--border,#444);border-radius:4px;padding:2px 4px;">
+        <option value="off" ${project.focusLevel === 'off' ? 'selected' : ''}>Off</option>
+        <option value="low" ${project.focusLevel === 'low' ? 'selected' : ''}>Low (1/day)</option>
+        <option value="normal" ${project.focusLevel === 'normal' ? 'selected' : ''}>Normal (3/day)</option>
+        <option value="high" ${project.focusLevel === 'high' ? 'selected' : ''}>High (8/day)</option>
+        <option value="custom" ${project.focusLevel === 'custom' ? 'selected' : ''}>Custom</option>
+      </select>
+    </label>
+    <label id="custom-tpd-row" style="display:${project.focusLevel === 'custom' ? 'block' : 'none'};margin-bottom:6px;">
+      Tickets/day: <input type="number" id="policy-custom-tpd" min="0" max="50" value="${project.ticketsPerDay}" style="width:50px;background:var(--bg-primary,#111);color:var(--text-primary,#eee);border:1px solid var(--border,#444);border-radius:4px;padding:2px;">
+    </label>
+    <div style="margin-top:6px;color:var(--text-muted,#888);">
+      Today: ${project.ticketsToday}/${project.ticketsPerDay} | BP: ${Math.round(project.backpressure * 100)}%
+      ${project.suppressed ? '<br>Suppressed: ' + project.suppressionReasons.join(', ') : ''}
+    </div>
+    <div style="margin-top:8px;display:flex;gap:6px;">
+      <button id="policy-save-btn" style="padding:3px 10px;border-radius:4px;background:var(--accent,#4a9eff);color:#fff;border:none;cursor:pointer;font-size:11px;">Save</button>
+      <button id="policy-close-btn" style="padding:3px 10px;border-radius:4px;background:transparent;color:var(--text-muted,#888);border:1px solid var(--border,#444);cursor:pointer;font-size:11px;">Close</button>
+    </div>
+  `;
+  document.body.appendChild(pop);
+
+  const levelSelect = pop.querySelector('#policy-focus-level');
+  const customRow = pop.querySelector('#custom-tpd-row');
+  levelSelect.addEventListener('change', () => {
+    customRow.style.display = levelSelect.value === 'custom' ? 'block' : 'none';
+  });
+
+  pop.querySelector('#policy-save-btn').addEventListener('click', async () => {
+    const focusLevel = levelSelect.value;
+    const body = { focusLevel };
+    if (focusLevel === 'custom') {
+      body.customTicketsPerDay = parseInt(pop.querySelector('#policy-custom-tpd').value, 10) || 3;
+    }
+    await apiFetch(`/api/projects/${project.id}/policy`, {
+      method: 'PUT',
+      body: JSON.stringify(body),
+    });
+    pop.remove();
+    loadFocusOverview();
+  });
+
+  pop.querySelector('#policy-close-btn').addEventListener('click', () => pop.remove());
+
+  // Close on outside click
+  setTimeout(() => {
+    document.addEventListener('click', function closePop(e) {
+      if (!pop.contains(e.target)) {
+        pop.remove();
+        document.removeEventListener('click', closePop);
+      }
+    });
+  }, 10);
 }
 
 // ── Config & Settings ────────────────────────────────────────────────────────
@@ -2016,6 +2135,7 @@ const loadingOverlay = document.getElementById('loading-overlay');
 initAuth().then(() => {
   loadAgents();
   loadProjects();
+  loadFocusOverview();
   loadMissions();
   loadConfig();
   return loadHistory();
