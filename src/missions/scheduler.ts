@@ -148,7 +148,7 @@ async function runMissionHeartbeat(mission: Mission): Promise<void> {
   const projects = await getMissionProjects(mission.id);
 
   // Reconcile: auto-update mission items based on ticket execution results
-  await reconcileItemsWithTickets(items, mission.orgId);
+  const { executionContext } = await reconcileItemsWithTickets(items, mission.orgId);
 
   // Re-fetch items after reconciliation may have updated statuses
   items = await getMissionItems(mission.id);
@@ -263,49 +263,18 @@ If an item should be removed entirely (duplicate or no longer relevant):
 
     // Route to best agent for this item
     const projectName = projects[0]?.name ?? 'Unknown';
+    const projectContext = projects.map((p) => p.name).join(', ');
 
-    // Check if a ticket already exists for this item
-    const allTickets = await db.select({ title: tickets.title, executionStatus: tickets.executionStatus })
-      .from(tickets).where(eq(tickets.orgId, mission.orgId)).limit(50);
-    // Match items to tickets — require at least 50% of meaningful keywords to match
-    // (previous threshold of 2 keywords was too loose, matching unrelated items)
-    const stopWords = new Set(['implement','create','build','add','update','with','from','into','the','and','for']);
-    const itemKeywords = focusItem.title.toLowerCase().split(/\s+/).filter(w => w.length > 3 && !stopWords.has(w));
-    const minMatches = Math.max(2, Math.ceil(itemKeywords.length * 0.5));
-    const existingTicket = allTickets.find(t => {
-      const tl = t.title.toLowerCase();
-      return itemKeywords.filter(kw => tl.includes(kw)).length >= minMatches;
-    });
+    // Compose a natural request — like a human asking the team to work on something
+    const heartbeatMessage = `We need to work on the next item for our mission "${mission.title}".
 
-    let heartbeatMessage: string;
+**Next item:** ${focusItem.title}
+**Goal:** ${focusItem.description}
+**Project:** ${projectContext || projectName}
 
-    if (existingTicket) {
-      // Ticket exists — just check status and report
-      heartbeatMessage = `Mission "${mission.title}" — item **${focusItem.title}** has a matching ticket: "${existingTicket.title}" [${existingTicket.executionStatus}].
+Please analyze what's needed and propose a plan to implement this. Consider the current state of the codebase and any dependencies.
 
-${existingTicket.executionStatus === 'review_approved' || existingTicket.executionStatus === 'completed' ? `The ticket is done. Declare this item complete:
-<mission-item-complete>{"itemId":"${focusItem.id}","summary":"Ticket completed: ${existingTicket.title}"}</mission-item-complete>` :
-existingTicket.executionStatus === 'running' ? 'The executor is currently working on this. No action needed — will check again next heartbeat.' :
-existingTicket.executionStatus === 'failed' || existingTicket.executionStatus === 'review_failed' ? `The ticket failed. Either retry it or create a new, more focused ticket:
-<ticket-proposal>
-{"kind":"task","title":"${focusItem.title.slice(0, 80)}","description":"Reattempt with narrower scope. Acceptance criteria: ${focusItem.description.slice(0, 200)}","project":"${projectName}"}
-</ticket-proposal>` :
-`Ticket is ${existingTicket.executionStatus}. Waiting for it to progress.`}
-
-If this item is a duplicate: <mission-remove-item>{"itemId":"${focusItem.id}","reason":"Why"}</mission-remove-item>`;
-    } else {
-      // No ticket — CREATE ONE. Short, directive prompt.
-      heartbeatMessage = `Create a ticket for: "${focusItem.title}"
-
-Project: ${projectName}
-Criteria: ${focusItem.description}
-
-Output ONLY this block with a detailed description:
-
-<ticket-proposal>
-{"kind":"task","title":"${focusItem.title.slice(0, 80)}","description":"WRITE DETAILED ACCEPTANCE CRITERIA HERE","project":"${projectName}"}
-</ticket-proposal>`;
-    }
+${executionContext}`;
 
     // Mark as in_progress and increment heartbeat count
     await updateMissionItem(focusItem.id, {
@@ -313,36 +282,31 @@ Output ONLY this block with a detailed description:
       heartbeatCount: (focusItem.heartbeatCount ?? 0) + 1,
     });
 
-    // Pick the agent: for ticket creation, use an implementation agent (not Nexus).
-    // Nexus governs but won't create tickets — it reasons about dependencies instead.
-    // For items with existing tickets, route normally for status checks.
-    let agentId: AgentId;
-    if (!existingTicket) {
-      // No ticket — send to an implementation agent who will actually create one
-      const implAgents: AgentId[] = ['sre', 'product-manager', 'release-engineering', 'ux-designer'];
-      agentId = focusItem.assignedAgentId as AgentId ?? implAgents[Math.floor(Math.random() * implAgents.length)];
-      if (agentId === 'nexus') agentId = implAgents[0]; // Never send ticket creation to Nexus
-    } else {
-      // Existing ticket — route normally
-      const routes = await routeMessage(heartbeatMessage, mission.channelId, 'Nexus', mission.orgId);
-      agentId = (routes[0]?.agentId ?? 'sre') as AgentId;
-      if (agentId === 'nexus') agentId = 'sre' as AgentId; // Avoid Nexus for status checks too
-    }
+    // Route through the normal message router — same as a human request
+    const routes = await routeMessage(
+      heartbeatMessage,
+      mission.channelId,
+      'Nexus',
+      mission.orgId,
+    );
+
+    const route = routes[0];
+    const agentId = (route?.agentId ?? 'sre') as AgentId;
     const agent = getAgent(agentId);
 
     // Update assignment
     await updateMissionItem(focusItem.id, { assignedAgentId: agentId });
 
-    // Execute the agent
+    // Execute the agent — treat it like a natural user request
     const response = await executeAgent({
       orgId: mission.orgId,
       agentId,
       channelId: mission.channelId,
       userId: 'system',
-      userName: 'Nexus (Mission Heartbeat)',
+      userName: 'Mission Lead',
       userMessage: heartbeatMessage,
       needsCodeAccess: false,
-      source: 'idle',
+      source: 'idle', // Keep idle so proposals bypass duplicate checker
     });
 
     if (response && response !== '[error]') {
