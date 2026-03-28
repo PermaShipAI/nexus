@@ -5,9 +5,7 @@ import { getAllocationOverview } from '../../idle/allocator.js';
 import { resolveProjectPolicy, setProjectPolicy } from '../../idle/policy-resolver.js';
 import { getProjectSuppressionReport } from '../../idle/suppression.js';
 import { parseScheduleShorthand, getEffectiveTicketsPerDay, type FocusLevel, type ProjectPolicy } from '../../idle/project-policy.js';
-import { db } from '../../db/index.js';
-import { localProjects } from '../../db/schema.js';
-import { eq, and, ilike } from 'drizzle-orm';
+import { getProjectRegistry } from '../../adapters/registry.js';
 import { logger } from '../../logger.js';
 
 const VALID_FOCUS_LEVELS: FocusLevel[] = ['off', 'low', 'normal', 'high', 'custom'];
@@ -233,23 +231,25 @@ async function handleFocusStatus(channelId: string, orgId: string, projectId: st
 }
 
 async function resolveProject(nameOrSlug: string, orgId: string): Promise<{ id: string; name: string } | null> {
+  const registry = getProjectRegistry();
   const lower = nameOrSlug.toLowerCase().trim();
-  const [match] = await db
-    .select({ id: localProjects.id, name: localProjects.name })
-    .from(localProjects)
-    .where(and(eq(localProjects.orgId, orgId), ilike(localProjects.slug, lower)))
-    .limit(1);
 
-  if (match) return match;
+  // Try the registry's built-in resolver first
+  const resolvedId = await registry.resolveProjectId(lower, orgId);
+  if (resolvedId) {
+    // Get the name from project list
+    const projects = await registry.listProjects(orgId);
+    const project = projects.find(p => p.id === resolvedId);
+    if (project) return { id: project.id, name: project.name };
+  }
 
-  // Try name match
-  const [nameMatch] = await db
-    .select({ id: localProjects.id, name: localProjects.name })
-    .from(localProjects)
-    .where(and(eq(localProjects.orgId, orgId), ilike(localProjects.name, lower)))
-    .limit(1);
+  // Fallback: fuzzy match against project list
+  const projects = await registry.listProjects(orgId);
+  const match = projects.find(p =>
+    p.slug.toLowerCase() === lower || p.name.toLowerCase() === lower,
+  );
 
-  return nameMatch ?? null;
+  return match ? { id: match.id, name: match.name } : null;
 }
 
 function buildFocusBar(level: string, ticketsPerDay: number): string {
