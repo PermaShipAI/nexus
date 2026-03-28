@@ -196,20 +196,31 @@ export async function createLocalServer(_port = 3000) {
 
   /** List pending proposals */
   server.get('/api/proposals', async (request) => {
-    const { status } = request.query as { status?: string };
+    const { status, project } = request.query as { status?: string; project?: string };
     const conditions = [eq(pendingActions.orgId, LOCAL_ORG_ID)];
     if (status) {
       conditions.push(eq(pendingActions.status, status));
     }
 
-    const proposals = await db
+    let proposals = await db
       .select()
       .from(pendingActions)
       .where(and(...conditions))
       .orderBy(desc(pendingActions.createdAt))
-      .limit(100);
+      .limit(200);
 
-    return { proposals };
+    // Filter by project (stored in args.project or args['project-id'])
+    if (project) {
+      const projectLower = project.toLowerCase();
+      proposals = proposals.filter(p => {
+        const args = typeof p.args === 'string' ? JSON.parse(p.args) : (p.args || {});
+        const pName = ((args as any).project || '').toLowerCase();
+        const pId = ((args as any)['project-id'] || '').toLowerCase();
+        return pName.includes(projectLower) || pId.includes(projectLower);
+      });
+    }
+
+    return { proposals: proposals.slice(0, 100) };
   });
 
   /** Approve a pending action and create the ticket */

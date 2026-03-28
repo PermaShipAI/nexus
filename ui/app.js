@@ -538,6 +538,15 @@ async function handleRetryExecution(ticketId, btn) {
 const proposalsListEl = document.getElementById('proposals-list');
 const proposalsEmptyEl = document.getElementById('proposals-empty');
 let currentProposalFilter = 'pending';
+let currentProposalProject = '';
+const proposalsProjectFilter = document.getElementById('proposals-project-filter');
+
+if (proposalsProjectFilter) {
+  proposalsProjectFilter.addEventListener('change', () => {
+    currentProposalProject = proposalsProjectFilter.value;
+    loadProposals();
+  });
+}
 
 // Proposals panel toggle
 const proposalsPanel = document.getElementById('proposals-panel');
@@ -570,10 +579,26 @@ document.querySelectorAll('.proposal-filter').forEach(btn => {
 async function loadProposals() {
   if (!proposalsListEl) return;
   try {
-    const query = currentProposalFilter ? `?status=${currentProposalFilter}` : '';
+    const params = new URLSearchParams();
+    if (currentProposalFilter) params.set('status', currentProposalFilter);
+    if (currentProposalProject) params.set('project', currentProposalProject);
+    const query = params.toString() ? `?${params}` : '';
     const resp = await apiFetch(`/api/proposals${query}`);
     const { proposals } = await resp.json();
     proposalsListEl.innerHTML = '';
+
+    // Populate project filter dropdown from proposal data
+    if (proposalsProjectFilter) {
+      const projectNames = new Set();
+      for (const p of proposals) {
+        const args = typeof p.args === 'string' ? JSON.parse(p.args) : (p.args || {});
+        const pName = args.project || '';
+        if (pName) projectNames.add(pName);
+      }
+      const current = proposalsProjectFilter.value;
+      proposalsProjectFilter.innerHTML = '<option value="">All Projects</option>' +
+        Array.from(projectNames).sort().map(n => `<option value="${escapeHtml(n)}"${n === current ? ' selected' : ''}>${escapeHtml(n)}</option>`).join('');
+    }
 
     if (!proposals || proposals.length === 0) {
       proposalsEmptyEl.style.display = 'block';
