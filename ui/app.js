@@ -587,17 +587,22 @@ async function loadProposals() {
     const { proposals } = await resp.json();
     proposalsListEl.innerHTML = '';
 
-    // Populate project filter dropdown from proposal data
-    if (proposalsProjectFilter) {
+    // Populate project filter dropdown from all proposals (unfiltered)
+    if (proposalsProjectFilter && !currentProposalProject) {
       const projectNames = new Set();
       for (const p of proposals) {
         const args = typeof p.args === 'string' ? JSON.parse(p.args) : (p.args || {});
         const pName = args.project || '';
         if (pName) projectNames.add(pName);
       }
-      const current = proposalsProjectFilter.value;
+      // Also fetch from registered projects
+      try {
+        const projResp = await apiFetch('/api/projects');
+        const { projects: regProjects } = await projResp.json();
+        for (const rp of (regProjects || [])) projectNames.add(rp.name);
+      } catch { /* ok */ }
       proposalsProjectFilter.innerHTML = '<option value="">All Projects</option>' +
-        Array.from(projectNames).sort().map(n => `<option value="${escapeHtml(n)}"${n === current ? ' selected' : ''}>${escapeHtml(n)}</option>`).join('');
+        Array.from(projectNames).sort().map(n => `<option value="${escapeHtml(n)}">${escapeHtml(n)}</option>`).join('');
     }
 
     if (!proposals || proposals.length === 0) {
