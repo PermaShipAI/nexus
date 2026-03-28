@@ -32,27 +32,13 @@ vi.mock('../../settings/service.js', () => ({
   setSetting: vi.fn().mockResolvedValue(undefined),
 }));
 
-vi.mock('../../db/index.js', () => ({
-  db: {
-    select: vi.fn().mockReturnValue({
-      from: vi.fn().mockReturnValue({
-        where: vi.fn().mockReturnValue({
-          limit: vi.fn().mockResolvedValue([]),
-        }),
-      }),
-    }),
-  },
-}));
-
-vi.mock('../../db/schema.js', () => ({
-  localProjects: {},
-  botSettings: {},
-}));
-
-vi.mock('drizzle-orm', () => ({
-  eq: vi.fn(),
-  and: vi.fn(),
-  ilike: vi.fn(),
+vi.mock('../../adapters/registry.js', () => ({
+  getProjectRegistry: vi.fn().mockReturnValue({
+    listProjects: vi.fn().mockResolvedValue([]),
+    resolveProjectId: vi.fn().mockResolvedValue(undefined),
+    resolveRepoKey: vi.fn().mockResolvedValue(undefined),
+    resolveProjectSlug: vi.fn().mockResolvedValue(undefined),
+  }),
 }));
 
 vi.mock('../../logger.js', () => ({
@@ -108,15 +94,14 @@ describe('handleFocusCommand', () => {
   });
 
   it('handles !focus <project> <invalid_level> — shows error', async () => {
-    // Mock finding the project
-    const { db } = await import('../../db/index.js');
-    vi.mocked(db.select).mockReturnValue({
-      from: vi.fn().mockReturnValue({
-        where: vi.fn().mockReturnValue({
-          limit: vi.fn().mockResolvedValue([{ id: 'p1', name: 'My Project' }]),
-        }),
-      }),
-    } as any);
+    // Mock finding the project via registry
+    const { getProjectRegistry } = await import('../../adapters/registry.js');
+    vi.mocked(getProjectRegistry).mockReturnValue({
+      listProjects: vi.fn().mockResolvedValue([{ id: 'p1', name: 'My Project', slug: 'myproject' }]),
+      resolveProjectId: vi.fn().mockResolvedValue('p1'),
+      resolveRepoKey: vi.fn().mockResolvedValue(undefined),
+      resolveProjectSlug: vi.fn().mockResolvedValue(undefined),
+    });
 
     const { sendAgentMessage } = await import('../formatter.js');
     const result = await handleFocusCommand('!focus myproject banana', 'ch', 'org', 'user');
