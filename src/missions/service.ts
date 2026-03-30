@@ -116,13 +116,68 @@ export async function getMissionItems(missionId: string): Promise<MissionItem[]>
     .orderBy(missionItems.sortOrder);
 }
 
+/** Add top-level phases to a mission (used during planning) */
+export async function addMissionPhases(
+  missionId: string,
+  phases: Array<{ title: string; description: string }>,
+): Promise<MissionItem[]> {
+  if (phases.length === 0) return [];
+
+  const existing = await db.select({ title: missionItems.title })
+    .from(missionItems)
+    .where(and(eq(missionItems.missionId, missionId), eq(missionItems.isPhase, true)));
+  const existingTitles = new Set(existing.map(e => e.title));
+  const newPhases = phases.filter(p => !existingTitles.has(p.title));
+
+  if (newPhases.length === 0) return [];
+
+  const values = newPhases.map((phase, i) => ({
+    missionId,
+    parentId: null,
+    isPhase: true,
+    title: phase.title,
+    description: phase.description,
+    sortOrder: existing.length + i,
+  }));
+  return db.insert(missionItems).values(values).returning();
+}
+
+/** Add sub-steps under a phase */
+export async function addSubSteps(
+  phaseId: string,
+  missionId: string,
+  steps: Array<{ title: string; description: string; assignedAgentId?: string }>,
+): Promise<MissionItem[]> {
+  if (steps.length === 0) return [];
+
+  // Dedup within the phase
+  const existing = await db.select({ title: missionItems.title })
+    .from(missionItems)
+    .where(and(eq(missionItems.missionId, missionId), eq(missionItems.parentId, phaseId)));
+  const existingTitles = new Set(existing.map(e => e.title));
+  const newSteps = steps.filter(s => !existingTitles.has(s.title));
+
+  if (newSteps.length === 0) return [];
+
+  const values = newSteps.map((step, i) => ({
+    missionId,
+    parentId: phaseId,
+    isPhase: false,
+    title: step.title,
+    description: step.description,
+    assignedAgentId: step.assignedAgentId ?? null,
+    sortOrder: existing.length + i,
+  }));
+  return db.insert(missionItems).values(values).returning();
+}
+
+/** Legacy: add items (auto-detect phase vs sub-step) */
 export async function addMissionItems(
   missionId: string,
-  items: Array<{ title: string; description: string; assignedAgentId?: string }>,
+  items: Array<{ title: string; description: string; assignedAgentId?: string; parentId?: string }>,
 ): Promise<MissionItem[]> {
   if (items.length === 0) return [];
 
-  // Dedup: skip items that already exist for this mission (by title)
   const existing = await db.select({ title: missionItems.title })
     .from(missionItems)
     .where(eq(missionItems.missionId, missionId));
@@ -133,12 +188,37 @@ export async function addMissionItems(
 
   const values = newItems.map((item, i) => ({
     missionId,
+    parentId: item.parentId ?? null,
+    isPhase: !item.parentId,
     title: item.title,
     description: item.description,
     assignedAgentId: item.assignedAgentId ?? null,
     sortOrder: existing.length + i,
   }));
   return db.insert(missionItems).values(values).returning();
+}
+
+/** Get phases with their sub-step counts and completion status */
+export async function getMissionPhaseProgress(missionId: string): Promise<Array<{
+  phase: MissionItem;
+  subSteps: MissionItem[];
+  completedSubSteps: number;
+  totalSubSteps: number;
+}>> {
+  const allItems = await getMissionItems(missionId);
+  const phases = allItems.filter(i => i.isPhase);
+  const subSteps = allItems.filter(i => !i.isPhase);
+
+  return phases.map(phase => {
+    const children = subSteps.filter(s => s.parentId === phase.id);
+    const completed = children.filter(s => s.status === 'verified').length;
+    return {
+      phase,
+      subSteps: children,
+      completedSubSteps: completed,
+      totalSubSteps: children.length,
+    };
+  });
 }
 
 /** Remove duplicate mission items (keeps the oldest by createdAt for each title) */

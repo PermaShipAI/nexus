@@ -14,7 +14,7 @@ import type { TicketProposalInput } from '../tools/proposal-service.js';
 import { getTicketTracker } from '../adapters/registry.js';
 import { resolveAutonomousMode } from '../settings/service.js';
 import { updateProjectSettings } from '../tools/update_project_settings.js';
-import { getMissionItem, updateMissionItem, addMissionItems } from '../missions/service.js';
+import { getMissionItem, updateMissionItem, addMissionItems, addSubSteps } from '../missions/service.js';
 import { onMissionItemChanged } from '../missions/scheduler.js';
 import { checkAndTriggerAdrDrafting } from './adr-service.js';
 import { shouldCreateSuggestion } from '../idle/throttle.js';
@@ -452,16 +452,35 @@ Please refine your proposal based on this feedback.
       }
       cleaned = cleaned.replace(/<mission-reopen>\s*[\s\S]*?(?:<\/mission-reopen>|$)/gi, '').trim();
 
-      // Extract and process <mission-add-items> blocks — agents can add new checklist items
+      // Extract and process <mission-add-substeps> blocks — add sub-steps under a phase
+      const missionAddSubstepsRegex = /<mission-add-substeps>\s*([\s\S]*?)(?:<\/mission-add-substeps>|$)/gi;
+      while ((match = missionAddSubstepsRegex.exec(cleaned)) !== null) {
+        try {
+          const parsed = JSON.parse(match[1].trim()) as { phaseId: string; missionId: string; steps: Array<{ title: string; description: string }> };
+          if (!parsed.phaseId || !parsed.missionId || !parsed.steps?.length) {
+            logger.warn({ agentId, block: match[1] }, 'Skipping malformed mission-add-substeps');
+            continue;
+          }
+          await addSubSteps(parsed.phaseId, parsed.missionId, parsed.steps);
+          logger.info({ agentId, phaseId: parsed.phaseId, count: parsed.steps.length }, 'Sub-steps added to phase');
+          onMissionItemChanged(parsed.missionId);
+        } catch (err) {
+          logger.warn({ err, agentId }, 'Failed to parse/process mission-add-substeps block');
+        }
+      }
+      cleaned = cleaned.replace(/<mission-add-substeps>\s*[\s\S]*?(?:<\/mission-add-substeps>|$)/gi, '').trim();
+
+      // Legacy: <mission-add-items> — add as sub-steps if phaseId provided, otherwise top-level
       const missionAddItemsRegex = /<mission-add-items>\s*([\s\S]*?)(?:<\/mission-add-items>|$)/gi;
       while ((match = missionAddItemsRegex.exec(cleaned)) !== null) {
         try {
-          const parsed = JSON.parse(match[1].trim()) as { missionId: string; items: Array<{ title: string; description: string }> };
-          if (!parsed.missionId || !parsed.items?.length) {
-            logger.warn({ agentId, block: match[1] }, 'Skipping malformed mission-add-items');
-            continue;
+          const parsed = JSON.parse(match[1].trim()) as { missionId: string; phaseId?: string; items: Array<{ title: string; description: string }> };
+          if (!parsed.missionId || !parsed.items?.length) continue;
+          if (parsed.phaseId) {
+            await addSubSteps(parsed.phaseId, parsed.missionId, parsed.items);
+          } else {
+            await addMissionItems(parsed.missionId, parsed.items);
           }
-          await addMissionItems(parsed.missionId, parsed.items);
           logger.info({ agentId, missionId: parsed.missionId, count: parsed.items.length }, 'Mission items added by agent');
           onMissionItemChanged(parsed.missionId);
         } catch (err) {
@@ -470,7 +489,7 @@ Please refine your proposal based on this feedback.
       }
       cleaned = cleaned.replace(/<mission-add-items>\s*[\s\S]*?(?:<\/mission-add-items>|$)/gi, '').trim();
 
-      // Extract and process <mission-replace-item> blocks — break a stalled item into sub-items
+      // Extract and process <mission-replace-item> — creates sub-steps under the parent phase
       const missionReplaceRegex = /<mission-replace-item>\s*([\s\S]*?)(?:<\/mission-replace-item>|$)/gi;
       while ((match = missionReplaceRegex.exec(cleaned)) !== null) {
         try {
@@ -479,22 +498,24 @@ Please refine your proposal based on this feedback.
             reason: string;
             replacements: Array<{ title: string; description: string }>;
           };
-          if (!parsed.itemId || !parsed.replacements?.length) {
-            logger.warn({ agentId, block: match[1] }, 'Skipping malformed mission-replace-item');
-            continue;
-          }
+          if (!parsed.itemId || !parsed.replacements?.length) continue;
           const item = await getMissionItem(parsed.itemId);
           if (!item) continue;
 
-          // Mark the original item as completed (replaced)
-          await updateMissionItem(parsed.itemId, {
-            status: 'verified',
-            completedByAgentId: agentId,
-          });
+          // Determine the phase this item belongs to
+          const phaseId = item.isPhase ? item.id : (item.parentId ?? item.id);
 
-          // Add replacement sub-items
-          await addMissionItems(item.missionId, parsed.replacements);
-          logger.info({ agentId, itemId: parsed.itemId, replacementCount: parsed.replacements.length, reason: parsed.reason }, 'Mission item replaced with sub-items');
+          // Mark the original sub-step as done (but NOT the phase)
+          if (!item.isPhase) {
+            await updateMissionItem(parsed.itemId, {
+              status: 'verified',
+              completedByAgentId: agentId,
+            });
+          }
+
+          // Add replacements as sub-steps under the phase
+          await addSubSteps(phaseId, item.missionId, parsed.replacements);
+          logger.info({ agentId, itemId: parsed.itemId, phaseId, replacementCount: parsed.replacements.length }, 'Item broken into sub-steps under phase');
           onMissionItemChanged(item.missionId);
         } catch (err) {
           logger.warn({ err, agentId }, 'Failed to parse/process mission-replace-item block');

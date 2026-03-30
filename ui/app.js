@@ -2024,27 +2024,53 @@ async function loadMissionChecklist(missionId) {
     html += `<option value="false"${autoVal === false ? ' selected' : ''}>Off</option>`;
     html += `</select></div>`;
 
-    // Progress stats
-    const verified = items.filter(i => i.status === 'verified').length;
-    const agentDone = items.filter(i => i.status === 'agent_complete').length;
-    const inProgress = items.filter(i => i.status === 'in_progress').length;
-    const total = items.length;
-    const pct = Math.round(((verified + agentDone * 0.5) / total) * 100);
+    // Separate phases from sub-steps
+    const phases = items.filter(i => i.isPhase);
+    const subSteps = items.filter(i => !i.isPhase);
+
+    // If no phases exist (legacy), treat all items as phases
+    const displayPhases = phases.length > 0 ? phases : items.filter(i => !i.parentId);
+
+    // Phase-level progress
+    const completedPhases = displayPhases.filter(p => {
+      const children = subSteps.filter(s => s.parentId === p.id);
+      if (children.length === 0) return p.status === 'verified';
+      return children.every(c => c.status === 'verified');
+    }).length;
+    const totalPhases = displayPhases.length;
+    const phasePct = totalPhases > 0 ? Math.round((completedPhases / totalPhases) * 100) : 0;
 
     html += `<div class="checklist-progress">
-      <div class="checklist-progress-bar"><div class="checklist-progress-fill" style="width:${pct}%"></div></div>
-      <span class="checklist-progress-text">${verified}/${total} verified${agentDone ? ` (${agentDone} awaiting review)` : ''}${inProgress ? ` (${inProgress} in progress)` : ''}</span>
+      <div class="checklist-progress-bar"><div class="checklist-progress-fill" style="width:${phasePct}%"></div></div>
+      <span class="checklist-progress-text">${completedPhases}/${totalPhases} phases complete</span>
     </div>`;
-    for (const item of items) {
-      const marker = item.status === 'verified' ? '&#10003;'
-        : item.status === 'agent_complete' ? '?'
-        : item.status === 'in_progress' ? '~' : '&#9675;';
-      const markerClass = item.status === 'verified' ? 'verified'
-        : item.status === 'agent_complete' ? 'agent-complete'
-        : item.status === 'in_progress' ? 'in-progress' : '';
-      const textClass = item.status === 'verified' ? 'verified' : '';
-      const assignee = item.assignedAgentId ? `<span class="checklist-assignee">${escapeHtml(item.assignedAgentId)}</span>` : '';
-      html += `<div class="checklist-item"><span class="checklist-marker ${markerClass}">${marker}</span><span class="checklist-text ${textClass}">${escapeHtml(item.title)}</span>${assignee}</div>`;
+
+    for (const phase of displayPhases) {
+      const children = subSteps.filter(s => s.parentId === phase.id);
+      const childDone = children.filter(c => c.status === 'verified').length;
+      const phaseComplete = children.length > 0 ? children.every(c => c.status === 'verified') : phase.status === 'verified';
+
+      const phaseMarker = phaseComplete ? '&#10003;' : phase.status === 'in_progress' ? '~' : '&#9675;';
+      const phaseMarkerClass = phaseComplete ? 'verified' : phase.status === 'in_progress' ? 'in-progress' : '';
+      const phaseTextClass = phaseComplete ? 'verified' : '';
+
+      if (children.length > 0) {
+        html += `<details class="phase-details"${phase.status === 'in_progress' ? ' open' : ''}>
+          <summary class="checklist-item phase-item">
+            <span class="checklist-marker ${phaseMarkerClass}">${phaseMarker}</span>
+            <span class="checklist-text ${phaseTextClass}">${escapeHtml(phase.title)}</span>
+            <span class="phase-count">${childDone}/${children.length}</span>
+          </summary>`;
+        for (const step of children) {
+          const sMarker = step.status === 'verified' ? '&#10003;' : step.status === 'agent_complete' ? '?' : step.status === 'in_progress' ? '~' : '&#9675;';
+          const sMarkerClass = step.status === 'verified' ? 'verified' : step.status === 'agent_complete' ? 'agent-complete' : step.status === 'in_progress' ? 'in-progress' : '';
+          const sTextClass = step.status === 'verified' ? 'verified' : '';
+          html += `<div class="checklist-item sub-step"><span class="checklist-marker ${sMarkerClass}">${sMarker}</span><span class="checklist-text ${sTextClass}">${escapeHtml(step.title)}</span></div>`;
+        }
+        html += `</details>`;
+      } else {
+        html += `<div class="checklist-item phase-item"><span class="checklist-marker ${phaseMarkerClass}">${phaseMarker}</span><span class="checklist-text ${phaseTextClass}">${escapeHtml(phase.title)}</span></div>`;
+      }
     }
 
     missionChecklistEl.innerHTML = html;

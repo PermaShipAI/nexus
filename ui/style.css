@@ -1061,6 +1061,22 @@ html, body { height: 100%; font-family: var(--font); background: var(--bg); colo
 .checklist-text { flex: 1; }
 .checklist-text.verified { text-decoration: line-through; opacity: 0.6; }
 
+.phase-details { margin-bottom: 2px; }
+.phase-details summary { list-style: none; cursor: pointer; }
+.phase-details summary::-webkit-details-marker { display: none; }
+.phase-details[open] summary { margin-bottom: 2px; }
+
+.phase-item { font-weight: 600; }
+.phase-count {
+  font-size: 10px;
+  font-family: var(--mono);
+  color: var(--text-muted);
+  margin-left: 6px;
+  flex-shrink: 0;
+}
+
+.sub-step { padding-left: 28px; font-size: 12px; opacity: 0.85; }
+
 /* Modal overlay */
 .modal-overlay {
   position: fixed;

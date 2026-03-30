@@ -423,6 +423,8 @@ export const missionItems = pgTable(
   {
     id: uuid('id').primaryKey().defaultRandom(),
     missionId: uuid('mission_id').notNull(),
+    parentId: uuid('parent_id'), // null = top-level phase, set = sub-step under a phase
+    isPhase: boolean('is_phase').notNull().default(false), // true for top-level phases
     title: text('title').notNull(),
     description: text('description').notNull(),
     status: text('status').notNull().default('pending'),

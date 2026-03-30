@@ -4,7 +4,7 @@ import {
   getMission,
   getMissionItems,
   getMissionProjects,
-  addMissionItems,
+  addMissionPhases,
   updateMissionStatus,
   dedupMissionItems,
 } from './service.js';
@@ -37,7 +37,7 @@ export async function planMission(missionId: string, orgId: string): Promise<voi
     ? projects.map((p) => `- **${p.name}** (${p.localPath})`).join('\n')
     : 'No projects linked.';
 
-  const planningPrompt = `You are planning a mission. Generate a checklist of verifiable outcome items for this goal.
+  const planningPrompt = `You are planning a mission. Break this goal into 5-10 major PHASES — high-level workstreams that represent the key milestones.
 
 **Mission Title:** ${mission.title}
 **Mission Description:** ${mission.description}
@@ -45,14 +45,19 @@ export async function planMission(missionId: string, orgId: string): Promise<voi
 **Linked Projects:**
 ${projectContext}
 
-Respond with ONLY a JSON array of checklist items. Each item must have:
-- "title": Short title for the checklist item
-- "description": How to verify this outcome is complete
+IMPORTANT: Create only the major phases (5-10 max). Each phase should be a significant milestone, NOT a small task. Detailed sub-steps will be added later as work progresses.
 
-Example:
+Respond with ONLY a JSON array of phases:
 [
-  {"title": "Add input validation", "description": "All API endpoints validate request bodies and return 400 on invalid input"},
-  {"title": "Write unit tests", "description": "Test coverage for validation logic reaches 80%+"}
+  {"title": "Phase name", "description": "What must be true for this phase to be considered complete"}
+]
+
+Example for a "Build a payment system" mission:
+[
+  {"title": "Payment provider integration", "description": "Stripe SDK connected, test charges succeed in sandbox"},
+  {"title": "Checkout flow", "description": "Users can complete a purchase end-to-end in the UI"},
+  {"title": "Subscription management", "description": "Users can upgrade, downgrade, and cancel subscriptions"},
+  {"title": "Billing dashboard", "description": "Admin can view revenue, refunds, and subscription metrics"}
 ]
 
 Output ONLY the JSON array, no other text.`;
@@ -76,8 +81,8 @@ Output ONLY the JSON array, no other text.`;
         try {
           const items = JSON.parse(jsonMatch[0]) as Array<{ title: string; description: string }>;
           if (Array.isArray(items) && items.length > 0) {
-            await addMissionItems(missionId, items);
-            logger.info({ missionId, itemCount: items.length }, 'Mission items created from planning');
+            await addMissionPhases(missionId, items);
+            logger.info({ missionId, phaseCount: items.length }, 'Mission phases created from planning');
           } else {
             logger.warn({ missionId, response: response.slice(0, 300) }, 'Mission planning returned empty items array');
           }
@@ -108,17 +113,22 @@ Output ONLY the JSON array, no other text.`;
 }
 
 /**
- * Check if all mission items are verified.
- * If so, transition to completed.
+ * Check if all phases are complete.
+ * A phase is complete when all its sub-steps are verified (or it has no sub-steps and is verified itself).
  */
 export async function checkMissionCompletion(missionId: string, orgId: string): Promise<boolean> {
-  const items = await getMissionItems(missionId);
-  if (items.length === 0) return false;
+  const { getMissionPhaseProgress } = await import('./service.js');
+  const progress = await getMissionPhaseProgress(missionId);
+  if (progress.length === 0) return false;
 
-  const allVerified = items.every((item) => item.status === 'verified');
-  if (allVerified) {
+  const allPhasesComplete = progress.every(({ phase, subSteps, completedSubSteps, totalSubSteps }) => {
+    if (totalSubSteps === 0) return phase.status === 'verified';
+    return completedSubSteps === totalSubSteps;
+  });
+
+  if (allPhasesComplete) {
     await updateMissionStatus(missionId, orgId, 'completed');
-    logger.info({ missionId }, 'Mission completed — all items verified');
+    logger.info({ missionId }, 'Mission completed — all phases verified');
     return true;
   }
   return false;
