@@ -7,7 +7,7 @@ import { logger } from '../logger.js';
 import { processWebhookMessage, type UnifiedMessage } from '../bot/listener.js';
 import { getAllAgents, registerAgent } from '../agents/registry.js';
 import { db } from '../db/index.js';
-import { pendingActions, conversationHistory, agents as agentsTable, tickets as ticketsTable, knowledgeEntries, missions as missionsSchema, localProjects as localProjectsSchema, adrDrafts } from '../db/schema.js';
+import { pendingActions, conversationHistory, agents as agentsTable, tickets as ticketsTable, knowledgeEntries, missions as missionsSchema, localProjects as localProjectsSchema, missionItems as missionItemsTable, adrDrafts } from '../db/schema.js';
 import { eq, and, desc } from 'drizzle-orm';
 import { getTicketTracker, setTicketTracker } from '../adapters/registry.js';
 import { createExecutionBackend } from './execution-backends/factory.js';
@@ -1028,6 +1028,70 @@ export async function createLocalServer(_port = 3000) {
     const { dedupMissionItems } = await import('../missions/service.js');
     const removed = await dedupMissionItems(id);
     return { success: true, removed };
+  });
+
+  /** Restructure a flat mission into phases + sub-steps */
+  server.post('/api/missions/:id/restructure', async (request) => {
+    const { id } = request.params as { id: string };
+    const { phaseIds } = request.body as { phaseIds: string[] };
+    if (!phaseIds?.length) return { success: false, error: 'phaseIds required' };
+
+    const { getMissionItems, updateMissionItem } = await import('../missions/service.js');
+    const items = await getMissionItems(id);
+
+    const phaseSet = new Set(phaseIds);
+    let updated = 0;
+
+    // Mark selected items as phases
+    for (const item of items) {
+      if (phaseSet.has(item.id)) {
+        if (!item.isPhase) {
+          await db.update(missionItemsTable).set({ isPhase: true, parentId: null }).where(eq(missionItemsTable.id, item.id));
+          updated++;
+        }
+      }
+    }
+
+    // Assign non-phase items as sub-steps using keyword matching
+    const phases = items.filter(i => phaseSet.has(i.id));
+    const orphans = items.filter(i => !phaseSet.has(i.id));
+
+    for (const orphan of orphans) {
+      const orphanWords = orphan.title.toLowerCase().split(/\s+/).filter(w => w.length > 3);
+      let bestPhase: string | null = null;
+      let bestScore = 0;
+
+      for (const phase of phases) {
+        const phaseWords = phase.title.toLowerCase().split(/\s+/).filter(w => w.length > 3);
+        const score = orphanWords.filter(w => phaseWords.some(pw => w.includes(pw) || pw.includes(w))).length;
+        if (score > bestScore) {
+          bestScore = score;
+          bestPhase = phase.id;
+        }
+      }
+
+      // Also check description keywords
+      if (!bestPhase || bestScore === 0) {
+        for (const phase of phases) {
+          const descLower = phase.description.toLowerCase();
+          const score = orphanWords.filter(w => descLower.includes(w)).length;
+          if (score > bestScore) {
+            bestScore = score;
+            bestPhase = phase.id;
+          }
+        }
+      }
+
+      // Default to the most relevant phase, or last one as catch-all
+      if (!bestPhase) bestPhase = phases[phases.length - 1]?.id ?? null;
+
+      if (bestPhase && (orphan.parentId !== bestPhase || orphan.isPhase)) {
+        await db.update(missionItemsTable).set({ parentId: bestPhase, isPhase: false }).where(eq(missionItemsTable.id, orphan.id));
+        updated++;
+      }
+    }
+
+    return { success: true, updated, phases: phases.length, subSteps: orphans.length };
   });
 
   /** Get chat history for a mission channel */
