@@ -1059,7 +1059,7 @@ async function cycleProjectAutonomous(projectId, current) {
 async function removeProject(id) {
   if (!confirm('Remove this project? Agents will lose access to its code and docs.')) return;
   try {
-    await fetch(`/api/projects/${id}`, { method: 'DELETE' });
+    await apiFetch(`/api/projects/${id}`, { method: 'DELETE' });
     loadProjects();
   } catch (err) {
     appendSystemMessage('Failed to remove project.');
