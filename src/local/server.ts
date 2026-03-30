@@ -347,6 +347,17 @@ export async function createLocalServer(_port = 3000) {
   });
 
   /** Retry a failed execution */
+  /** Update ticket fields (e.g., set executionBranch) */
+  server.patch('/api/executions/:id', async (request) => {
+    const { id } = request.params as { id: string };
+    const { executionBranch } = request.body as { executionBranch?: string };
+    const updates: Record<string, unknown> = {};
+    if (executionBranch !== undefined) updates.executionBranch = executionBranch;
+    if (Object.keys(updates).length === 0) return { success: false, error: 'No fields to update' };
+    await db.update(ticketsTable).set(updates).where(eq(ticketsTable.id, id));
+    return { success: true };
+  });
+
   server.post('/api/executions/:id/retry', async (request) => {
     const { id } = request.params as { id: string };
     const tracker = getTicketTracker();
