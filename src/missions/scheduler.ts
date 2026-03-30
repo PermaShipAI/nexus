@@ -67,6 +67,11 @@ export async function startMissionScheduler(): Promise<void> {
 }
 
 async function checkMissionHeartbeats(): Promise<void> {
+  // Check global pause
+  const { isAgentsPaused } = await import('../settings/service.js');
+  const orgId = (await getActiveMissionsDueForHeartbeat())[0]?.orgId;
+  if (orgId && await isAgentsPaused(orgId)) return;
+
   const dueMissions = await getActiveMissionsDueForHeartbeat();
   if (dueMissions.length === 0) return;
 

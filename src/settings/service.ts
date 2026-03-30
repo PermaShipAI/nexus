@@ -42,6 +42,12 @@ export async function isAutonomousMode(orgId: string): Promise<boolean> {
   return value === true;
 }
 
+/** Check if all agents are paused (global kill switch) */
+export async function isAgentsPaused(orgId: string): Promise<boolean> {
+  const value = await getSetting('agents_paused', orgId);
+  return value === true;
+}
+
 export interface AutonomousContext {
   orgId: string;
   channelId?: string | null;

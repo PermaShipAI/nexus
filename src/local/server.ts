@@ -556,6 +556,7 @@ export async function createLocalServer(_port = 3000) {
   server.get('/api/config', async () => {
     const autonomous = await isAutonomousMode(LOCAL_ORG_ID);
     const useWorktrees = await getSetting('use_worktrees', LOCAL_ORG_ID) === true;
+    const agentsPaused = await getSetting('agents_paused', LOCAL_ORG_ID) === true;
     const projects = await projectRegistry.getAllProjects(LOCAL_ORG_ID);
     const hasKey = config.LLM_PROVIDER === 'ollama' || !!(process.env.LLM_API_KEY || process.env.GEMINI_API_KEY);
     return {
@@ -563,6 +564,7 @@ export async function createLocalServer(_port = 3000) {
       executionBackend: config.EXECUTION_BACKEND,
       autonomousMode: autonomous,
       useWorktrees,
+      agentsPaused,
       projectCount: projects.length,
       needsSetup: !hasKey,
     };
@@ -733,6 +735,14 @@ export async function createLocalServer(_port = 3000) {
     await setSetting('autonomous_mode', enabled, LOCAL_ORG_ID, 'local-ui');
     broadcast('settings_changed', { autonomousMode: enabled });
     return { success: true, autonomousMode: enabled };
+  });
+
+  /** Pause/resume all agents globally */
+  server.post('/api/settings/agents-paused', async (request) => {
+    const { paused } = request.body as { paused: boolean };
+    await setSetting('agents_paused', paused, LOCAL_ORG_ID, 'local-ui');
+    broadcast('settings_changed', { agentsPaused: paused });
+    return { success: true, agentsPaused: paused };
   });
 
   server.post('/api/settings/worktrees', async (request) => {

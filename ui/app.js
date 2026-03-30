@@ -1187,6 +1187,7 @@ const executorSelect = document.getElementById('executor-select');
 const permashipHint = document.getElementById('permaship-hint');
 const autonomousToggle = document.getElementById('autonomous-toggle');
 const worktreeToggle = document.getElementById('worktree-toggle');
+const agentsPausedToggle = document.getElementById('agents-paused-toggle');
 
 async function loadConfig() {
   try {
@@ -1200,6 +1201,7 @@ async function loadConfig() {
     permashipHint.classList.toggle('hidden', backend !== 'permaship');
     autonomousToggle.checked = cfg.autonomousMode || false;
     if (worktreeToggle) worktreeToggle.checked = cfg.useWorktrees || false;
+    if (agentsPausedToggle) agentsPausedToggle.checked = cfg.agentsPaused || false;
     showSetupIfNeeded(cfg);
     // Test executor on load if one is configured (skip noop)
     if (backend !== 'noop') testExecutor(backend);
@@ -1298,6 +1300,21 @@ if (worktreeToggle) {
     } catch (err) {
       worktreeToggle.checked = !worktreeToggle.checked;
       appendSystemMessage('Failed to update worktree setting.');
+    }
+  });
+}
+
+if (agentsPausedToggle) {
+  agentsPausedToggle.addEventListener('change', async () => {
+    try {
+      await apiFetch('/api/settings/agents-paused', {
+        method: 'POST',
+        body: JSON.stringify({ paused: agentsPausedToggle.checked }),
+      });
+      appendSystemMessage(agentsPausedToggle.checked ? 'All agents paused.' : 'Agents resumed.');
+    } catch (err) {
+      agentsPausedToggle.checked = !agentsPausedToggle.checked;
+      appendSystemMessage('Failed to update pause setting.');
     }
   });
 }
@@ -1935,10 +1952,25 @@ function renderMissionList() {
   for (const m of missions) {
     const li = document.createElement('li');
     li.className = activeChannelId === m.channelId ? 'active-mission' : '';
-    li.innerHTML = `<span class="mission-title-text">${escapeHtml(m.title)}</span><span class="mission-status-dot ${m.status}"></span>`;
+    const isPaused = m.status === 'paused';
+    const pauseBtn = m.status === 'active' || m.status === 'paused'
+      ? `<button class="mission-pause-btn" onclick="event.stopPropagation();toggleMissionPause('${m.id}','${m.status}')" title="${isPaused ? 'Resume' : 'Pause'}">${isPaused ? '&#9654;' : '&#9646;&#9646;'}</button>`
+      : '';
+    li.innerHTML = `<span class="mission-title-text">${escapeHtml(m.title)}</span>${pauseBtn}<span class="mission-status-dot ${m.status}"></span>`;
     li.addEventListener('click', () => switchToChannel(m.channelId));
     missionListEl.appendChild(li);
   }
+}
+
+async function toggleMissionPause(missionId, currentStatus) {
+  const newStatus = currentStatus === 'paused' ? 'active' : 'paused';
+  try {
+    await apiFetch(`/api/missions/${missionId}/status`, {
+      method: 'POST',
+      body: JSON.stringify({ status: newStatus }),
+    });
+    loadMissions();
+  } catch { /* ok */ }
 }
 
 function renderMissionTabs() {
