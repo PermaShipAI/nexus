@@ -454,14 +454,14 @@ export async function createLocalServer(_port = 3000) {
         await stat(join(pathCheck.resolved, '.git'));
       } catch {
         try {
-          await execFileAsync('git', ['init'], { cwd: pathCheck.resolved, timeout: 10_000 });
+          await execFileAsync('git', ['init', '-b', 'main'], { cwd: pathCheck.resolved, timeout: 10_000 });
           await execFileAsync('git', ['add', '.'], { cwd: pathCheck.resolved, timeout: 30_000 });
           await execFileAsync('git', ['commit', '-m', 'Initial commit (auto-created by Nexus Command)'], {
             cwd: pathCheck.resolved,
             timeout: 30_000,
             env: { ...process.env, GIT_AUTHOR_NAME: 'Nexus Command', GIT_AUTHOR_EMAIL: 'nexus@local', GIT_COMMITTER_NAME: 'Nexus Command', GIT_COMMITTER_EMAIL: 'nexus@local' },
           });
-          logger.info({ path: pathCheck.resolved }, 'Initialized git repo for project');
+          logger.info({ path: pathCheck.resolved }, 'Initialized git repo with main branch');
         } catch (gitErr) {
           logger.warn({ err: gitErr, path: pathCheck.resolved }, 'Could not initialize git — diff tracking will be unavailable');
         }
