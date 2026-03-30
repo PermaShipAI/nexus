@@ -224,7 +224,10 @@ Please refine your proposal based on this feedback.
 
           // Immediately create suggestion / ticket for the approved proposal
           try {
-            const autonomous = await resolveAutonomousMode({ orgId, channelId, repoKey: updatedArgs['repo-key'] as string | undefined });
+            // Use the PROPOSAL's channelId (not the executor's) for autonomous mode resolution
+            // so mission-scoped autonomous mode is detected correctly
+            const proposalChannelId = action.channelId ?? channelId;
+            const autonomous = await resolveAutonomousMode({ orgId, channelId: proposalChannelId, repoKey: updatedArgs['repo-key'] as string | undefined });
             if (autonomous) {
               // Auto-create ticket
               const ticketResult = await getTicketTracker().createTicket({
