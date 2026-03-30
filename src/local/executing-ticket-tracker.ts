@@ -31,29 +31,91 @@ export class LocalExecutingTicketTracker extends LocalTicketTracker {
     super();
   }
 
+  private activeExecutors = 0;
+  private executionQueue: Array<{ ticketId: string; input: CreateTicketInput }> = [];
+
+  /** Get the max concurrent executors setting (default 5) */
+  private async getMaxConcurrency(orgId: string): Promise<number> {
+    const val = await getSetting('max_executors', orgId);
+    return typeof val === 'number' && val > 0 ? val : 5;
+  }
+
+  /** Try to dispatch the next queued ticket if there's capacity */
+  private async processQueue(): Promise<void> {
+    if (this.executionQueue.length === 0) return;
+
+    const orgId = this.executionQueue[0]?.input.orgId;
+    const maxConcurrency = orgId ? await this.getMaxConcurrency(orgId) : 5;
+    if (this.activeExecutors >= maxConcurrency) return;
+
+    const next = this.executionQueue.shift();
+    if (!next) return;
+
+    this.activeExecutors++;
+    logger.info({ ticketId: next.ticketId, active: this.activeExecutors, queued: this.executionQueue.length }, 'Executor slot available — starting queued ticket');
+
+    await db.update(tickets).set({
+      executionStatus: 'running',
+      executionBackend: this.backend.name,
+    }).where(eq(tickets.id, next.ticketId));
+
+    this.dispatchExecution(next.ticketId, next.input)
+      .catch(async (err) => {
+        logger.error({ err, ticketId: next.ticketId }, 'Background execution dispatch failed');
+        await db.update(tickets).set({
+          executionStatus: 'failed',
+          executionOutput: `Dispatch error: ${(err as Error).message}`,
+          executedAt: new Date(),
+        }).where(eq(tickets.id, next.ticketId)).catch(() => {});
+      })
+      .finally(async () => {
+        this.activeExecutors--;
+        logger.info({ ticketId: next.ticketId, active: this.activeExecutors, queued: this.executionQueue.length }, 'Executor slot freed');
+        await this.processQueue();
+      });
+  }
+
   override async createTicket(
     input: CreateTicketInput,
   ): Promise<{ success: boolean; ticketId?: string; error?: string }> {
     const result = await super.createTicket(input);
     if (!result.success || !result.ticketId) return result;
 
-    // Mark as running
+    const ticketId = result.ticketId;
+    const maxConcurrency = await this.getMaxConcurrency(input.orgId);
+
+    if (this.activeExecutors >= maxConcurrency) {
+      // Queue it
+      await db.update(tickets).set({
+        executionStatus: 'queued',
+        executionBackend: this.backend.name,
+      }).where(eq(tickets.id, ticketId));
+      this.executionQueue.push({ ticketId, input });
+      logger.info({ ticketId, active: this.activeExecutors, queued: this.executionQueue.length, max: maxConcurrency }, 'Executor at capacity — ticket queued');
+      return result;
+    }
+
+    // Dispatch immediately
+    this.activeExecutors++;
     await db.update(tickets).set({
       executionStatus: 'running',
       executionBackend: this.backend.name,
-    }).where(eq(tickets.id, result.ticketId));
+    }).where(eq(tickets.id, ticketId));
 
-    // Dispatch execution in background
-    const ticketId = result.ticketId;
-    this.dispatchExecution(ticketId, input).catch(async (err) => {
-      logger.error({ err, ticketId }, 'Background execution dispatch failed');
-      // Mark as failed so it's not stuck as 'running' forever
-      await db.update(tickets).set({
-        executionStatus: 'failed',
-        executionOutput: `Dispatch error: ${(err as Error).message}`,
-        executedAt: new Date(),
-      }).where(eq(tickets.id, ticketId)).catch(() => {});
-    });
+    this.dispatchExecution(ticketId, input)
+      .catch(async (err) => {
+        logger.error({ err, ticketId }, 'Background execution dispatch failed');
+        await db.update(tickets).set({
+          executionStatus: 'failed',
+          executionOutput: `Dispatch error: ${(err as Error).message}`,
+          executedAt: new Date(),
+        }).where(eq(tickets.id, ticketId)).catch(() => {});
+      })
+      .finally(async () => {
+        this.activeExecutors--;
+        logger.info({ ticketId, active: this.activeExecutors, queued: this.executionQueue.length }, 'Executor slot freed');
+        await this.processQueue();
+      });
 
     return result;
   }

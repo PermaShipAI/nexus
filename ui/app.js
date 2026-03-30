@@ -1202,6 +1202,7 @@ async function loadConfig() {
     autonomousToggle.checked = cfg.autonomousMode || false;
     if (worktreeToggle) worktreeToggle.checked = cfg.useWorktrees || false;
     if (agentsPausedToggle) agentsPausedToggle.checked = cfg.agentsPaused || false;
+    if (maxExecutorsInput) maxExecutorsInput.value = cfg.maxExecutors ?? 5;
     showSetupIfNeeded(cfg);
     // Test executor on load if one is configured (skip noop)
     if (backend !== 'noop') testExecutor(backend);
@@ -1315,6 +1316,22 @@ if (agentsPausedToggle) {
     } catch (err) {
       agentsPausedToggle.checked = !agentsPausedToggle.checked;
       appendSystemMessage('Failed to update pause setting.');
+    }
+  });
+}
+
+const maxExecutorsInput = document.getElementById('max-executors-input');
+if (maxExecutorsInput) {
+  maxExecutorsInput.addEventListener('change', async () => {
+    const val = parseInt(maxExecutorsInput.value, 10);
+    if (val < 1 || val > 20) return;
+    try {
+      await apiFetch('/api/settings/max-executors', {
+        method: 'POST',
+        body: JSON.stringify({ max: val }),
+      });
+    } catch {
+      appendSystemMessage('Failed to update max executors.');
     }
   });
 }

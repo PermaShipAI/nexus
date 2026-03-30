@@ -568,6 +568,8 @@ export async function createLocalServer(_port = 3000) {
     const autonomous = await isAutonomousMode(LOCAL_ORG_ID);
     const useWorktrees = await getSetting('use_worktrees', LOCAL_ORG_ID) === true;
     const agentsPaused = await getSetting('agents_paused', LOCAL_ORG_ID) === true;
+    const maxExecutorsVal = await getSetting('max_executors', LOCAL_ORG_ID);
+    const maxExecutors = typeof maxExecutorsVal === 'number' ? maxExecutorsVal : 5;
     const projects = await projectRegistry.getAllProjects(LOCAL_ORG_ID);
     const hasKey = config.LLM_PROVIDER === 'ollama' || !!(process.env.LLM_API_KEY || process.env.GEMINI_API_KEY);
     return {
@@ -576,6 +578,7 @@ export async function createLocalServer(_port = 3000) {
       autonomousMode: autonomous,
       useWorktrees,
       agentsPaused,
+      maxExecutors,
       projectCount: projects.length,
       needsSetup: !hasKey,
     };
@@ -754,6 +757,13 @@ export async function createLocalServer(_port = 3000) {
     await setSetting('agents_paused', paused, LOCAL_ORG_ID, 'local-ui');
     broadcast('settings_changed', { agentsPaused: paused });
     return { success: true, agentsPaused: paused };
+  });
+
+  server.post('/api/settings/max-executors', async (request) => {
+    const { max } = request.body as { max: number };
+    if (typeof max !== 'number' || max < 1 || max > 20) return { success: false, error: 'Must be 1-20' };
+    await setSetting('max_executors', max, LOCAL_ORG_ID, 'local-ui');
+    return { success: true, maxExecutors: max };
   });
 
   server.post('/api/settings/worktrees', async (request) => {
