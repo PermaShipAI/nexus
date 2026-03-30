@@ -224,7 +224,23 @@ If an item should be removed entirely (duplicate or no longer relevant):
     return;
   }
 
-  // Check completion (before verification — some items may already be done)
+  // Auto-complete phases whose sub-steps are all verified
+  const { getMissionPhaseProgress } = await import('./service.js');
+  const phaseProgress = await getMissionPhaseProgress(mission.id);
+  for (const { phase, subSteps, completedSubSteps, totalSubSteps } of phaseProgress) {
+    if (phase.status !== 'verified' && totalSubSteps > 0 && completedSubSteps === totalSubSteps) {
+      await updateMissionItem(phase.id, { status: 'verified', completedByAgentId: 'system' });
+      localBus.emit('message', {
+        id: `phase-complete-${phase.id}`,
+        content: `**[Mission]** Phase complete: **${phase.title}** (${completedSubSteps}/${totalSubSteps} sub-steps verified)`,
+        channel_id: mission.channelId,
+        timestamp: new Date().toISOString(),
+      });
+      logger.info({ missionId: mission.id, phaseId: phase.id, phaseTitle: phase.title }, 'Phase auto-completed');
+    }
+  }
+
+  // Check overall mission completion
   const completed = await checkMissionCompletion(mission.id, mission.orgId);
   if (completed) {
     await sendAgentMessage(
