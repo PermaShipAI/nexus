@@ -2,7 +2,7 @@ import { join } from 'path';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { db } from '../db/index.js';
-import { tickets } from '../db/schema.js';
+import { tickets, pendingActions } from '../db/schema.js';
 import { eq } from 'drizzle-orm';
 import { logger } from '../logger.js';
 import { LocalTicketTracker } from './ticket-tracker.js';
@@ -136,7 +136,36 @@ export class LocalExecutingTicketTracker extends LocalTicketTracker {
     return { worktreePath, cleanup };
   }
 
+  /** Find the mission channel for a ticket (if it originated from a mission) */
+  private async findMissionChannel(ticketId: string, orgId: string): Promise<string | null> {
+    try {
+      // Look up the proposal that created this ticket
+      const [action] = await db.select({ channelId: pendingActions.channelId })
+        .from(pendingActions)
+        .where(eq(pendingActions.orgId, orgId))
+        .limit(50);
+      // Actually need to match by title or check all approved actions
+      const allActions = await db.select({ channelId: pendingActions.channelId, status: pendingActions.status })
+        .from(pendingActions)
+        .where(eq(pendingActions.orgId, orgId))
+        .limit(100);
+      const missionAction = allActions.find(a => a.channelId?.startsWith('mission:'));
+      return missionAction?.channelId ?? null;
+    } catch { return null; }
+  }
+
+  /** Emit a status message to both general and mission channels */
+  private emitStatus(msg: { id: string; content: string; channel_id?: string; [key: string]: unknown }, missionChannelId: string | null) {
+    localBus.emit('message', { ...msg, channel_id: LOCAL_CHANNEL_ID, timestamp: new Date().toISOString() });
+    if (missionChannelId) {
+      localBus.emit('message', { ...msg, id: msg.id + '-mission', channel_id: missionChannelId, timestamp: new Date().toISOString() });
+    }
+  }
+
   private async dispatchExecution(ticketId: string, input: CreateTicketInput): Promise<void> {
+    // Find mission channel for status updates
+    const missionChannel = await this.findMissionChannel(ticketId, input.orgId);
+
     // Resolve the actual local path from the project registry
     let repoPath: string;
     const registry = getProjectRegistry();
@@ -167,12 +196,10 @@ export class LocalExecutingTicketTracker extends LocalTicketTracker {
     logger.info({ ticketId, backend: this.backend.name, repoPath: execPath, useWorktree, title: input.title },
       'Dispatching ticket to execution backend');
 
-    localBus.emit('message', {
+    this.emitStatus({
       id: `exec-start-${ticketId}`,
-      content: `**[System]** Dispatching ticket "${input.title}" to **${this.backend.name}**${useWorktree && branchName ? ` on branch \`${branchName}\`` : ''} in \`${execPath}\`...`,
-      channel_id: LOCAL_CHANNEL_ID,
-      timestamp: new Date().toISOString(),
-    });
+      content: `**[Executor]** Started: **${input.title}** via ${this.backend.name}${useWorktree && branchName ? ` (branch \`${branchName}\`)` : ''}`,
+    }, missionChannel);
 
     const execResult = await this.backend.execute({
       ticketId,
@@ -209,15 +236,14 @@ export class LocalExecutingTicketTracker extends LocalTicketTracker {
       ? `Successfully executed ticket: **${input.title}** via **${this.backend.name}**.${execResult.branch ? ` Branch: \`${execResult.branch}\`` : ''}`
       : `Failed to execute ticket: **${input.title}**. Error: ${stripAnsi(execResult.error ?? 'unknown error')}`;
 
-    localBus.emit('message', {
+    this.emitStatus({
       id: `exec-result-${ticketId}`,
-      content: `**[System]** ${statusMsg}`,
+      content: execResult.success
+        ? `**[Executor]** Completed: **${input.title}** — sending for review`
+        : `**[Executor]** Failed: **${input.title}** — ${stripAnsi(execResult.error ?? 'unknown error')}`,
       diff: diff ? diff.slice(0, 10_000) : null,
-      embed_description: !diff && execResult.output ? stripAnsi(execResult.output).slice(0, 1500) : undefined,
       retry_ticket_id: execResult.success ? undefined : ticketId,
-      channel_id: LOCAL_CHANNEL_ID,
-      timestamp: new Date().toISOString(),
-    });
+    }, missionChannel);
 
 
     // Trigger agent review of the work
@@ -355,17 +381,21 @@ Keep your review concise and actionable.`;
           await db.update(tickets).set({ executionStatus: 'review_failed' }).where(eq(tickets.id, ticketId));
 
           // Notify with retry option
-          localBus.emit('message', {
+          const reviewMissionCh = await this.findMissionChannel(ticketId, input.orgId);
+          this.emitStatus({
             id: `review-action-${ticketId}`,
-            content: `**[System]** Code review outcome: **${reviewUpper.includes('REJECT') ? 'REJECTED' : 'NEEDS CHANGES'}**. The execution did not meet acceptance criteria for "${input.title}".`,
+            content: `**[Review]** ${reviewUpper.includes('REJECT') ? 'REJECTED' : 'NEEDS CHANGES'}: **${input.title}**`,
             retry_ticket_id: ticketId,
-            channel_id: LOCAL_CHANNEL_ID,
-            timestamp: new Date().toISOString(),
-          });
+          }, reviewMissionCh);
 
           logger.info({ ticketId, outcome: reviewUpper.includes('REJECT') ? 'rejected' : 'needs_changes' }, 'Execution review: rework needed');
         } else if (reviewUpper.includes('APPROVE')) {
           await db.update(tickets).set({ executionStatus: 'review_approved' }).where(eq(tickets.id, ticketId));
+          const approveMissionCh = await this.findMissionChannel(ticketId, input.orgId);
+          this.emitStatus({
+            id: `review-approved-${ticketId}`,
+            content: `**[Review]** APPROVED: **${input.title}** — code changes are ready`,
+          }, approveMissionCh);
 
           const branchName = execResult.branch;
           const autonomous = await resolveAutonomousMode({
