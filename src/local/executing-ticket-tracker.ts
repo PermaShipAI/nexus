@@ -272,7 +272,19 @@ export class LocalExecutingTicketTracker extends LocalTicketTracker {
       repoKey: input.repoKey,
     });
 
-    if (branchName) execResult.branch = branchName;
+    // Detect the branch the executor created/used
+    if (branchName) {
+      execResult.branch = branchName;
+    } else {
+      // No worktree — detect whatever branch the executor created
+      try {
+        const { stdout } = await execFileAsync('git', ['rev-parse', '--abbrev-ref', 'HEAD'], { cwd: execPath, timeout: 5000 });
+        const detectedBranch = stdout.trim();
+        if (detectedBranch && detectedBranch !== 'main' && detectedBranch !== 'master') {
+          execResult.branch = detectedBranch;
+        }
+      } catch { /* ok */ }
+    }
 
     // Capture git diff of what changed
     const diff = await this.captureGitDiff(execPath);
