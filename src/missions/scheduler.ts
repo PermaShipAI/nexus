@@ -141,9 +141,23 @@ async function reconcileItemsWithTickets(
     }
   }
 
+  // Collect failures for Nexus to evaluate
+  const failedTickets = orgTickets.filter(t =>
+    t.executionStatus === 'failed' || t.executionStatus === 'review_failed'
+  );
+
+  let failureContext = '';
+  if (failedTickets.length > 0) {
+    const failureLines = failedTickets.slice(0, 10).map(t => {
+      const review = t.executionReview?.slice(0, 150) ?? 'No review';
+      return `- "${t.title}" [${t.executionStatus}]: ${review}`;
+    });
+    failureContext = `\n**Failed tickets (${failedTickets.length} total):**\n${failureLines.join('\n')}`;
+  }
+
   return {
-    executionContext: contextLines.length > 0
-      ? `\n**Execution History (tickets related to this mission):**\n${contextLines.join('\n')}`
+    executionContext: (contextLines.length > 0 || failureContext)
+      ? `\n**Execution History:**\n${contextLines.join('\n')}${failureContext}`
       : '',
   };
 }
@@ -300,6 +314,75 @@ If NO — explain what's still missing and what additional work is needed. Do NO
       await spawnRecurrence(mission);
     }
     return;
+  }
+
+  // Escalate repeated failures to Nexus for re-scoping
+  // (only check every 3rd heartbeat to avoid spamming)
+  const allOrgTickets = await db.select({
+    id: tickets.id, title: tickets.title,
+    executionStatus: tickets.executionStatus,
+    executionReview: tickets.executionReview,
+  }).from(tickets).where(eq(tickets.orgId, mission.orgId)).limit(100);
+
+  const failedTickets = allOrgTickets.filter(t =>
+    t.executionStatus === 'failed' || t.executionStatus === 'review_failed'
+  );
+
+  if (failedTickets.length >= 3 && focusItem && (focusItem.heartbeatCount ?? 0) % 3 === 0) {
+    // Check if failures relate to the current focus item
+    const focusKeywords = focusItem.title.toLowerCase().split(/\s+/).filter(w => w.length > 3);
+    const relatedFailures = failedTickets.filter(t => {
+      const tl = t.title.toLowerCase();
+      return focusKeywords.some(kw => tl.includes(kw));
+    });
+
+    if (relatedFailures.length >= 2) {
+      const failureSummary = relatedFailures.slice(0, 5).map(t => {
+        const review = t.executionReview?.slice(0, 150) ?? 'No review available';
+        return `- "${t.title}" [${t.executionStatus}]: ${review}`;
+      }).join('\n');
+
+      const escalationPrompt = `Multiple tickets for "${focusItem.title}" have failed execution or review:
+
+${failureSummary}
+
+The same work has been attempted ${relatedFailures.length} times and keeps failing. Please evaluate:
+1. Is the scope too broad? Should it be broken into smaller pieces?
+2. Are there missing prerequisites that need to be done first?
+3. Should we take a different approach entirely?
+
+Recommend a concrete next step. If the item should be broken down, use:
+<mission-replace-item>{"itemId":"${focusItem.id}","reason":"Repeated execution failures","replacements":[{"title":"Smaller task","description":"Verification criteria"}]}</mission-replace-item>`;
+
+      try {
+        const escalationResponse = await executeAgent({
+          orgId: mission.orgId,
+          agentId: 'nexus' as AgentId,
+          channelId: mission.channelId,
+          userId: 'system',
+          userName: 'Failure Escalation',
+          userMessage: escalationPrompt,
+          needsCodeAccess: false,
+          source: 'idle',
+        });
+
+        if (escalationResponse && escalationResponse !== '[error]') {
+          await sendAgentMessage(mission.channelId, 'Nexus (Failure Review)', escalationResponse, mission.orgId);
+          await storeMessage({
+            orgId: mission.orgId,
+            channelId: mission.channelId,
+            discordMessageId: `failure-escalation-${Date.now()}`,
+            authorId: 'agent',
+            authorName: 'Nexus (Failure Review)',
+            content: escalationResponse,
+            isAgent: true,
+            agentId: 'nexus',
+          });
+        }
+      } catch (err) {
+        logger.warn({ err, missionId: mission.id }, 'Failure escalation failed');
+      }
+    }
   }
 
   if (focusItem) {
