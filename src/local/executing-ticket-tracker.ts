@@ -14,7 +14,7 @@ import { sendAgentMessage } from '../bot/formatter.js';
 import { LOCAL_CHANNEL_ID } from './tenant-resolver.js';
 import { getProjectRegistry } from '../adapters/registry.js';
 import { getSetting, resolveAutonomousMode } from '../settings/service.js';
-import { mergeTicketBranch, cleanupBranch, getMergeTargetBranch } from './branch-manager.js';
+import { mergeTicketBranch, cleanupBranch, getMergeTargetBranch, queueMerge } from './branch-manager.js';
 
 const execFileAsync = promisify(execFile);
 
@@ -563,44 +563,15 @@ Keep your review concise and actionable.`;
             repoKey: input.repoKey,
           });
 
-          if (autonomous && branchName && repoPath) {
-            // Auto-merge in autonomous mode
-            const targetBranch = await getMergeTargetBranch(input.orgId, repoPath);
-            const mergeResult = await mergeTicketBranch(ticketId, input.orgId);
-
-            if (mergeResult.success) {
-              await cleanupBranch(repoPath, branchName);
-              localBus.emit('message', {
-                id: `merge-success-${ticketId}`,
-                content: `**[System]** Code review **APPROVED** and branch \`${branchName}\` auto-merged into \`${targetBranch}\` for "${input.title}".`,
-                channel_id: LOCAL_CHANNEL_ID,
-                timestamp: new Date().toISOString(),
-              });
-            } else if (mergeResult.reason === 'conflict') {
-              localBus.emit('message', {
-                id: `merge-conflict-${ticketId}`,
-                content: `**[System]** Code review **APPROVED** for "${input.title}" but merge conflict on \`${branchName}\`.${mergeResult.conflictFiles?.length ? ` Conflicting: ${mergeResult.conflictFiles.join(', ')}` : ''} Manual resolution needed.`,
-                merge_ticket_id: ticketId,
-                channel_id: LOCAL_CHANNEL_ID,
-                timestamp: new Date().toISOString(),
-              });
-            } else if (mergeResult.reason === 'dirty_worktree') {
-              localBus.emit('message', {
-                id: `merge-dirty-${ticketId}`,
-                content: `**[System]** Code review **APPROVED** for "${input.title}" but cannot auto-merge — uncommitted changes on \`${targetBranch}\`. Commit or stash first.`,
-                merge_ticket_id: ticketId,
-                channel_id: LOCAL_CHANNEL_ID,
-                timestamp: new Date().toISOString(),
-              });
-            } else {
-              localBus.emit('message', {
-                id: `merge-error-${ticketId}`,
-                content: `**[System]** Code review **APPROVED** for "${input.title}" but merge failed: ${mergeResult.error ?? mergeResult.reason ?? 'unknown'}`,
-                merge_ticket_id: ticketId,
-                channel_id: LOCAL_CHANNEL_ID,
-                timestamp: new Date().toISOString(),
-              });
-            }
+          if (autonomous && branchName) {
+            // Queue for sequential merge — processes one at a time against
+            // latest main to minimize conflicts from concurrent executors
+            queueMerge(ticketId, input.orgId);
+            const approveMissionCh2 = await this.findMissionChannel(ticketId, input.orgId);
+            this.emitStatus({
+              id: `merge-queued-${ticketId}`,
+              content: `**[Merge]** Queued: **${input.title}** (branch \`${branchName}\`) — will merge sequentially`,
+            }, approveMissionCh2);
           } else if (branchName) {
             // Non-autonomous: notify with merge button
             const targetBranch = repoPath ? await getMergeTargetBranch(input.orgId, repoPath) : 'main';
