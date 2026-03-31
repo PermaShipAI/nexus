@@ -556,8 +556,10 @@ Keep your review concise and actionable.`;
           }, approveMissionCh);
 
           const branchName = execResult.branch;
+          const missionCh = await this.findMissionChannel(ticketId, input.orgId);
           const autonomous = await resolveAutonomousMode({
             orgId: input.orgId,
+            channelId: missionCh ?? undefined,
             repoKey: input.repoKey,
           });
 
