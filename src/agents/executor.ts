@@ -544,6 +544,36 @@ Please refine your proposal based on this feedback.
       }
       cleaned = cleaned.replace(/<mission-remove-item>\s*[\s\S]*?(?:<\/mission-remove-item>|$)/gi, '').trim();
 
+      // Extract and process <mission-invite-agent> blocks
+      const missionInviteRegex = /<mission-invite-agent>\s*([\s\S]*?)(?:<\/mission-invite-agent>|$)/gi;
+      while ((match = missionInviteRegex.exec(cleaned)) !== null) {
+        try {
+          const parsed = JSON.parse(match[1].trim()) as { missionId: string; agentId: string; reason?: string };
+          if (!parsed.missionId || !parsed.agentId) continue;
+          const { addMissionAgent } = await import('../missions/service.js');
+          await addMissionAgent(parsed.missionId, parsed.agentId);
+          logger.info({ agentId, missionId: parsed.missionId, invitedAgent: parsed.agentId, reason: parsed.reason }, 'Agent invited to mission roster');
+        } catch (err) {
+          logger.warn({ err, agentId }, 'Failed to parse/process mission-invite-agent block');
+        }
+      }
+      cleaned = cleaned.replace(/<mission-invite-agent>\s*[\s\S]*?(?:<\/mission-invite-agent>|$)/gi, '').trim();
+
+      // Extract and process <mission-remove-agent> blocks
+      const missionRemoveAgentRegex = /<mission-remove-agent>\s*([\s\S]*?)(?:<\/mission-remove-agent>|$)/gi;
+      while ((match = missionRemoveAgentRegex.exec(cleaned)) !== null) {
+        try {
+          const parsed = JSON.parse(match[1].trim()) as { missionId: string; agentId: string; reason?: string };
+          if (!parsed.missionId || !parsed.agentId) continue;
+          const { removeMissionAgent } = await import('../missions/service.js');
+          await removeMissionAgent(parsed.missionId, parsed.agentId);
+          logger.info({ agentId, missionId: parsed.missionId, removedAgent: parsed.agentId, reason: parsed.reason }, 'Agent removed from mission roster');
+        } catch (err) {
+          logger.warn({ err, agentId }, 'Failed to parse/process mission-remove-agent block');
+        }
+      }
+      cleaned = cleaned.replace(/<mission-remove-agent>\s*[\s\S]*?(?:<\/mission-remove-agent>|$)/gi, '').trim();
+
       // Extract and process <update-settings> blocks
       const updateSettingsRegex = /<update-settings>\s*([\s\S]*?)(?:\s*<\/update-settings>|$)/gi;
       while ((match = updateSettingsRegex.exec(cleaned)) !== null) {

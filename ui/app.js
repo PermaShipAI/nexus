@@ -1047,6 +1047,26 @@ async function setMissionAutonomous(missionId, value) {
   });
 }
 
+async function toggleMissionAgent(missionId, agentId, checked) {
+  try {
+    // Get current roster, toggle agent, save
+    const resp = await apiFetch(`/api/missions/${missionId}`);
+    const data = await resp.json();
+    let roster = data.roster || [];
+    if (checked && !roster.includes(agentId)) {
+      roster.push(agentId);
+    } else if (!checked) {
+      roster = roster.filter(id => id !== agentId);
+    }
+    await apiFetch(`/api/missions/${missionId}/roster`, {
+      method: 'PUT',
+      body: JSON.stringify({ agentIds: roster }),
+    });
+    // Refresh checklist to show updated roster
+    loadMissionChecklist(missionId);
+  } catch { /* ok */ }
+}
+
 async function cycleProjectAutonomous(projectId, current) {
   const next = current === null ? true : current === true ? false : null;
   await apiFetch(`/api/projects/${projectId}/autonomous`, {
@@ -1886,10 +1906,13 @@ function hideAgentTooltip() {
 
 // ── Init ─────────────────────────────────────────────────────────────────────
 
+let loadedAgents = [];
+
 async function loadAgents() {
   try {
     const resp = await apiFetch('/api/agents');
     const { agents } = await resp.json();
+    loadedAgents = agents;
     agentListEl.innerHTML = '';
     for (const agent of agents) {
       const li = document.createElement('li');
@@ -2072,6 +2095,21 @@ async function loadMissionChecklist(missionId) {
     html += `<option value="true"${autoVal === true ? ' selected' : ''}>On</option>`;
     html += `<option value="false"${autoVal === false ? ' selected' : ''}>Off</option>`;
     html += `</select></div>`;
+
+    // Agent roster
+    const roster = data.roster || [];
+    const allAgentsList = typeof loadedAgents !== 'undefined' ? loadedAgents : [];
+    if (allAgentsList.length > 0 || roster.length > 0) {
+      html += `<div style="margin-bottom:8px"><span style="font-size:11px;color:var(--text-muted);font-family:var(--mono);text-transform:uppercase;letter-spacing:1px">Agent Roster</span>`;
+      html += `<div style="display:flex;flex-wrap:wrap;gap:4px;margin-top:4px">`;
+      const agentsForRoster = allAgentsList.length > 0 ? allAgentsList : roster.map(id => ({ id, title: id }));
+      for (const a of agentsForRoster) {
+        if (a.id === 'nexus') continue; // Nexus always has access
+        const checked = roster.includes(a.id) ? 'checked' : '';
+        html += `<label style="font-size:11px;display:flex;align-items:center;gap:3px;cursor:pointer;padding:2px 6px;border:1px solid var(--border);border-radius:4px;${checked ? 'background:var(--surface-alt)' : ''}"><input type="checkbox" ${checked} onchange="toggleMissionAgent('${mId}','${a.id}',this.checked)" style="margin:0"> ${escapeHtml(a.title?.split(' ')[0] || a.id)}</label>`;
+      }
+      html += `</div></div>`;
+    }
 
     // Separate phases from sub-steps
     const phases = items.filter(i => i.isPhase);

@@ -5,6 +5,7 @@ import {
   missions,
   missionItems,
   missionProjects,
+  missionAgents,
   localProjects,
   type Mission,
   type MissionItem,
@@ -308,4 +309,40 @@ export async function recordHeartbeat(missionId: string, nextHeartbeatAt: Date):
       updatedAt: new Date(),
     })
     .where(eq(missions.id, missionId));
+}
+
+// ── Mission Agent Roster ─────────────────────────────────────────────────
+
+/** Get the agent roster for a mission */
+export async function getMissionRoster(missionId: string): Promise<string[]> {
+  const rows = await db.select({ agentId: missionAgents.agentId })
+    .from(missionAgents)
+    .where(eq(missionAgents.missionId, missionId));
+  return rows.map(r => r.agentId);
+}
+
+/** Replace the entire roster for a mission */
+export async function setMissionRoster(missionId: string, agentIds: string[]): Promise<void> {
+  await db.delete(missionAgents).where(eq(missionAgents.missionId, missionId));
+  if (agentIds.length > 0) {
+    await db.insert(missionAgents).values(
+      agentIds.map(agentId => ({ missionId, agentId })),
+    );
+  }
+}
+
+/** Add a single agent to the roster */
+export async function addMissionAgent(missionId: string, agentId: string): Promise<void> {
+  const existing = await db.select().from(missionAgents)
+    .where(and(eq(missionAgents.missionId, missionId), eq(missionAgents.agentId, agentId)))
+    .limit(1);
+  if (existing.length === 0) {
+    await db.insert(missionAgents).values({ missionId, agentId });
+  }
+}
+
+/** Remove a single agent from the roster */
+export async function removeMissionAgent(missionId: string, agentId: string): Promise<void> {
+  await db.delete(missionAgents)
+    .where(and(eq(missionAgents.missionId, missionId), eq(missionAgents.agentId, agentId)));
 }

@@ -431,12 +431,15 @@ ${executionContext}`;
       heartbeatCount: (focusItem.heartbeatCount ?? 0) + 1,
     });
 
-    // Route through the normal message router — same as a human request
+    // Route to agents on the mission roster (or all agents if no roster)
+    const { getMissionRoster } = await import('./service.js');
+    const roster = await getMissionRoster(mission.id);
     const routes = await routeMessage(
       heartbeatMessage,
       mission.channelId,
       'Nexus',
       mission.orgId,
+      roster.length > 0 ? roster : undefined,
     );
 
     const route = routes[0];

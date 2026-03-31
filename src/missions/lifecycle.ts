@@ -7,8 +7,10 @@ import {
   addMissionPhases,
   updateMissionStatus,
   dedupMissionItems,
+  setMissionRoster,
 } from './service.js';
 import type { AgentId } from '../agents/types.js';
+import { getAllAgents } from '../agents/registry.js';
 
 /**
  * Plan a mission: draft → planning → active.
@@ -37,7 +39,14 @@ export async function planMission(missionId: string, orgId: string): Promise<voi
     ? projects.map((p) => `- **${p.name}** (${p.localPath})`).join('\n')
     : 'No projects linked.';
 
-  const planningPrompt = `You are planning a mission. Break this goal into 5-10 major PHASES — high-level workstreams that represent the key milestones.
+  // Build agent list for roster selection
+  const allAgents = getAllAgents();
+  const agentList = allAgents.map(a => `- ${a.id}: ${a.title}`).join('\n');
+
+  const planningPrompt = `You are planning a mission. Do two things:
+
+1. Break this goal into 5-10 major PHASES — high-level workstreams that represent key milestones.
+2. Select 2-5 AGENTS from the team who are most relevant to this mission's work. Do NOT include "nexus" — you (Nexus) always have access as the orchestrator.
 
 **Mission Title:** ${mission.title}
 **Mission Description:** ${mission.description}
@@ -45,22 +54,27 @@ export async function planMission(missionId: string, orgId: string): Promise<voi
 **Linked Projects:**
 ${projectContext}
 
-IMPORTANT: Create only the major phases (5-10 max). Each phase should be a significant milestone, NOT a small task. Detailed sub-steps will be added later as work progresses.
+**Available Agents:**
+${agentList}
 
-Respond with ONLY a JSON array of phases:
-[
-  {"title": "Phase name", "description": "What must be true for this phase to be considered complete"}
-]
+Respond with ONLY a JSON object (not an array):
+{
+  "phases": [
+    {"title": "Phase name", "description": "What must be true for this phase to be considered complete"}
+  ],
+  "agents": ["agent-id-1", "agent-id-2"]
+}
 
-Example for a "Build a payment system" mission:
-[
-  {"title": "Payment provider integration", "description": "Stripe SDK connected, test charges succeed in sandbox"},
-  {"title": "Checkout flow", "description": "Users can complete a purchase end-to-end in the UI"},
-  {"title": "Subscription management", "description": "Users can upgrade, downgrade, and cancel subscriptions"},
-  {"title": "Billing dashboard", "description": "Admin can view revenue, refunds, and subscription metrics"}
-]
+Example:
+{
+  "phases": [
+    {"title": "Payment provider integration", "description": "Stripe SDK connected, test charges succeed in sandbox"},
+    {"title": "Checkout flow", "description": "Users can complete a purchase end-to-end in the UI"}
+  ],
+  "agents": ["product-manager", "ux-designer", "sre"]
+}
 
-Output ONLY the JSON array, no other text.`;
+IMPORTANT: Phases should be 5-10 max. Agents should be 2-5 — only those directly relevant to the mission goal. Output ONLY the JSON object, no other text.`;
 
   try {
     const response = await executeAgent({
@@ -75,16 +89,43 @@ Output ONLY the JSON array, no other text.`;
     });
 
     if (response) {
-      // Extract JSON array from response
-      const jsonMatch = response.match(/\[[\s\S]*\]/);
+      // Try to parse as { phases: [...], agents: [...] } object first, fall back to array
+      const jsonObjMatch = response.match(/\{[\s\S]*\}/);
+      const jsonArrMatch = response.match(/\[[\s\S]*\]/);
+      const jsonMatch = jsonObjMatch || jsonArrMatch;
+
       if (jsonMatch) {
         try {
-          const items = JSON.parse(jsonMatch[0]) as Array<{ title: string; description: string }>;
-          if (Array.isArray(items) && items.length > 0) {
-            await addMissionPhases(missionId, items);
-            logger.info({ missionId, phaseCount: items.length }, 'Mission phases created from planning');
+          const parsed = JSON.parse(jsonMatch[0]);
+          let phases: Array<{ title: string; description: string }>;
+          let agentIds: string[] = [];
+
+          if (parsed.phases && Array.isArray(parsed.phases)) {
+            // New format: { phases: [...], agents: [...] }
+            phases = parsed.phases;
+            agentIds = Array.isArray(parsed.agents) ? parsed.agents : [];
+          } else if (Array.isArray(parsed)) {
+            // Legacy format: [...]
+            phases = parsed;
           } else {
-            logger.warn({ missionId, response: response.slice(0, 300) }, 'Mission planning returned empty items array');
+            phases = [];
+          }
+
+          if (phases.length > 0) {
+            await addMissionPhases(missionId, phases);
+            logger.info({ missionId, phaseCount: phases.length }, 'Mission phases created from planning');
+          } else {
+            logger.warn({ missionId, response: response.slice(0, 300) }, 'Mission planning returned empty phases');
+          }
+
+          // Set agent roster (validate IDs against actual agents)
+          if (agentIds.length > 0) {
+            const validIds = new Set(allAgents.map(a => a.id));
+            const validRoster = agentIds.filter(id => validIds.has(id as any) && id !== 'nexus');
+            if (validRoster.length > 0) {
+              await setMissionRoster(missionId, validRoster);
+              logger.info({ missionId, roster: validRoster }, 'Mission agent roster set from planning');
+            }
           }
         } catch (parseErr) {
           logger.warn({ missionId, parseErr, jsonSnippet: jsonMatch[0].slice(0, 200) }, 'Failed to parse mission planning JSON');

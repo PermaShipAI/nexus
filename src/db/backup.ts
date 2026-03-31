@@ -13,6 +13,7 @@ import {
   missions,
   missionItems,
   missionProjects,
+  missionAgents,
   tasks,
   secrets,
 } from './schema.js';
@@ -39,6 +40,7 @@ interface BackupData {
     missions: unknown[];
     missionItems: unknown[];
     missionProjects: unknown[];
+    missionAgents: unknown[];
     tasks: unknown[];
     secrets: unknown[];
   };
@@ -64,6 +66,7 @@ export async function createBackup(): Promise<void> {
         missions: await db.select().from(missions),
         missionItems: await db.select().from(missionItems),
         missionProjects: await db.select().from(missionProjects),
+        missionAgents: await db.select().from(missionAgents),
         tasks: await db.select().from(tasks),
         secrets: await db.select().from(secrets),
       },
@@ -129,6 +132,7 @@ export async function restoreFromBackup(): Promise<boolean> {
     await restoreTable(missions, data.tables.missions, 'missions');
     await restoreTable(missionItems, data.tables.missionItems, 'missionItems');
     await restoreTable(missionProjects, data.tables.missionProjects, 'missionProjects');
+    await restoreTable(missionAgents, data.tables.missionAgents ?? [], 'missionAgents');
     await restoreTable(pendingActions, data.tables.pendingActions, 'pendingActions');
     await restoreTable(tickets, data.tables.tickets, 'tickets');
     await restoreTable(conversationHistory, data.tables.conversationHistory, 'conversationHistory');

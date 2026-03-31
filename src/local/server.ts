@@ -35,6 +35,8 @@ import {
   updateMissionStatus,
   getMissionItems,
   getMissionProjects,
+  getMissionRoster,
+  setMissionRoster,
 } from '../missions/service.js';
 import { approveAdrDraft, rejectAdrDraft } from '../agents/adr-service.js';
 import { planMission } from '../missions/lifecycle.js';
@@ -988,7 +990,8 @@ export async function createLocalServer(_port = 3000) {
     if (!mission) return { error: 'Mission not found' };
     const items = await getMissionItems(id);
     const projects = await getMissionProjects(id);
-    return { mission, items, projects };
+    const roster = await getMissionRoster(id);
+    return { mission, items, projects, roster };
   });
 
   /** Create a new mission */
@@ -1061,6 +1064,17 @@ export async function createLocalServer(_port = 3000) {
     const { dedupMissionItems } = await import('../missions/service.js');
     const removed = await dedupMissionItems(id);
     return { success: true, removed };
+  });
+
+  /** Update mission agent roster */
+  server.put('/api/missions/:id/roster', async (request) => {
+    const { id } = request.params as { id: string };
+    const { agentIds } = request.body as { agentIds: string[] };
+    if (!Array.isArray(agentIds)) return { success: false, error: 'agentIds must be an array' };
+    const valid = agentIds.filter(id => typeof id === 'string' && id.length > 0).slice(0, 10);
+    await setMissionRoster(id, valid);
+    broadcast('mission_updated', { id, roster: valid });
+    return { success: true, roster: valid };
   });
 
   /** Restructure a flat mission into phases + sub-steps */

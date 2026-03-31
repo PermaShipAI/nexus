@@ -459,6 +459,21 @@ export const missionProjects = pgTable(
 export type MissionProject = typeof missionProjects.$inferSelect;
 export type NewMissionProject = typeof missionProjects.$inferInsert;
 
+export const missionAgents = pgTable(
+  'mission_agents',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    missionId: uuid('mission_id').notNull(),
+    agentId: text('agent_id').notNull(),
+  },
+  (table) => ({
+    missionIdx: index('mission_agent_mission_idx').on(table.missionId),
+    agentIdx: index('mission_agent_agent_idx').on(table.agentId),
+  }),
+);
+
+export type MissionAgent = typeof missionAgents.$inferSelect;
+
 // --- ADR Drafts ---
 
 export const adrDrafts = pgTable(
