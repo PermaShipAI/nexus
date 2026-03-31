@@ -135,10 +135,28 @@ export async function mergeBranch(
   }
 }
 
-/** Delete a merged branch */
+/** Delete a merged branch (handles worktree branches) */
 export async function cleanupBranch(repoPath: string, branchName: string): Promise<void> {
   try {
-    await execFileAsync('git', ['branch', '-d', branchName], { cwd: repoPath, timeout: GIT_TIMEOUT });
+    // Prune stale worktrees first (required before deleting worktree branches)
+    await execFileAsync('git', ['worktree', 'prune'], { cwd: repoPath, timeout: GIT_TIMEOUT }).catch(() => {});
+
+    // Remove any active worktree for this branch
+    try {
+      const { stdout } = await execFileAsync('git', ['worktree', 'list', '--porcelain'], { cwd: repoPath, timeout: GIT_TIMEOUT });
+      const lines = stdout.split('\n');
+      for (let i = 0; i < lines.length; i++) {
+        if (lines[i].startsWith('branch refs/heads/' + branchName)) {
+          const wtPath = lines[i - 2]?.replace('worktree ', '');
+          if (wtPath) {
+            await execFileAsync('git', ['worktree', 'remove', wtPath, '--force'], { cwd: repoPath, timeout: GIT_TIMEOUT }).catch(() => {});
+          }
+        }
+      }
+    } catch { /* ok */ }
+
+    // Now delete the branch (use -D to force if needed)
+    await execFileAsync('git', ['branch', '-D', branchName], { cwd: repoPath, timeout: GIT_TIMEOUT });
     logger.info({ branchName }, 'Cleaned up merged branch');
   } catch (err) {
     logger.warn({ err, branchName }, 'Failed to clean up branch');
