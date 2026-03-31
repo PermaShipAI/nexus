@@ -224,20 +224,65 @@ If an item should be removed entirely (duplicate or no longer relevant):
     return;
   }
 
-  // Auto-complete phases whose sub-steps are all verified
+  // Evaluate phase goal completion — ask Nexus to verify phases that have
+  // significant work done (not just "all sub-steps checked")
   const { getMissionPhaseProgress } = await import('./service.js');
   const phaseProgress = await getMissionPhaseProgress(mission.id);
   for (const { phase, subSteps, completedSubSteps, totalSubSteps } of phaseProgress) {
-    if (phase.status !== 'verified' && totalSubSteps > 0 && completedSubSteps === totalSubSteps) {
-      await updateMissionItem(phase.id, { status: 'verified', completedByAgentId: 'system' });
-      localBus.emit('message', {
-        id: `phase-complete-${phase.id}`,
-        content: `**[Mission]** Phase complete: **${phase.title}** (${completedSubSteps}/${totalSubSteps} sub-steps verified)`,
-        channel_id: mission.channelId,
-        timestamp: new Date().toISOString(),
+    // Only evaluate phases that are in_progress with meaningful work done
+    if (phase.status !== 'in_progress') continue;
+    if (totalSubSteps === 0 || completedSubSteps === 0) continue;
+    // Only evaluate when at least half the sub-steps are done (avoid premature checks)
+    if (completedSubSteps < totalSubSteps * 0.5) continue;
+    // Don't re-evaluate too frequently
+    if ((phase.heartbeatCount ?? 0) % 3 !== 0) continue;
+
+    const evalPrompt = `Evaluate whether this mission phase's GOALS have been met.
+
+**Phase:** ${phase.title}
+**Phase Goals:** ${phase.description}
+**Sub-step progress:** ${completedSubSteps}/${totalSubSteps} completed
+
+The phase is complete when its stated goals are fulfilled — not just when all sub-steps are checked off. Sub-steps are implementation tasks, but the phase represents a higher-level outcome.
+
+Review the goals above. Based on the work completed, have the phase's goals been achieved?
+
+If YES — the phase goals are met:
+<mission-verify>{"itemId":"${phase.id}"}</mission-verify>
+
+If NO — explain what's still missing and what additional work is needed. Do NOT verify the phase.`;
+
+    try {
+      const evalResponse = await executeAgent({
+        orgId: mission.orgId,
+        agentId: 'nexus' as AgentId,
+        channelId: mission.channelId,
+        userId: 'system',
+        userName: 'Phase Evaluator',
+        userMessage: evalPrompt,
+        needsCodeAccess: false,
+        source: 'idle',
       });
-      logger.info({ missionId: mission.id, phaseId: phase.id, phaseTitle: phase.title }, 'Phase auto-completed');
+
+      if (evalResponse && evalResponse !== '[error]') {
+        await sendAgentMessage(mission.channelId, 'Nexus (Phase Review)', evalResponse, mission.orgId);
+        await storeMessage({
+          orgId: mission.orgId,
+          channelId: mission.channelId,
+          discordMessageId: `phase-eval-${Date.now()}`,
+          authorId: 'agent',
+          authorName: 'Nexus (Phase Review)',
+          content: evalResponse,
+          isAgent: true,
+          agentId: 'nexus',
+        });
+      }
+    } catch (err) {
+      logger.warn({ err, phaseId: phase.id }, 'Phase goal evaluation failed');
     }
+
+    // Only evaluate one phase per heartbeat to avoid token burn
+    break;
   }
 
   // Check overall mission completion

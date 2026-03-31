@@ -121,10 +121,9 @@ export async function checkMissionCompletion(missionId: string, orgId: string): 
   const progress = await getMissionPhaseProgress(missionId);
   if (progress.length === 0) return false;
 
-  const allPhasesComplete = progress.every(({ phase, subSteps, completedSubSteps, totalSubSteps }) => {
-    if (totalSubSteps === 0) return phase.status === 'verified';
-    return completedSubSteps === totalSubSteps;
-  });
+  // Mission is complete when ALL phases are verified by Nexus
+  // (not when sub-steps are all done — that's just progress, not goal completion)
+  const allPhasesComplete = progress.every(({ phase }) => phase.status === 'verified');
 
   if (allPhasesComplete) {
     await updateMissionStatus(missionId, orgId, 'completed');
