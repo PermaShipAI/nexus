@@ -331,6 +331,8 @@ export async function createLocalServer(_port = 3000) {
         createdByAgentId: t.createdByAgentId,
         executionStatus: t.executionStatus,
         executionBackend: t.executionBackend,
+        executionBranch: t.executionBranch,
+        mergeStatus: t.mergeStatus,
         executionReview: t.executionReview,
         executedAt: t.executedAt,
         createdAt: t.createdAt,
