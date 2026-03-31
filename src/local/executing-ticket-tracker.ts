@@ -451,7 +451,91 @@ Keep your review concise and actionable.`;
         // Act on the review outcome
         const reviewUpper = review.toUpperCase();
         if (reviewUpper.includes('REJECT') || reviewUpper.includes('NEEDS_CHANGES')) {
-          // Mark ticket as needing rework
+          // Check if this is first failure — auto-retry once with review feedback
+          const [ticket] = await db.select({ executionOutput: tickets.executionOutput })
+            .from(tickets).where(eq(tickets.id, ticketId)).limit(1);
+          const previouslyRetried = (ticket?.executionOutput ?? '').includes('[AUTO-RETRY]');
+
+          if (!previouslyRetried) {
+            // First failure — auto-retry with the review feedback
+            logger.info({ ticketId, title: input.title }, 'Review failed — auto-retrying with feedback');
+
+            await db.update(tickets).set({
+              executionStatus: 'running',
+              executionOutput: `[AUTO-RETRY] Previous review feedback:\n${review.slice(0, 2000)}`,
+              executionDiff: null,
+              executionReview: null,
+              executedAt: null,
+            }).where(eq(tickets.id, ticketId));
+
+            const reviewMissionCh = await this.findMissionChannel(ticketId, input.orgId);
+            this.emitStatus({
+              id: `auto-retry-${ticketId}`,
+              content: `**[Executor]** Auto-retrying: **${input.title}** — incorporating review feedback`,
+            }, reviewMissionCh);
+
+            // Build a new prompt that includes the review feedback
+            const { buildPrompt } = await import('./execution-backends/index.js');
+            const retryPrompt = buildPrompt({
+              ticketId,
+              kind: input.kind,
+              title: input.title,
+              description: `${input.description}\n\n## IMPORTANT: Previous attempt was reviewed and rejected. Address this feedback:\n${review.slice(0, 1500)}`,
+              repoPath: repoPath ?? '.',
+              repoKey: input.repoKey,
+            });
+
+            // Re-execute
+            this.backend.execute({
+              ticketId,
+              kind: input.kind,
+              title: input.title,
+              description: `${input.description}\n\nPrevious review feedback:\n${review.slice(0, 1500)}`,
+              repoPath: repoPath ?? '.',
+              repoKey: input.repoKey,
+            }).then(async (retryResult) => {
+              const retryDiff = await this.captureGitDiff(repoPath ?? '.');
+              if (retryResult.branch || !retryResult.branch) {
+                // Detect branch
+                try {
+                  const { stdout } = await execFileAsync('git', ['rev-parse', '--abbrev-ref', 'HEAD'], { cwd: repoPath ?? '.', timeout: 5000 });
+                  const detected = stdout.trim();
+                  if (detected && detected !== 'main' && detected !== 'master') retryResult.branch = detected;
+                } catch { /* ok */ }
+              }
+
+              await db.update(tickets).set({
+                executionStatus: retryResult.success ? 'completed' : 'failed',
+                executionOutput: `[AUTO-RETRY]\n${retryResult.output?.slice(0, 50_000) ?? ''}`,
+                executionDiff: retryDiff?.slice(0, 100_000) ?? null,
+                executionBranch: retryResult.branch ?? null,
+                executedAt: new Date(),
+              }).where(eq(tickets.id, ticketId));
+
+              // Re-trigger review on the retry result
+              if (retryResult.success && retryDiff) {
+                await this.triggerReview(ticketId, input, retryDiff, retryResult, repoPath);
+              } else {
+                const retryMissionCh = await this.findMissionChannel(ticketId, input.orgId);
+                this.emitStatus({
+                  id: `retry-failed-${ticketId}`,
+                  content: `**[Executor]** Retry also failed: **${input.title}**`,
+                  retry_ticket_id: ticketId,
+                }, retryMissionCh);
+              }
+            }).catch(async (err) => {
+              logger.error({ err, ticketId }, 'Auto-retry execution failed');
+              await db.update(tickets).set({
+                executionStatus: 'failed',
+                executedAt: new Date(),
+              }).where(eq(tickets.id, ticketId));
+            });
+
+            // Don't continue to the normal review_failed handling
+            return;
+          }
+
+          // Second failure (after retry) — mark as permanently failed
           await db.update(tickets).set({ executionStatus: 'review_failed' }).where(eq(tickets.id, ticketId));
 
           // Notify with retry option
