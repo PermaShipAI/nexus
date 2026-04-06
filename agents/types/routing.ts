@@ -10,6 +10,7 @@ export interface RouteResult {
   requiresConfirmation?: boolean;
   isFallback: boolean;
   fallbackMessage?: string;
+  actionableOptions?: string[];
   isCircuitBroken?: boolean;
   isStrictConsultation?: boolean;
   needsDeepResearch?: boolean;

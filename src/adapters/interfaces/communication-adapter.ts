@@ -4,6 +4,7 @@ export interface OutboundMessage {
   embed_description?: string;
   embed_color?: number;
   components?: any[];
+  actionable_suggestions?: string[];
 }
 
 export interface SendMessageOptions {

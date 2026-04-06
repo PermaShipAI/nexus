@@ -211,6 +211,13 @@ function copyMessage(btn) {
   });
 }
 
+/** Pre-fill the chat input with a suggestion and focus it */
+function fillSuggestion(text) {
+  inputEl.value = text;
+  inputEl.focus();
+  inputEl.setSelectionRange(text.length, text.length);
+}
+
 /** Minimal markdown: bold, code, code blocks, links */
 function renderMarkdown(text) {
   let html = escapeHtml(text);
@@ -289,6 +296,15 @@ function appendAgentMessage(data) {
         <div class="body">${renderMarkdown('```diff\n' + data.diff + '\n```')}</div>
       </details>
     `;
+  }
+
+  // Render actionable suggestion chips for clarification messages
+  if (data.actionable_suggestions && data.actionable_suggestions.length > 0) {
+    html += `<div class="suggestion-chips">`;
+    for (const suggestion of data.actionable_suggestions) {
+      html += `<button class="suggestion-chip" onclick="fillSuggestion(${JSON.stringify(escapeHtml(suggestion))})">${escapeHtml(suggestion)}</button>`;
+    }
+    html += `</div>`;
   }
 
   // Render retry button for failed executions

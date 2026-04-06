@@ -124,10 +124,9 @@ describe('routeMessage', () => {
       {
         isFallback: true,
         agentId: 'none',
-        fallbackMessage:
-          "I'm not fully confident I understood your request. Could you provide more details?",
       },
     ]);
+    expect(results[0].fallbackMessage).toBeTruthy();
   });
 
   // ---------------------------------------------------------------------------
@@ -375,7 +374,9 @@ describe('routeMessage', () => {
     const results = await routeMessage('change some system settings', 'channel-12', 'user');
 
     expect(results[0].isFallback).toBe(true);
-    expect(results[0].fallbackMessage).toContain('not fully confident');
+    expect(results[0].fallbackMessage).toContain('setting');
+    expect(results[0].actionableOptions).toBeDefined();
+    expect(results[0].actionableOptions!.length).toBeGreaterThan(0);
   });
 
   // ---------------------------------------------------------------------------
