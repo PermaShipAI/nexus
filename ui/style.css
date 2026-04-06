@@ -1266,6 +1266,31 @@ html, body { height: 100%; font-family: var(--font); background: var(--bg); colo
 .btn-reject { background: var(--danger); color: #fff; transition: box-shadow 0.2s, opacity 0.2s; }
 .btn-reject:hover { opacity: 0.9; box-shadow: 0 0 12px rgba(248, 81, 73, 0.3); }
 
+.suggestion-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 10px;
+}
+
+.suggestion-chip {
+  background: transparent;
+  border: 1px solid var(--accent);
+  color: var(--accent-light);
+  border-radius: 14px;
+  padding: 4px 12px;
+  font-size: 12px;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s, box-shadow 0.15s;
+  white-space: nowrap;
+}
+
+.suggestion-chip:hover {
+  background: var(--accent);
+  color: #fff;
+  box-shadow: 0 0 8px var(--accent-glow, rgba(18, 179, 179, 0.3));
+}
+
 .btn-sublabel {
   display: block;
   font-size: 10px;
