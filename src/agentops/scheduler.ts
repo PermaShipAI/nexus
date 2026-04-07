@@ -205,5 +205,9 @@ async function triggerAdrDraft(
       `Agent proposals with reason "${reason}" have been rejected ${rejectionCount} times ` +
       `in the last ${config.AGENTOPS_EVAL_WINDOW_DAYS} days. ` +
       `Consider drafting a Project Rule or ADR to prevent future agents from proposing similar work.`,
+    fallbackPlan:
+      `**Fallback:** If an ADR cannot be drafted immediately, add an inline comment to the agent persona file ` +
+      `(personas/${agentId}.md) documenting the rejection pattern "${reason}" as a known constraint, ` +
+      `so agents can self-correct without a formal ADR.`,
   });
 }
