@@ -38,3 +38,31 @@ export function checkForInjection(input: string): InjectionCheckResult {
 
   return { detected: false };
 }
+
+/**
+ * Sanitize untrusted indirect content (e.g. from the knowledge base, agent memories,
+ * task titles, or mission descriptions) before injecting it into an LLM prompt.
+ *
+ * Unlike `checkForInjection` (which returns a detection result for direct user messages),
+ * this function neutralises injection patterns in place so the surrounding content can
+ * still be included in the prompt without abandoning the whole entry.
+ */
+export function sanitizeIndirectInput(text: string): string {
+  // Strip control characters (except tab, LF, CR).
+  // eslint-disable-next-line no-control-regex
+  let sanitized = text.replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/g, '');
+
+  // Replace injection pattern matches with a safe placeholder.
+  for (const pattern of INJECTION_PATTERNS) {
+    // Reset lastIndex for patterns with the global flag (none here, but defensive).
+    sanitized = sanitized.replace(new RegExp(pattern.source, pattern.flags), '[redacted]');
+  }
+
+  // Strip markdown headings that could override the surrounding prompt structure.
+  sanitized = sanitized.replace(/^#{1,6}\s+/gm, '');
+
+  // Collapse excessive blank lines.
+  sanitized = sanitized.replace(/\n{3,}/g, '\n\n');
+
+  return sanitized.trim();
+}
