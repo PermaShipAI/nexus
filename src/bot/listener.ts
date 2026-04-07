@@ -2,6 +2,7 @@ import { sendAgentMessage } from './formatter.js';
 export { sendAgentMessage };
 import { checkDestructiveAction } from '../core/guardrails/DestructiveActionGuard.js';
 import { checkForInjection } from '../core/guardrails/prompt_injection.js';
+import { validateImageAttachments, type ImageAttachment } from '../core/guardrails/image_guard.js';
 import { logGuardrailEvent } from '../telemetry/index.js';
 import { getCommunicationAdapter } from '../adapters/registry.js';
 import { storeMessage } from '../conversation/service.js';
@@ -47,6 +48,8 @@ export interface UnifiedMessage {
   orgId?: string; // Resolved from workspaceId
   enforceReadOnly?: boolean; // Advisory channels: no tickets, no proposals, no automated actions
   projectHint?: string; // Channel-mapped project name from comms
+  /** Pre-validated image attachments. Must be validated via validateImageAttachments before being set. */
+  attachments?: ImageAttachment[];
 }
 
 /**
@@ -251,6 +254,31 @@ async function handleIncomingMessage(message: UnifiedMessage, isPublic: boolean,
   // Handle !focus and !schedule commands
   if (await handleFocusCommand(message.content, message.channelId, orgId, userName)) return;
   if (await handleScheduleCommand(message.content, message.channelId, orgId, userName)) return;
+
+  // Validate image attachments when present
+  if (message.attachments && message.attachments.length > 0) {
+    // Attachments on UnifiedMessage should already be validated by the entry point
+    // (server.ts or webhook adapter). This is a defence-in-depth re-check.
+    const imageCheck = validateImageAttachments(
+      message.attachments.map((a) => ({ data: a.data, mediaType: a.mediaType })),
+    );
+    if (!imageCheck.valid) {
+      logGuardrailEvent({
+        event: 'prompt_injection_blocked',
+        userId: message.authorId,
+        channelId: message.channelId,
+        orgId,
+        matchedPattern: `image_validation_failed: ${imageCheck.error}`,
+      });
+      await sendAgentMessage(
+        message.channelId,
+        'System',
+        `Your message contained an invalid image attachment and was blocked. ${imageCheck.error}`,
+        orgId,
+      );
+      return;
+    }
+  }
 
   const injectionCheck = checkForInjection(message.content);
   if (injectionCheck.detected) {
