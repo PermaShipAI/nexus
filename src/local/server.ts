@@ -50,6 +50,7 @@ import {
   validateGitUrl,
   writeFileSecure,
 } from './security.js';
+import { validateImageAttachments } from '../core/guardrails/image_guard.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const UI_DIR = join(__dirname, '..', '..', 'ui');
@@ -128,14 +129,26 @@ export async function createLocalServer(_port = 3000) {
   // ── REST: chat API ────────────────────────────────────────────────────
 
   /** Send a message to Nexus Command */
-  server.post('/api/chat/send', async (request) => {
-    const { content, authorName } = request.body as {
+  server.post('/api/chat/send', async (request, reply) => {
+    const { content, authorName, attachments: rawAttachments } = request.body as {
       content: string;
       authorName?: string;
+      attachments?: Array<{ data: string; mediaType: string }>;
     };
 
     if (!content || content.trim().length === 0) {
       return { success: false, error: 'Message content is required' };
+    }
+
+    // Validate image attachments when provided
+    let validatedAttachments;
+    if (rawAttachments && rawAttachments.length > 0) {
+      const imageCheck = validateImageAttachments(rawAttachments);
+      if (!imageCheck.valid) {
+        reply.status(400);
+        return { success: false, error: imageCheck.error };
+      }
+      validatedAttachments = imageCheck.attachments;
     }
 
     const messageId = `local-${Date.now()}`;
@@ -149,6 +162,7 @@ export async function createLocalServer(_port = 3000) {
       isThread: false,
       platform: 'discord',
       orgId: LOCAL_ORG_ID,
+      attachments: validatedAttachments,
     };
 
     // Broadcast the user message to all connected browsers immediately
