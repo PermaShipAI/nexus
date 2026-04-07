@@ -7,6 +7,7 @@ export type GuardrailEvent =
   | { event: "confirmation_gate_expired"; intent: string; confirmationId: string }
   | { event: "rbac_rejection"; action: string; requiredRole: string; userId: string; channelId: string }
   | { event: "destructive_action_blocked"; userId: string; channelId: string; orgId: string; matchedPattern: string }
+  | { event: "prompt_injection_blocked"; userId: string; channelId: string; orgId: string; matchedPattern: string }
   | { event: "confirmation_identity_mismatch"; confirmationId: string; expectedUserId: string; actualUserId: string; channelId: string; intent: string }
   | { event: "proposal_rejected_human"; proposalId: string; agentId: string; orgId: string; reason: string; details?: string }
   | { event: "agentops_evaluation_triggered"; orgId: string; windowDays: number; topFailureClasses: Array<{ reason: string; count: number }> }

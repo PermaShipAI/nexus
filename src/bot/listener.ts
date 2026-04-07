@@ -1,6 +1,7 @@
 import { sendAgentMessage } from './formatter.js';
 export { sendAgentMessage };
 import { checkDestructiveAction } from '../core/guardrails/DestructiveActionGuard.js';
+import { checkForInjection } from '../core/guardrails/prompt_injection.js';
 import { logGuardrailEvent } from '../telemetry/index.js';
 import { getCommunicationAdapter } from '../adapters/registry.js';
 import { storeMessage } from '../conversation/service.js';
@@ -250,6 +251,22 @@ async function handleIncomingMessage(message: UnifiedMessage, isPublic: boolean,
   // Handle !focus and !schedule commands
   if (await handleFocusCommand(message.content, message.channelId, orgId, userName)) return;
   if (await handleScheduleCommand(message.content, message.channelId, orgId, userName)) return;
+
+  const injectionCheck = checkForInjection(message.content);
+  if (injectionCheck.detected) {
+    logGuardrailEvent({
+      event: 'prompt_injection_blocked',
+      userId: message.authorId,
+      channelId: message.channelId,
+      orgId,
+      matchedPattern: injectionCheck.matchedPattern,
+    });
+    await sendAgentMessage(message.channelId, 'System',
+      `Your message was blocked by the security guardrail. If this was a mistake, please rephrase your request.`,
+      orgId,
+    );
+    return;
+  }
 
   const dashboardUrl = config.ACTIVATION_URL ? `${config.ACTIVATION_URL}/dashboard` : '';
   const destructiveCheck = checkDestructiveAction(message.content, dashboardUrl);
