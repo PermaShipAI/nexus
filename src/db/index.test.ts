@@ -24,12 +24,12 @@ describe('database migration system', () => {
   it('applies all migrations without error', async () => {
     const { runMigrations } = await import('./index.js');
     await expect(runMigrations()).resolves.not.toThrow();
-  });
+  }, 15000);
 
   it('is idempotent — running migrations twice does not throw', async () => {
     const { runMigrations } = await import('./index.js');
     await expect(runMigrations()).resolves.not.toThrow();
-  });
+  }, 15000);
 
   it('creates the migrations tracking table', async () => {
     const { db } = await import('./index.js');

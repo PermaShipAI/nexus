@@ -1,10 +1,24 @@
 import { queryKnowledge } from '../knowledge/service.js';
 import { getLLMProvider } from '../adapters/registry.js';
 import { logger } from '../logger.js';
-import { logRoutingDecision } from '../../agents/telemetry/logger.js';
+import { logRoutingDecision, logSecurityEvent } from '../../agents/telemetry/logger.js';
 import type { RouteResult } from '../../agents/types/routing.js';
 import { getTenantResolver } from '../adapters/registry.js';
 import { getAllAgents } from '../agents/registry.js';
+import { checkForInjection } from '../core/guardrails/prompt_injection.js';
+
+const INJECTION_REFUSAL: RouteResult = {
+  agentId: 'none',
+  intent: 'GeneralInquiry',
+  subMessage: '',
+  confidenceScore: 0,
+  reasoning: 'Prompt injection detected',
+  extractedEntities: {},
+  needsCodeAccess: false,
+  isStrategySession: false,
+  isFallback: true,
+  fallbackMessage: "I'm unable to process that request.",
+};
 
 export async function routeMessage(
   content: string,
@@ -12,6 +26,17 @@ export async function routeMessage(
   userName: string,
   orgId: string,
 ): Promise<RouteResult[]> {
+  const injectionCheck = checkForInjection(content);
+  if (injectionCheck.detected) {
+    logSecurityEvent('prompt_injection_detected', {
+      matchedPattern: injectionCheck.matchedPattern,
+      channelId,
+      userName,
+      orgId,
+    });
+    return [{ ...INJECTION_REFUSAL, subMessage: content }];
+  }
+
   logger.info({ messageLength: content.length, orgId }, 'Routing incoming message');
 
   try {
