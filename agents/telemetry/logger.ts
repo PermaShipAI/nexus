@@ -1,5 +1,11 @@
 import pino from 'pino';
 import type { RouteResult } from '../types/routing.js';
+import {
+  routingRequestsTotal,
+  routingLatencyMs,
+  routingConfidenceScore,
+  routingInjectionBlockedTotal,
+} from '../../src/telemetry/prometheus.js';
 
 export const logger = pino({
   level: process.env.LOG_LEVEL ?? 'info',
@@ -15,6 +21,22 @@ export function logRoutingDecision(result: RouteResult, elapsedMs: number): void
     isFallback: result.isFallback,
     elapsedMs,
   });
+
+  const isFallback = String(result.isFallback ?? false);
+  const isCircuitBroken = String(result.isCircuitBroken ?? false);
+
+  routingRequestsTotal.inc({
+    intent: result.intent,
+    agent_id: result.agentId,
+    is_fallback: isFallback,
+    is_circuit_broken: isCircuitBroken,
+  });
+
+  routingLatencyMs.observe({ intent: result.intent, is_fallback: isFallback }, elapsedMs);
+
+  if (result.confidenceScore >= 0) {
+    routingConfidenceScore.observe({ intent: result.intent }, result.confidenceScore);
+  }
 }
 
 export function logSecurityEvent(
@@ -22,6 +44,7 @@ export function logSecurityEvent(
   details: Record<string, unknown>,
 ): void {
   logger.warn({ event, ...details });
+  routingInjectionBlockedTotal.inc();
 }
 
 export function logToolStrippingEvent(details: { agentId: string; orgId: string; intent: string }): void {

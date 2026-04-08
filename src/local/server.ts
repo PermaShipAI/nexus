@@ -80,6 +80,7 @@ export async function createLocalServer(_port = 3000) {
     if (!request.url.startsWith('/api/') && request.url !== '/ws') return;
     if (request.url === '/api/health') return;
     if (request.url === '/api/auth/token') return;
+    if (request.url === '/metrics') return;
 
     // CSRF: reject state-changing requests from non-localhost origins
     if (['POST', 'PUT', 'DELETE'].includes(request.method)) {
@@ -1290,6 +1291,13 @@ You can modify the checklist using these blocks:
 
   /** Health check */
   server.get('/api/health', async () => ({ status: 'ok' }));
+
+  /** Prometheus metrics scrape endpoint (unauthenticated, localhost-only by convention) */
+  server.get('/metrics', async (_request, reply) => {
+    const { registry } = await import('../telemetry/prometheus.js');
+    reply.header('Content-Type', registry.contentType);
+    return reply.send(await registry.metrics());
+  });
 
   return server;
 }
