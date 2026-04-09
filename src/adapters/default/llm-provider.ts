@@ -1,5 +1,6 @@
 import { GoogleGenerativeAI, type Content, type FunctionDeclaration } from '@google/generative-ai';
 import { getModelId } from '../../settings/service.js';
+import { withRetry } from '../providers/retry.js';
 import type {
   LLMProvider,
   GenerateTextOptions,
@@ -30,9 +31,11 @@ export class DefaultLLMProvider implements LLMProvider {
       model: modelId,
       systemInstruction: options.systemInstruction,
     });
-    const result = await model.generateContent({
-      contents: options.contents as Content[],
-    });
+    const result = await withRetry(
+      () => model.generateContent({ contents: options.contents as Content[] }),
+      undefined,
+      `gemini.generateText[${modelId}]`,
+    );
     const response = await result.response;
     return response.text();
   }
@@ -46,9 +49,11 @@ export class DefaultLLMProvider implements LLMProvider {
       systemInstruction: options.systemInstruction,
       tools: [{ functionDeclarations: options.tools as FunctionDeclaration[] }],
     });
-    const result = await model.generateContent({
-      contents: options.contents as Content[],
-    });
+    const result = await withRetry(
+      () => model.generateContent({ contents: options.contents as Content[] }),
+      undefined,
+      `gemini.generateWithTools[${modelId}]`,
+    );
     const response = await result.response;
 
     const parts = response.candidates?.[0]?.content?.parts ?? [];

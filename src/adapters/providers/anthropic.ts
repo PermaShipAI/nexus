@@ -1,6 +1,7 @@
 import Anthropic from '@anthropic-ai/sdk';
 import { logger } from '../../logger.js';
 import { usageReporter } from '../../telemetry/usage-reporter.js';
+import { withRetry } from './retry.js';
 import type {
   LLMProvider,
   GenerateTextOptions,
@@ -36,12 +37,16 @@ export class AnthropicProvider implements LLMProvider {
 
     logger.debug({ model, tier: options.model }, 'Calling Anthropic');
 
-    const response = await this.client.messages.create({
-      model,
-      max_tokens: 8192,
-      system: options.systemInstruction || undefined,
-      messages,
-    });
+    const response = await withRetry(
+      () => this.client.messages.create({
+        model,
+        max_tokens: 8192,
+        system: options.systemInstruction || undefined,
+        messages,
+      }),
+      undefined,
+      `anthropic.generateText[${model}]`,
+    );
 
     if (options.orgId && response.usage) {
       usageReporter.record(options.orgId, {
@@ -116,13 +121,17 @@ export class AnthropicProvider implements LLMProvider {
       input_schema: (t.parameters ?? { type: 'object' as const, properties: {} }) as Anthropic.Tool.InputSchema,
     }));
 
-    const response = await this.client.messages.create({
-      model,
-      max_tokens: 8192,
-      system: options.systemInstruction || undefined,
-      messages,
-      tools,
-    });
+    const response = await withRetry(
+      () => this.client.messages.create({
+        model,
+        max_tokens: 8192,
+        system: options.systemInstruction || undefined,
+        messages,
+        tools,
+      }),
+      undefined,
+      `anthropic.generateWithTools[${model}]`,
+    );
 
     if (options.orgId && response.usage) {
       usageReporter.record(options.orgId, {
