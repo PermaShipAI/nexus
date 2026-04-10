@@ -1397,6 +1397,7 @@ You can modify the checklist using these blocks:
     return result;
   });
 
+
   /** Health check */
   server.get('/api/health', async () => ({ status: 'ok' }));
 
