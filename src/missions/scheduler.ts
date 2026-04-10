@@ -266,7 +266,7 @@ If an item should be removed entirely (duplicate or no longer relevant):
     const projectContext = projects.map((p) => p.name).join(', ');
 
     // Compose a natural request — like a human asking the team to work on something
-    const heartbeatMessage = `We need to work on the next item for our mission "${mission.title}".
+    const heartbeatMessage = `Checking in on Mission "${mission.title}" — focusing on: **${focusItem.title}** (item ID: \`${focusItem.id}\`)
 
 **Next item:** ${focusItem.title}
 **Goal:** ${focusItem.description}
@@ -274,7 +274,21 @@ If an item should be removed entirely (duplicate or no longer relevant):
 
 Please analyze what's needed and propose a plan to implement this. Consider the current state of the codebase and any dependencies.
 
-${executionContext}`;
+${executionContext}
+
+**Available actions:**
+
+If an executor has already completed work for this item (see Execution History above), declare it complete:
+<mission-item-complete>{"itemId":"${focusItem.id}","summary":"Brief summary of what was done"}</mission-item-complete>
+
+If this item is too large, break it into smaller sub-items:
+<mission-replace-item>{"itemId":"${focusItem.id}","reason":"Why it needs breakdown","replacements":[{"title":"Sub-task","description":"Verification criteria"}]}</mission-replace-item>
+
+If this item is a duplicate or no longer relevant:
+<mission-remove-item>{"itemId":"${focusItem.id}","reason":"Why"}</mission-remove-item>
+
+To add new items to the mission (mission ID: \`${mission.id}\`):
+<mission-add-items>{"missionId":"${mission.id}","items":[{"title":"New item","description":"Verification criteria"}]}</mission-add-items>`;
 
     // Mark as in_progress and increment heartbeat count
     await updateMissionItem(focusItem.id, {
