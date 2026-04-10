@@ -963,7 +963,7 @@ html, body { height: 100%; font-family: var(--font); background: var(--bg); colo
 
 .checklist-header h4 {
   font-size: 12px;
-  color: var(--accent-light);
+  color: var(--accent);
   text-transform: uppercase;
   letter-spacing: 1px;
   font-family: var(--mono);
@@ -1020,7 +1020,7 @@ html, body { height: 100%; font-family: var(--font); background: var(--bg); colo
 .checklist-replan-btn {
   background: none;
   border: 1px solid var(--border);
-  color: var(--accent-light);
+  color: var(--accent);
   font-size: 11px;
   padding: 2px 8px;
   border-radius: 4px;
