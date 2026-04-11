@@ -15,6 +15,7 @@ export const PERMISSION_MAP: Record<IntentKind, Role> = {
   ProposeTask: 'MEMBER',
   ManageProject: 'ADMIN',
   AccessSecrets: 'OWNER',
+  DestructiveAction: 'OWNER',
   Unknown: 'VIEWER',
   StrictConsultation: 'VIEWER',
 };

@@ -210,6 +210,16 @@ export async function createLocalServer(_port = 3000) {
           confirmationPrompt,
         });
         pendingIntentMessages.set(confirmation.id, unified);
+
+        const { logGuardrailEvent } = await import('../telemetry/index.js');
+        logGuardrailEvent({
+          event: 'confirmation_gate_shown',
+          intent: confirmation.intent,
+          channelId: confirmation.channelId,
+          userId: confirmation.userId,
+          confirmationId: confirmation.id,
+        });
+
         broadcast('confirmation_required', {
           confirmationId: confirmation.id,
           intent: routeResult.intent.kind,
