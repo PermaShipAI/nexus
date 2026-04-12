@@ -28,6 +28,13 @@ import { LocalProjectRegistry } from './project-registry.js';
 import { cloneRepo } from './git-clone.js';
 import { config } from '../config.js';
 import { isAutonomousMode, setSetting, getSetting } from '../settings/service.js';
+import { routeIntent } from '../intent/router.js';
+import {
+  createPendingConfirmation,
+  getPendingConfirmation,
+  removePendingConfirmation,
+  buildConfirmationPrompt,
+} from '../services/intent/confirmation.js';
 import {
   createMission,
   getMission,
@@ -52,6 +59,7 @@ import {
   validateGitUrl,
   writeFileSecure,
 } from './security.js';
+import { validateImageAttachments } from '../core/guardrails/image_guard.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const UI_DIR = join(__dirname, '..', '..', 'ui');
@@ -81,6 +89,7 @@ export async function createLocalServer(_port = 3000) {
     if (!request.url.startsWith('/api/') && request.url !== '/ws') return;
     if (request.url === '/api/health') return;
     if (request.url === '/api/auth/token') return;
+    if (request.url === '/metrics') return;
 
     // CSRF: reject state-changing requests from non-localhost origins
     if (['POST', 'PUT', 'DELETE'].includes(request.method)) {
@@ -104,6 +113,9 @@ export async function createLocalServer(_port = 3000) {
   // ── WebSocket (C2: auth via token query param) ────────────────────────
 
   const clients = new Set<WebSocket>();
+
+  // Maps confirmationId -> UnifiedMessage for the local intent confirmation gate
+  const pendingIntentMessages = new Map<string, UnifiedMessage>();
 
   server.get('/ws', { websocket: true }, (socket, request) => {
     const url = new URL(request.url, 'http://localhost');
@@ -130,14 +142,26 @@ export async function createLocalServer(_port = 3000) {
   // ── REST: chat API ────────────────────────────────────────────────────
 
   /** Send a message to Nexus Command */
-  server.post('/api/chat/send', async (request) => {
-    const { content, authorName } = request.body as {
+  server.post('/api/chat/send', async (request, reply) => {
+    const { content, authorName, attachments: rawAttachments } = request.body as {
       content: string;
       authorName?: string;
+      attachments?: Array<{ data: string; mediaType: string }>;
     };
 
     if (!content || content.trim().length === 0) {
       return { success: false, error: 'Message content is required' };
+    }
+
+    // Validate image attachments when provided
+    let validatedAttachments;
+    if (rawAttachments && rawAttachments.length > 0) {
+      const imageCheck = validateImageAttachments(rawAttachments);
+      if (!imageCheck.valid) {
+        reply.status(400);
+        return { success: false, error: imageCheck.error };
+      }
+      validatedAttachments = imageCheck.attachments;
     }
 
     const messageId = `local-${Date.now()}`;
@@ -151,6 +175,7 @@ export async function createLocalServer(_port = 3000) {
       isThread: false,
       platform: 'discord',
       orgId: LOCAL_ORG_ID,
+      attachments: validatedAttachments,
     };
 
     // Broadcast the user message to all connected browsers immediately
@@ -164,6 +189,52 @@ export async function createLocalServer(_port = 3000) {
 
     // Acknowledge receipt — shows 👀 on the message so user knows it's being processed
     broadcast('ack', { id: messageId, channel_id: LOCAL_CHANNEL_ID });
+
+    // Intent routing: check if this message requires manual confirmation before processing
+    try {
+      const requestContext = {
+        platformUserId: 'local-user',
+        platform: 'discord' as const,
+        channelType: 'private' as const,
+        role: 'OWNER' as const,
+        messageId,
+      };
+      const routeResult = await routeIntent(content.trim(), requestContext);
+
+      if (routeResult.allowed && routeResult.requiresConfirmation && routeResult.intent) {
+        const confirmationPrompt = buildConfirmationPrompt(
+          routeResult.intent.kind,
+          routeResult.intent.params as Record<string, unknown>,
+        );
+        const confirmation = createPendingConfirmation({
+          channelId: LOCAL_CHANNEL_ID,
+          userId: 'local-user',
+          intent: routeResult.intent.kind,
+          extractedEntities: routeResult.intent.params as Record<string, unknown>,
+          targetAgent: 'nexus',
+          confirmationPrompt,
+        });
+        pendingIntentMessages.set(confirmation.id, unified);
+
+        const { logGuardrailEvent } = await import('../telemetry/index.js');
+        logGuardrailEvent({
+          event: 'confirmation_gate_shown',
+          intent: confirmation.intent,
+          channelId: confirmation.channelId,
+          userId: confirmation.userId,
+          confirmationId: confirmation.id,
+        });
+
+        broadcast('confirmation_required', {
+          confirmationId: confirmation.id,
+          intent: routeResult.intent.kind,
+          prompt: confirmationPrompt,
+        });
+        return { success: true, messageId, requiresConfirmation: true, confirmationId: confirmation.id };
+      }
+    } catch (err) {
+      logger.debug({ err }, 'Intent routing skipped — processing message directly');
+    }
 
     // Process async (same pattern as the webhook handler)
     processWebhookMessage(unified).catch(err => {
@@ -315,6 +386,68 @@ export async function createLocalServer(_port = 3000) {
     return { success: true };
   });
 
+
+  // ── REST: intent confirmation gate ────────────────────────────────────
+
+  /** Confirm a pending intent and process the deferred message */
+  server.post('/api/intent/confirm/:id', async (request) => {
+    const { id } = request.params as { id: string };
+    const pending = getPendingConfirmation(id);
+    if (!pending) {
+      return { success: false, error: 'Confirmation expired or not found' };
+    }
+    const unified = pendingIntentMessages.get(id);
+    if (!unified) {
+      return { success: false, error: 'Pending message not found' };
+    }
+
+    removePendingConfirmation(id);
+    pendingIntentMessages.delete(id);
+
+    const { logGuardrailEvent } = await import('../telemetry/index.js');
+    logGuardrailEvent({
+      event: 'confirmation_gate_confirmed',
+      intent: pending.intent,
+      channelId: pending.channelId,
+      userId: pending.userId,
+      confirmationId: id,
+      elapsedMs: Date.now() - pending.createdAt.getTime(),
+    });
+
+    broadcast('confirmation_resolved', { confirmationId: id, status: 'confirmed' });
+
+    processWebhookMessage(unified).catch(err => {
+      logger.error({ err }, 'Confirmed intent message processing failed');
+      broadcast('error', { message: 'Message processing failed after confirmation' });
+    });
+
+    return { success: true };
+  });
+
+  /** Cancel a pending intent confirmation */
+  server.post('/api/intent/cancel/:id', async (request) => {
+    const { id } = request.params as { id: string };
+    const pending = getPendingConfirmation(id);
+    if (!pending) {
+      return { success: false, error: 'Confirmation expired or not found' };
+    }
+
+    removePendingConfirmation(id);
+    pendingIntentMessages.delete(id);
+
+    const { logGuardrailEvent } = await import('../telemetry/index.js');
+    logGuardrailEvent({
+      event: 'confirmation_gate_dismissed',
+      intent: pending.intent,
+      channelId: pending.channelId,
+      userId: pending.userId,
+      confirmationId: id,
+      elapsedMs: Date.now() - pending.createdAt.getTime(),
+    });
+
+    broadcast('confirmation_resolved', { confirmationId: id, status: 'cancelled' });
+    return { success: true };
+  });
 
   // ── REST: execution results ────────────────────────────────────────────
 
@@ -1402,8 +1535,16 @@ You can modify the checklist using these blocks:
     return result;
   });
 
+
   /** Health check */
   server.get('/api/health', async () => ({ status: 'ok' }));
+
+  /** Prometheus metrics scrape endpoint (unauthenticated, localhost-only by convention) */
+  server.get('/metrics', async (_request, reply) => {
+    const { registry } = await import('../telemetry/prometheus.js');
+    reply.header('Content-Type', registry.contentType);
+    return reply.send(await registry.metrics());
+  });
 
   return server;
 }

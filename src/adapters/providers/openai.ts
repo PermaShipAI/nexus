@@ -1,6 +1,7 @@
 import OpenAI from 'openai';
 import { logger } from '../../logger.js';
 import { usageReporter } from '../../telemetry/usage-reporter.js';
+import { withRetry } from './retry.js';
 import type {
   LLMProvider,
   GenerateTextOptions,
@@ -41,7 +42,11 @@ export class OpenAIProvider implements LLMProvider {
 
     logger.debug({ model, tier: options.model }, 'Calling OpenAI');
 
-    const response = await this.client.chat.completions.create({ model, messages });
+    const response = await withRetry(
+      () => this.client.chat.completions.create({ model, messages }),
+      undefined,
+      `openai.generateText[${model}]`,
+    );
 
     if (options.orgId && response.usage) {
       usageReporter.record(options.orgId, {
@@ -110,7 +115,11 @@ export class OpenAIProvider implements LLMProvider {
       },
     }));
 
-    const response = await this.client.chat.completions.create({ model, messages, tools });
+    const response = await withRetry(
+      () => this.client.chat.completions.create({ model, messages, tools }),
+      undefined,
+      `openai.generateWithTools[${model}]`,
+    );
 
     if (options.orgId && response.usage) {
       usageReporter.record(options.orgId, {
@@ -140,10 +149,11 @@ export class OpenAIProvider implements LLMProvider {
     if (!model) return null;
 
     try {
-      const response = await this.client.embeddings.create({
-        model,
-        input: text,
-      });
+      const response = await withRetry(
+        () => this.client.embeddings.create({ model, input: text }),
+        undefined,
+        `openai.embedText[${model}]`,
+      );
       return response.data[0]?.embedding ?? null;
     } catch (err) {
       logger.warn({ err }, 'OpenAI embedding failed');

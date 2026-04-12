@@ -9,6 +9,7 @@ import type { AgentId } from '../agents/types.js';
 import { parseArgs } from '../utils/parse-args.js';
 import { onProposalCreated } from '../nexus/scheduler.js';
 import { logCrossAgentConflictResolved } from '../telemetry/cross-agent.js';
+import { logGuardrailEvent } from '../telemetry/index.js';
 
 export interface TicketProposalInput {
   orgId: string;
@@ -196,6 +197,18 @@ Where <index> is the 1-based index number from the EXISTING TICKETS list.`;
 export async function createTicketProposal(input: TicketProposalInput): Promise<TicketProposalResult> {
   const { orgId, kind, title, description, project, priority, agentId, source, channelId, agentDiscussionContext, fallbackPlan } = input;
   let { repoKey } = input;
+
+  // Enforce fallback plan for idle-sourced (agentops/system-initiated) proposals.
+  // Human-facing guardrail: downstream subagents must not attempt primary and fallback
+  // paths simultaneously. Reject idle proposals that omit a fallbackPlan entirely.
+  if (source === 'idle' && !fallbackPlan) {
+    logGuardrailEvent({ event: 'agentops_fallback_missing', orgId, agentId, title });
+    logger.warn({ agentId, orgId, title }, 'agentops_fallback_missing: idle proposal rejected — fallbackPlan is required');
+    return {
+      success: false,
+      message: 'Idle proposals must include a fallbackPlan. Add a "**Fallback:**" section describing the alternative execution path.',
+    };
+  }
 
   // Compose enriched description from base description + optional sections
   let fullDescription = description;

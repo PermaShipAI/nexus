@@ -24,6 +24,61 @@ try {
   );
 }
 
+function buildClarificationMessage(
+  intent: string,
+  extractedEntities: Record<string, unknown>,
+): { fallbackMessage: string; actionableOptions?: string[] } {
+  if (intent === 'AdministrativeAction') {
+    const settingKey = extractedEntities['settingKey'] as string | undefined;
+    const settingValue = extractedEntities['settingValue'] as string | undefined;
+
+    if (settingKey && !settingValue) {
+      return {
+        fallbackMessage: `What value should **${settingKey}** be set to? Please specify the desired value.`,
+        actionableOptions: undefined,
+      };
+    }
+
+    return {
+      fallbackMessage:
+        "Which setting would you like to configure? Please specify the setting name and value. For example:",
+      actionableOptions: [
+        'enable autonomous mode',
+        'set log level to debug',
+        'disable rate limiting',
+        'enable maintenance mode',
+        'set request timeout to 30 seconds',
+      ],
+    };
+  }
+
+  if (intent === 'InvestigateBug') {
+    return {
+      fallbackMessage:
+        "Which bug or error would you like investigated? Please describe the issue or provide an error message.",
+    };
+  }
+
+  if (intent === 'ProposeTask') {
+    return {
+      fallbackMessage:
+        "What task would you like to propose? Please describe what needs to be done and which area it affects.",
+    };
+  }
+
+  if (intent === 'DestructiveAction') {
+    return {
+      fallbackMessage:
+        "What would you like to delete or remove? Please be specific so I can confirm the action safely.",
+    };
+  }
+
+  return {
+    fallbackMessage:
+      "I'm not sure what you'd like to do. Could you provide more details about your request?",
+  };
+}
+
 const AGENT_IDS = [
   'ciso',
   'qa-manager',
@@ -121,19 +176,23 @@ export async function routeMessage(
       const intentData = validation.data;
 
       if (intentData.confidenceScore < 0.6) {
+        const { fallbackMessage, actionableOptions } = buildClarificationMessage(
+          intentData.intent,
+          intentData.extractedEntities ?? {},
+        );
         const lowConfidenceResult: RouteResult = {
           agentId: 'none',
           intent: intentData.intent,
           subMessage: content,
           confidenceScore: intentData.confidenceScore,
           reasoning: intentData.reasoning,
-          extractedEntities: {},
+          extractedEntities: intentData.extractedEntities ?? {},
           needsCodeAccess: false,
           isStrategySession: false,
           requiresConfirmation: false,
           isFallback: true,
-          fallbackMessage:
-            "I'm not fully confident I understood your request. Could you provide more details?",
+          fallbackMessage,
+          actionableOptions,
         };
         if (intentData.intent === 'AdministrativeAction') {
           logAdministrativeIntentClarificationEvent({ confidenceScore: intentData.confidenceScore, channelId, userName });

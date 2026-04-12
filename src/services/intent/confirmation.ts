@@ -43,6 +43,9 @@ export function buildConfirmationPrompt(intent: string, entities: Record<string,
   const actionMap: Record<string, string> = {
     ProposeTask: "create a new task",
     RequestReview: "request a review",
+    ManageProject: "modify project configuration",
+    AccessSecrets: "access credentials or secrets",
+    DestructiveAction: "perform a destructive operation",
   };
   const action = actionMap[intent] ?? intent;
   const details = Object.values(entities).join(": ");

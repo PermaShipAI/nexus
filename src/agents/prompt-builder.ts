@@ -9,6 +9,7 @@ import { pendingActions, tickets as ticketsTable, tasks, activityLog, codebaseSn
 import { eq, desc, ne, and, gte, inArray } from 'drizzle-orm';
 import type { AgentId } from './types.js';
 import { getProjectRegistry, getTenantResolver } from '../adapters/registry.js';
+import { sanitizeIndirectInput } from '../core/guardrails/prompt_injection.js';
 
 import { tmpdir } from 'node:os';
 import { getMissionByChannelId, getMissionItems, getMissionProjects } from '../missions/service.js';
@@ -108,12 +109,12 @@ async function getAgentTicketHistory(agentId: AgentId, orgId: string): Promise<s
   for (const a of agentActions) {
     const args = a.args as Record<string, unknown>;
     const ago = Math.round((Date.now() - a.createdAt.getTime()) / 3600000);
-    lines.push(`- [${a.status}] "${args.title}" (${args.kind ?? 'ticket'}) — ${ago}h ago`);
+    lines.push(`- [${a.status}] "${sanitizeIndirectInput(String(args.title ?? ''))}" (${args.kind ?? 'ticket'}) — ${ago}h ago`);
   }
 
   for (const t of agentTickets) {
     const ago = Math.round((Date.now() - t.createdAt.getTime()) / 3600000);
-    lines.push(`- [created] "${t.title}" (${t.kind}) — ${ago}h ago`);
+    lines.push(`- [created] "${sanitizeIndirectInput(t.title)}" (${t.kind}) — ${ago}h ago`);
   }
 
   return lines.length > 0 ? lines.join('\n') : null;
@@ -161,14 +162,14 @@ async function getTicketActivityText(orgId: string): Promise<{ pending: string |
   const pendingText = pending.length > 0
     ? pending.map((a) => {
         const args = a.args as Record<string, unknown>;
-        return `- [PENDING HUMAN REVIEW] [${a.agentId}] ${a.description} (project: ${args.project ?? args['project-id'] ?? 'unknown'})`;
+        return `- [PENDING HUMAN REVIEW] [${a.agentId}] ${sanitizeIndirectInput(a.description ?? '')} (project: ${args.project ?? args['project-id'] ?? 'unknown'})`;
       }).join('\n')
     : null;
 
   const ctoReviewText = ctoReview.length > 0
     ? ctoReview.map((a) => {
         const args = a.args as Record<string, unknown>;
-        return `- [AWAITING NEXUS REVIEW] [${a.agentId}] ${a.description} (project: ${args.project ?? args['project-id'] ?? 'unknown'})`;
+        return `- [AWAITING NEXUS REVIEW] [${a.agentId}] ${sanitizeIndirectInput(a.description ?? '')} (project: ${args.project ?? args['project-id'] ?? 'unknown'})`;
       }).join('\n')
     : null;
 
@@ -176,11 +177,11 @@ async function getTicketActivityText(orgId: string): Promise<{ pending: string |
 
   for (const a of processed) {
     const args = a.args as Record<string, unknown>;
-    existingLines.push(`- [${a.status.toUpperCase()}] [${a.agentId}] ${a.description} (project: ${args.project ?? args['project-id'] ?? 'unknown'})`);
+    existingLines.push(`- [${a.status.toUpperCase()}] [${a.agentId}] ${sanitizeIndirectInput(a.description ?? '')} (project: ${args.project ?? args['project-id'] ?? 'unknown'})`);
   }
 
   for (const t of createdTickets) {
-    existingLines.push(`- [CREATED] [${t.createdByAgentId ?? 'unknown'}] ${t.kind}: "${t.title}" (repo: ${t.repoKey})`);
+    existingLines.push(`- [CREATED] [${t.createdByAgentId ?? 'unknown'}] ${t.kind}: "${sanitizeIndirectInput(t.title)}" (repo: ${t.repoKey})`);
   }
 
   return {
@@ -319,7 +320,7 @@ async function buildMissionContext(channelId: string, _orgId: string): Promise<s
   const projects = await getMissionProjects(mission.id);
 
   // Mission overview
-  sections.push(`# Active Mission: ${mission.title}\n**Status:** ${mission.status}\n**Goal:** ${mission.description}`);
+  sections.push(`# Active Mission: ${sanitizeIndirectInput(mission.title)}\n**Status:** ${mission.status}\n**Goal:** ${sanitizeIndirectInput(mission.description ?? '')}`);
 
   // Checklist
   if (items.length > 0) {
@@ -329,7 +330,7 @@ async function buildMissionContext(channelId: string, _orgId: string): Promise<s
         i.status === 'agent_complete' ? '[?]' :
         i.status === 'in_progress' ? '[~]' : '[ ]';
       const assignee = i.assignedAgentId ? ` (assigned: ${i.assignedAgentId})` : '';
-      return `${marker} **${i.title}**${assignee}\n    ${i.description}`;
+      return `${marker} **${sanitizeIndirectInput(i.title)}**${assignee}\n    ${sanitizeIndirectInput(i.description ?? '')}`;
     }).join('\n');
     sections.push(`# Mission Checklist\n${checklist}`);
   }
@@ -453,20 +454,20 @@ async function buildGeminiMd(agentId: AgentId, channelId: string, orgId: string)
 
   // Agent memories
   if (memories.length > 0) {
-    const memoryText = memories.map((m) => `- **${m.topic}**: ${m.content}`).join('\n');
+    const memoryText = memories.map((m) => `- **${sanitizeIndirectInput(m.topic)}**: ${sanitizeIndirectInput(m.content)}`).join('\n');
     sections.push(`# Your Personal Memories\n${memoryText}`);
   }
 
   // Shared knowledge
   if (shared.length > 0) {
-    const knowledgeText = shared.map((k) => `- **${k.topic}**: ${k.content}`).join('\n');
+    const knowledgeText = shared.map((k) => `- **${sanitizeIndirectInput(k.topic)}**: ${sanitizeIndirectInput(k.content)}`).join('\n');
     sections.push(`# Shared Team Knowledge\n${knowledgeText}`);
   }
 
   // Tasks assigned to this agent
   if (agentTasks.length > 0) {
     const taskText = agentTasks
-      .map((t) => `- [${t.status}] ${t.title} (priority: ${t.priority})`)
+      .map((t) => `- [${t.status}] ${sanitizeIndirectInput(t.title)} (priority: ${t.priority})`)
       .join('\n');
     sections.push(`# Your Assigned Tasks\n${taskText}`);
   }
@@ -475,7 +476,7 @@ async function buildGeminiMd(agentId: AgentId, channelId: string, orgId: string)
   const activeTasks = allTasks.filter((t) => t.status !== 'completed');
   if (activeTasks.length > 0) {
     const teamText = activeTasks
-      .map((t) => `- [${t.status}] ${t.title} → ${t.assignedAgentId ?? 'unassigned'}`)
+      .map((t) => `- [${t.status}] ${sanitizeIndirectInput(t.title)} → ${t.assignedAgentId ?? 'unassigned'}`)
       .join('\n');
     sections.push(`# Team Task Board\n${teamText}`);
   }
@@ -483,7 +484,7 @@ async function buildGeminiMd(agentId: AgentId, channelId: string, orgId: string)
   // Conversation history
   if (conversation.length > 0) {
     const convText = conversation
-      .map((m) => `${m.authorName}: ${m.content}`)
+      .map((m) => `${sanitizeIndirectInput(m.authorName)}: ${m.content}`)
       .join('\n');
     sections.push(`# Recent Conversation\n${convText}`);
   }
@@ -777,20 +778,20 @@ export async function buildAgentPrompt(
 
   // Agent memories
   if (memories.length > 0) {
-    const memoryText = memories.map((m) => `- **${m.topic}**: ${m.content}`).join('\n');
+    const memoryText = memories.map((m) => `- **${sanitizeIndirectInput(m.topic)}**: ${sanitizeIndirectInput(m.content)}`).join('\n');
     sections.push(`# Your Personal Memories\n${memoryText}`);
   }
 
   // Shared knowledge
   if (shared.length > 0) {
-    const knowledgeText = shared.map((k) => `- **${k.topic}**: ${k.content}`).join('\n');
+    const knowledgeText = shared.map((k) => `- **${sanitizeIndirectInput(k.topic)}**: ${sanitizeIndirectInput(k.content)}`).join('\n');
     sections.push(`# Shared Team Knowledge\n${knowledgeText}`);
   }
 
   // Tasks assigned to this agent
   if (agentTasks.length > 0) {
     const taskText = agentTasks
-      .map((t) => `- [${t.status}] ${t.title} (priority: ${t.priority})`)
+      .map((t) => `- [${t.status}] ${sanitizeIndirectInput(t.title)} (priority: ${t.priority})`)
       .join('\n');
     sections.push(`# Your Assigned Tasks\n${taskText}`);
   }
@@ -799,7 +800,7 @@ export async function buildAgentPrompt(
   const activeTasks = allTasks.filter((t) => t.status !== 'completed');
   if (activeTasks.length > 0) {
     const teamText = activeTasks
-      .map((t) => `- [${t.status}] ${t.title} → ${t.assignedAgentId ?? 'unassigned'}`)
+      .map((t) => `- [${t.status}] ${sanitizeIndirectInput(t.title)} → ${t.assignedAgentId ?? 'unassigned'}`)
       .join('\n');
     sections.push(`# Team Task Board\n${teamText}`);
   }
@@ -807,7 +808,7 @@ export async function buildAgentPrompt(
   // Conversation history — each message is truncated to prevent context-stuffing attacks
   if (conversation.length > 0) {
     const convText = conversation
-      .map((m) => `${m.authorName}: ${truncateMessageContent(m.content)}`)
+      .map((m) => `${sanitizeIndirectInput(m.authorName)}: ${truncateMessageContent(m.content)}`)
       .join('\n');
     sections.push(`# Recent Conversation\n${convText}`);
   }

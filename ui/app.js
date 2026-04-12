@@ -197,6 +197,12 @@ function connect() {
       case 'knowledge_changed':
         loadKnowledge();
         break;
+      case 'confirmation_required':
+        appendConfirmationMessage(data);
+        break;
+      case 'confirmation_resolved':
+        handleConfirmationResolved(data);
+        break;
       case 'error':
         appendSystemMessage(data.message || 'An error occurred');
         break;
@@ -223,6 +229,13 @@ function copyMessage(btn) {
     btn.classList.add('copied');
     setTimeout(() => { btn.textContent = 'Copy'; btn.classList.remove('copied'); }, 1500);
   });
+}
+
+/** Pre-fill the chat input with a suggestion and focus it */
+function fillSuggestion(text) {
+  inputEl.value = text;
+  inputEl.focus();
+  inputEl.setSelectionRange(text.length, text.length);
 }
 
 /** Minimal markdown: bold, code, code blocks, links */
@@ -306,6 +319,15 @@ function appendAgentMessage(data) {
     `;
   }
 
+  // Render actionable suggestion chips for clarification messages
+  if (data.actionable_suggestions && data.actionable_suggestions.length > 0) {
+    html += `<div class="suggestion-chips">`;
+    for (const suggestion of data.actionable_suggestions) {
+      html += `<button class="suggestion-chip" onclick="fillSuggestion(${JSON.stringify(escapeHtml(suggestion))})">${escapeHtml(suggestion)}</button>`;
+    }
+    html += `</div>`;
+  }
+
   // Render retry button for failed executions
   if (data.retry_ticket_id) {
     html += `<div class="proposal-buttons"><button class="btn-approve" onclick="handleRetryExecution('${escapeHtml(data.retry_ticket_id)}', this)">Retry Execution</button></div>`;
@@ -369,6 +391,77 @@ function appendSystemMessage(text) {
   `;
   messagesEl.appendChild(el);
   scrollToBottom();
+}
+
+function appendConfirmationMessage(data) {
+  hideEmptyState();
+  const el = document.createElement('div');
+  el.className = 'message system';
+  el.dataset.confirmationId = data.confirmationId;
+  el.innerHTML = `
+    <div class="meta"><span class="author">System</span></div>
+    <div class="body">${escapeHtml(data.prompt || 'This action requires your confirmation.')}</div>
+    <div class="proposal-buttons" data-confirmation-id="${escapeHtml(data.confirmationId)}">
+      <button class="btn-approve" onclick="handleIntentConfirm('${escapeHtml(data.confirmationId)}', this)">
+        <span class="btn-main-label">Confirm</span>
+      </button>
+      <button class="btn-reject" onclick="handleIntentCancel('${escapeHtml(data.confirmationId)}', this)">
+        <span class="btn-main-label">Cancel</span>
+      </button>
+    </div>
+  `;
+  messagesEl.appendChild(el);
+  scrollToBottom();
+}
+
+function handleConfirmationResolved(data) {
+  const { confirmationId, status } = data;
+  document.querySelectorAll(`.proposal-buttons[data-confirmation-id="${confirmationId}"]`).forEach(el => {
+    el.style.display = 'none';
+  });
+  if (status === 'cancelled') {
+    appendSystemMessage('Action cancelled.');
+  }
+}
+
+async function handleIntentConfirm(confirmationId, btn) {
+  if (!confirmationId) return;
+  const container = btn?.closest('.proposal-buttons');
+  if (container) container.querySelectorAll('button').forEach(b => b.disabled = true);
+  if (btn) {
+    const label = btn.querySelector('.btn-main-label');
+    if (label) label.textContent = 'Processing...';
+  }
+  try {
+    const resp = await apiFetch(`/api/intent/confirm/${confirmationId}`, { method: 'POST', body: '{}' });
+    const resData = await resp.json();
+    if (!resp.ok || !resData.success) {
+      appendSystemMessage(`Failed to confirm action: ${resData.error || 'Unknown error'}`);
+      if (container) container.querySelectorAll('button').forEach(b => b.disabled = false);
+    }
+    // Buttons hidden via 'confirmation_resolved' WebSocket event
+  } catch {
+    appendSystemMessage('Failed to confirm action.');
+    if (container) container.querySelectorAll('button').forEach(b => b.disabled = false);
+  }
+}
+
+async function handleIntentCancel(confirmationId, btn) {
+  if (!confirmationId) return;
+  const container = btn?.closest('.proposal-buttons');
+  if (container) container.querySelectorAll('button').forEach(b => b.disabled = true);
+  try {
+    const resp = await apiFetch(`/api/intent/cancel/${confirmationId}`, { method: 'POST', body: '{}' });
+    const resData = await resp.json();
+    if (!resp.ok || !resData.success) {
+      appendSystemMessage(`Failed to cancel action: ${resData.error || 'Unknown error'}`);
+      if (container) container.querySelectorAll('button').forEach(b => b.disabled = false);
+    }
+    // Buttons hidden and "Action cancelled." appended via 'confirmation_resolved' WebSocket event
+  } catch {
+    appendSystemMessage('Failed to cancel action.');
+    if (container) container.querySelectorAll('button').forEach(b => b.disabled = false);
+  }
 }
 
 function appendHistoryMessage(msg) {

@@ -1,4 +1,5 @@
 import { logger } from '../../logger.js';
+import { withRetry } from './retry.js';
 import type {
   LLMProvider,
   GenerateTextOptions,
@@ -39,18 +40,19 @@ export class OllamaProvider implements LLMProvider {
 
     logger.debug({ model, tier: options.model }, 'Calling Ollama');
 
-    const response = await fetch(`${this.baseUrl}/api/chat`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ model, messages, stream: false }),
-    });
+    const data = await withRetry(async () => {
+      const response = await fetch(`${this.baseUrl}/api/chat`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ model, messages, stream: false }),
+      });
+      if (!response.ok) {
+        const body = await response.text();
+        throw new Error(`Ollama error ${response.status}: ${body}`);
+      }
+      return response.json() as Promise<{ message?: { content?: string } }>;
+    }, undefined, `ollama.generateText[${model}]`);
 
-    if (!response.ok) {
-      const text = await response.text();
-      throw new Error(`Ollama error ${response.status}: ${text}`);
-    }
-
-    const data = await response.json() as { message?: { content?: string } };
     const text = data.message?.content ?? '';
     logger.debug({ model, responseLength: text.length }, 'Ollama response received');
     return text;
@@ -109,18 +111,18 @@ export class OllamaProvider implements LLMProvider {
       },
     }));
 
-    const response = await fetch(`${this.baseUrl}/api/chat`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ model, messages, tools, stream: false }),
-    });
-
-    if (!response.ok) {
-      const text = await response.text();
-      throw new Error(`Ollama error ${response.status}: ${text}`);
-    }
-
-    const data = await response.json() as {
+    const data = await withRetry(async () => {
+      const response = await fetch(`${this.baseUrl}/api/chat`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ model, messages, tools, stream: false }),
+      });
+      if (!response.ok) {
+        const body = await response.text();
+        throw new Error(`Ollama error ${response.status}: ${body}`);
+      }
+      return response.json();
+    }, undefined, `ollama.generateWithTools[${model}]`) as {
       message?: {
         content?: string;
         tool_calls?: Array<{ function: { name: string; arguments: Record<string, unknown> } }>;
