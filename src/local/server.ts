@@ -7,7 +7,7 @@ import { logger } from '../logger.js';
 import { processWebhookMessage, type UnifiedMessage } from '../bot/listener.js';
 import { getAllAgents, registerAgent } from '../agents/registry.js';
 import { db } from '../db/index.js';
-import { pendingActions, conversationHistory, agents as agentsTable, tickets as ticketsTable, knowledgeEntries, missions as missionsSchema, localProjects as localProjectsSchema, adrDrafts } from '../db/schema.js';
+import { pendingActions, conversationHistory, agents as agentsTable, tickets as ticketsTable, knowledgeEntries, missions as missionsSchema, localProjects as localProjectsSchema, missionItems as missionItemsTable, adrDrafts } from '../db/schema.js';
 import { eq, and, desc } from 'drizzle-orm';
 import { getTicketTracker, setTicketTracker } from '../adapters/registry.js';
 import { createExecutionBackend } from './execution-backends/factory.js';
@@ -42,6 +42,8 @@ import {
   updateMissionStatus,
   getMissionItems,
   getMissionProjects,
+  getMissionRoster,
+  setMissionRoster,
 } from '../missions/service.js';
 import { approveAdrDraft, rejectAdrDraft } from '../agents/adr-service.js';
 import { planMission } from '../missions/lifecycle.js';
@@ -185,6 +187,9 @@ export async function createLocalServer(_port = 3000) {
       channel_id: LOCAL_CHANNEL_ID,
     });
 
+    // Acknowledge receipt — shows 👀 on the message so user knows it's being processed
+    broadcast('ack', { id: messageId, channel_id: LOCAL_CHANNEL_ID });
+
     // Intent routing: check if this message requires manual confirmation before processing
     try {
       const requestContext = {
@@ -267,20 +272,31 @@ export async function createLocalServer(_port = 3000) {
 
   /** List pending proposals */
   server.get('/api/proposals', async (request) => {
-    const { status } = request.query as { status?: string };
+    const { status, project } = request.query as { status?: string; project?: string };
     const conditions = [eq(pendingActions.orgId, LOCAL_ORG_ID)];
     if (status) {
       conditions.push(eq(pendingActions.status, status));
     }
 
-    const proposals = await db
+    let proposals = await db
       .select()
       .from(pendingActions)
       .where(and(...conditions))
       .orderBy(desc(pendingActions.createdAt))
-      .limit(100);
+      .limit(200);
 
-    return { proposals };
+    // Filter by project (stored in args.project or args['project-id'])
+    if (project) {
+      const projectLower = project.toLowerCase();
+      proposals = proposals.filter(p => {
+        const args = typeof p.args === 'string' ? JSON.parse(p.args) : (p.args || {});
+        const pName = ((args as any).project || '').toLowerCase();
+        const pId = ((args as any)['project-id'] || '').toLowerCase();
+        return pName.includes(projectLower) || pId.includes(projectLower);
+      });
+    }
+
+    return { proposals: proposals.slice(0, 100) };
   });
 
   /** Approve a pending action and create the ticket */
@@ -453,6 +469,8 @@ export async function createLocalServer(_port = 3000) {
         createdByAgentId: t.createdByAgentId,
         executionStatus: t.executionStatus,
         executionBackend: t.executionBackend,
+        executionBranch: t.executionBranch,
+        mergeStatus: t.mergeStatus,
         executionReview: t.executionReview,
         executedAt: t.executedAt,
         createdAt: t.createdAt,
@@ -469,6 +487,17 @@ export async function createLocalServer(_port = 3000) {
   });
 
   /** Retry a failed execution */
+  /** Update ticket fields (e.g., set executionBranch) */
+  server.patch('/api/executions/:id', async (request) => {
+    const { id } = request.params as { id: string };
+    const { executionBranch } = request.body as { executionBranch?: string };
+    const updates: Record<string, unknown> = {};
+    if (executionBranch !== undefined) updates.executionBranch = executionBranch;
+    if (Object.keys(updates).length === 0) return { success: false, error: 'No fields to update' };
+    await db.update(ticketsTable).set(updates).where(eq(ticketsTable.id, id));
+    return { success: true };
+  });
+
   server.post('/api/executions/:id/retry', async (request) => {
     const { id } = request.params as { id: string };
     const tracker = getTicketTracker();
@@ -565,14 +594,14 @@ export async function createLocalServer(_port = 3000) {
         await stat(join(pathCheck.resolved, '.git'));
       } catch {
         try {
-          await execFileAsync('git', ['init'], { cwd: pathCheck.resolved, timeout: 10_000 });
+          await execFileAsync('git', ['init', '-b', 'main'], { cwd: pathCheck.resolved, timeout: 10_000 });
           await execFileAsync('git', ['add', '.'], { cwd: pathCheck.resolved, timeout: 30_000 });
           await execFileAsync('git', ['commit', '-m', 'Initial commit (auto-created by Nexus Command)'], {
             cwd: pathCheck.resolved,
             timeout: 30_000,
             env: { ...process.env, GIT_AUTHOR_NAME: 'Nexus Command', GIT_AUTHOR_EMAIL: 'nexus@local', GIT_COMMITTER_NAME: 'Nexus Command', GIT_COMMITTER_EMAIL: 'nexus@local' },
           });
-          logger.info({ path: pathCheck.resolved }, 'Initialized git repo for project');
+          logger.info({ path: pathCheck.resolved }, 'Initialized git repo with main branch');
         } catch (gitErr) {
           logger.warn({ err: gitErr, path: pathCheck.resolved }, 'Could not initialize git — diff tracking will be unavailable');
         }
@@ -678,6 +707,9 @@ export async function createLocalServer(_port = 3000) {
   server.get('/api/config', async () => {
     const autonomous = await isAutonomousMode(LOCAL_ORG_ID);
     const useWorktrees = await getSetting('use_worktrees', LOCAL_ORG_ID) === true;
+    const agentsPaused = await getSetting('agents_paused', LOCAL_ORG_ID) === true;
+    const maxExecutorsVal = await getSetting('max_executors', LOCAL_ORG_ID);
+    const maxExecutors = typeof maxExecutorsVal === 'number' ? maxExecutorsVal : 5;
     const projects = await projectRegistry.getAllProjects(LOCAL_ORG_ID);
     const hasKey = config.LLM_PROVIDER === 'ollama' || !!(process.env.LLM_API_KEY || process.env.GEMINI_API_KEY);
     return {
@@ -685,6 +717,8 @@ export async function createLocalServer(_port = 3000) {
       executionBackend: config.EXECUTION_BACKEND,
       autonomousMode: autonomous,
       useWorktrees,
+      agentsPaused,
+      maxExecutors,
       projectCount: projects.length,
       needsSetup: !hasKey,
     };
@@ -855,6 +889,21 @@ export async function createLocalServer(_port = 3000) {
     await setSetting('autonomous_mode', enabled, LOCAL_ORG_ID, 'local-ui');
     broadcast('settings_changed', { autonomousMode: enabled });
     return { success: true, autonomousMode: enabled };
+  });
+
+  /** Pause/resume all agents globally */
+  server.post('/api/settings/agents-paused', async (request) => {
+    const { paused } = request.body as { paused: boolean };
+    await setSetting('agents_paused', paused, LOCAL_ORG_ID, 'local-ui');
+    broadcast('settings_changed', { agentsPaused: paused });
+    return { success: true, agentsPaused: paused };
+  });
+
+  server.post('/api/settings/max-executors', async (request) => {
+    const { max } = request.body as { max: number };
+    if (typeof max !== 'number' || max < 1 || max > 20) return { success: false, error: 'Must be 1-20' };
+    await setSetting('max_executors', max, LOCAL_ORG_ID, 'local-ui');
+    return { success: true, maxExecutors: max };
   });
 
   server.post('/api/settings/worktrees', async (request) => {
@@ -1077,7 +1126,8 @@ export async function createLocalServer(_port = 3000) {
     if (!mission) return { error: 'Mission not found' };
     const items = await getMissionItems(id);
     const projects = await getMissionProjects(id);
-    return { mission, items, projects };
+    const roster = await getMissionRoster(id);
+    return { mission, items, projects, roster };
   });
 
   /** Create a new mission */
@@ -1152,6 +1202,81 @@ export async function createLocalServer(_port = 3000) {
     return { success: true, removed };
   });
 
+  /** Update mission agent roster */
+  server.put('/api/missions/:id/roster', async (request) => {
+    const { id } = request.params as { id: string };
+    const { agentIds } = request.body as { agentIds: string[] };
+    if (!Array.isArray(agentIds)) return { success: false, error: 'agentIds must be an array' };
+    const valid = agentIds.filter(id => typeof id === 'string' && id.length > 0).slice(0, 10);
+    await setMissionRoster(id, valid);
+    broadcast('mission_updated', { id, roster: valid });
+    return { success: true, roster: valid };
+  });
+
+  /** Restructure a flat mission into phases + sub-steps */
+  server.post('/api/missions/:id/restructure', async (request) => {
+    const { id } = request.params as { id: string };
+    const { phaseIds } = request.body as { phaseIds: string[] };
+    if (!phaseIds?.length) return { success: false, error: 'phaseIds required' };
+
+    const { getMissionItems } = await import('../missions/service.js');
+    const items = await getMissionItems(id);
+
+    const phaseSet = new Set(phaseIds);
+    let updated = 0;
+
+    // Mark selected items as phases
+    for (const item of items) {
+      if (phaseSet.has(item.id)) {
+        if (!item.isPhase) {
+          await db.update(missionItemsTable).set({ isPhase: true, parentId: null }).where(eq(missionItemsTable.id, item.id));
+          updated++;
+        }
+      }
+    }
+
+    // Assign non-phase items as sub-steps using keyword matching
+    const phases = items.filter(i => phaseSet.has(i.id));
+    const orphans = items.filter(i => !phaseSet.has(i.id));
+
+    for (const orphan of orphans) {
+      const orphanWords = orphan.title.toLowerCase().split(/\s+/).filter(w => w.length > 3);
+      let bestPhase: string | null = null;
+      let bestScore = 0;
+
+      for (const phase of phases) {
+        const phaseWords = phase.title.toLowerCase().split(/\s+/).filter(w => w.length > 3);
+        const score = orphanWords.filter(w => phaseWords.some(pw => w.includes(pw) || pw.includes(w))).length;
+        if (score > bestScore) {
+          bestScore = score;
+          bestPhase = phase.id;
+        }
+      }
+
+      // Also check description keywords
+      if (!bestPhase || bestScore === 0) {
+        for (const phase of phases) {
+          const descLower = phase.description.toLowerCase();
+          const score = orphanWords.filter(w => descLower.includes(w)).length;
+          if (score > bestScore) {
+            bestScore = score;
+            bestPhase = phase.id;
+          }
+        }
+      }
+
+      // Default to the most relevant phase, or last one as catch-all
+      if (!bestPhase) bestPhase = phases[phases.length - 1]?.id ?? null;
+
+      if (bestPhase && (orphan.parentId !== bestPhase || orphan.isPhase)) {
+        await db.update(missionItemsTable).set({ parentId: bestPhase, isPhase: false }).where(eq(missionItemsTable.id, orphan.id));
+        updated++;
+      }
+    }
+
+    return { success: true, updated, phases: phases.length, subSteps: orphans.length };
+  });
+
   /** Get chat history for a mission channel */
   server.get('/api/missions/:id/chat', async (request) => {
     const { id } = request.params as { id: string };
@@ -1214,6 +1339,9 @@ export async function createLocalServer(_port = 3000) {
       timestamp: new Date().toISOString(),
       channel_id: mission.channelId,
     });
+
+    // Acknowledge receipt — shows 👀 on the message so user knows it's being processed
+    broadcast('ack', { id: messageId, channel_id: mission.channelId });
 
     // Enrich with checklist context so Nexus can modify the checklist
     const missionItems = await getMissionItems(id);

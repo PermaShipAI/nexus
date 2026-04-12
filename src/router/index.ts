@@ -25,6 +25,7 @@ export async function routeMessage(
   channelId: string,
   userName: string,
   orgId: string,
+  allowedAgentIds?: string[],
 ): Promise<RouteResult[]> {
   const injectionCheck = checkForInjection(content);
   if (injectionCheck.detected) {
@@ -48,8 +49,12 @@ export async function routeMessage(
       ? `RELEVANT KNOWLEDGE:\n${knowledge.map(k => `- ${k.topic}: ${k.content}`).join('\n')}`
       : 'No specific relevant knowledge found.';
 
-    // Build team members list dynamically from the agent registry
-    const agents = getAllAgents();
+    // Build team members list — constrained to allowed agents if specified
+    let agents = getAllAgents();
+    if (allowedAgentIds?.length) {
+      const allowed = new Set(allowedAgentIds);
+      agents = agents.filter(a => allowed.has(a.id));
+    }
     const teamList = agents.map(a => `- ${a.id}: ${a.title}`).join('\n');
 
     const prompt = `

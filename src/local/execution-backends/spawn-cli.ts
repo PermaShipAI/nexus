@@ -9,7 +9,9 @@ const SAFE_ENV_KEYS = new Set([
   'PATH', 'HOME', 'USER', 'SHELL', 'LANG', 'LC_ALL', 'TERM',
   'NODE_ENV', 'TMPDIR', 'TMP', 'TEMP',
   // Provider keys the CLI tools need
-  'ANTHROPIC_API_KEY', 'OPENAI_API_KEY', 'GEMINI_API_KEY',
+  'ANTHROPIC_API_KEY', 'OPENAI_API_KEY', 'GEMINI_API_KEY', 'GOOGLE_API_KEY',
+  // XDG dirs needed by some CLI tools for config/cache
+  'XDG_CONFIG_HOME', 'XDG_DATA_HOME', 'XDG_CACHE_HOME',
 ]);
 
 /** Build a sanitized environment for subprocesses (C3) */
@@ -17,6 +19,10 @@ function buildSafeEnv(): Record<string, string> {
   const safe: Record<string, string> = { FORCE_COLOR: '0' };
   for (const key of SAFE_ENV_KEYS) {
     if (process.env[key]) safe[key] = process.env[key]!;
+  }
+  // Gemini CLI may look for GOOGLE_API_KEY instead of GEMINI_API_KEY
+  if (!safe.GOOGLE_API_KEY && safe.GEMINI_API_KEY) {
+    safe.GOOGLE_API_KEY = safe.GEMINI_API_KEY;
   }
   return safe;
 }

@@ -135,10 +135,28 @@ export async function mergeBranch(
   }
 }
 
-/** Delete a merged branch */
+/** Delete a merged branch (handles worktree branches) */
 export async function cleanupBranch(repoPath: string, branchName: string): Promise<void> {
   try {
-    await execFileAsync('git', ['branch', '-d', branchName], { cwd: repoPath, timeout: GIT_TIMEOUT });
+    // Prune stale worktrees first (required before deleting worktree branches)
+    await execFileAsync('git', ['worktree', 'prune'], { cwd: repoPath, timeout: GIT_TIMEOUT }).catch(() => {});
+
+    // Remove any active worktree for this branch
+    try {
+      const { stdout } = await execFileAsync('git', ['worktree', 'list', '--porcelain'], { cwd: repoPath, timeout: GIT_TIMEOUT });
+      const lines = stdout.split('\n');
+      for (let i = 0; i < lines.length; i++) {
+        if (lines[i].startsWith('branch refs/heads/' + branchName)) {
+          const wtPath = lines[i - 2]?.replace('worktree ', '');
+          if (wtPath) {
+            await execFileAsync('git', ['worktree', 'remove', wtPath, '--force'], { cwd: repoPath, timeout: GIT_TIMEOUT }).catch(() => {});
+          }
+        }
+      }
+    } catch { /* ok */ }
+
+    // Now delete the branch (use -D to force if needed)
+    await execFileAsync('git', ['branch', '-D', branchName], { cwd: repoPath, timeout: GIT_TIMEOUT });
     logger.info({ branchName }, 'Cleaned up merged branch');
   } catch (err) {
     logger.warn({ err, branchName }, 'Failed to clean up branch');
@@ -179,4 +197,87 @@ export async function mergeTicketBranch(ticketId: string, orgId: string): Promis
 
   const targetBranch = await getMergeTargetBranch(orgId, repoPath);
   return mergeBranch(ticketId, repoPath, ticket.executionBranch, targetBranch);
+}
+
+// ── Sequential Merge Queue ─────────────────────────────────────────────────
+// Processes approved branches one at a time so each merge is against the
+// latest main, reducing conflicts from concurrent executors.
+
+const mergeQueue: Array<{ ticketId: string; orgId: string }> = [];
+let mergeProcessing = false;
+
+/** Add a ticket to the sequential merge queue */
+export function queueMerge(ticketId: string, orgId: string): void {
+  mergeQueue.push({ ticketId, orgId });
+  logger.info({ ticketId, queueLength: mergeQueue.length }, 'Branch queued for sequential merge');
+  processMergeQueue().catch(err => logger.error({ err }, 'Merge queue processing failed'));
+}
+
+/** Process the merge queue one at a time */
+async function processMergeQueue(): Promise<void> {
+  if (mergeProcessing) return; // Already processing
+  mergeProcessing = true;
+
+  try {
+    while (mergeQueue.length > 0) {
+      const { ticketId, orgId } = mergeQueue.shift()!;
+
+      const result = await mergeTicketBranch(ticketId, orgId);
+
+      if (result.success) {
+        // Clean up the merged branch
+        const [ticket] = await db.select({ executionBranch: tickets.executionBranch, repoKey: tickets.repoKey })
+          .from(tickets).where(eq(tickets.id, ticketId)).limit(1);
+        if (ticket?.executionBranch) {
+          const repoPath = await resolveRepoPath(ticket.repoKey, orgId);
+          if (repoPath) await cleanupBranch(repoPath, ticket.executionBranch);
+        }
+        logger.info({ ticketId, remaining: mergeQueue.length }, 'Merge queue: merged successfully');
+      } else if (result.reason === 'conflict') {
+        // Conflict — try rebasing onto latest main and retry once
+        const [ticket] = await db.select().from(tickets).where(eq(tickets.id, ticketId)).limit(1);
+        if (ticket?.executionBranch) {
+          const repoPath = await resolveRepoPath(ticket.repoKey, orgId);
+          if (repoPath) {
+            const rebased = await rebaseAndRetry(ticketId, repoPath, ticket.executionBranch, orgId);
+            if (rebased) {
+              logger.info({ ticketId }, 'Merge queue: resolved conflict via rebase');
+            } else {
+              logger.warn({ ticketId, conflictFiles: result.conflictFiles }, 'Merge queue: conflict persists after rebase');
+            }
+          }
+        }
+      } else {
+        logger.warn({ ticketId, reason: result.reason }, 'Merge queue: merge failed');
+      }
+    }
+  } finally {
+    mergeProcessing = false;
+  }
+}
+
+/** Attempt to rebase a branch onto main and retry the merge */
+async function rebaseAndRetry(ticketId: string, repoPath: string, branchName: string, orgId: string): Promise<boolean> {
+  const target = await getMergeTargetBranch(orgId, repoPath);
+
+  try {
+    // Rebase the feature branch onto latest main
+    await execFileAsync('git', ['checkout', branchName], { cwd: repoPath, timeout: GIT_TIMEOUT });
+    await execFileAsync('git', ['rebase', target], { cwd: repoPath, timeout: GIT_TIMEOUT });
+    await execFileAsync('git', ['checkout', target], { cwd: repoPath, timeout: GIT_TIMEOUT });
+
+    // Try merging again
+    const result = await mergeBranch(ticketId, repoPath, branchName, target);
+    if (result.success) {
+      await cleanupBranch(repoPath, branchName);
+      return true;
+    }
+    return false;
+  } catch (err) {
+    // Rebase failed — abort and give up
+    await execFileAsync('git', ['rebase', '--abort'], { cwd: repoPath, timeout: GIT_TIMEOUT }).catch(() => {});
+    await execFileAsync('git', ['checkout', target], { cwd: repoPath, timeout: GIT_TIMEOUT }).catch(() => {});
+    logger.warn({ err, ticketId, branchName }, 'Rebase failed — conflict cannot be auto-resolved');
+    return false;
+  }
 }

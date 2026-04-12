@@ -423,6 +423,8 @@ export const missionItems = pgTable(
   {
     id: uuid('id').primaryKey().defaultRandom(),
     missionId: uuid('mission_id').notNull(),
+    parentId: uuid('parent_id'), // null = top-level phase, set = sub-step under a phase
+    isPhase: boolean('is_phase').notNull().default(false), // true for top-level phases
     title: text('title').notNull(),
     description: text('description').notNull(),
     status: text('status').notNull().default('pending'),
@@ -456,6 +458,21 @@ export const missionProjects = pgTable(
 
 export type MissionProject = typeof missionProjects.$inferSelect;
 export type NewMissionProject = typeof missionProjects.$inferInsert;
+
+export const missionAgents = pgTable(
+  'mission_agents',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    missionId: uuid('mission_id').notNull(),
+    agentId: text('agent_id').notNull(),
+  },
+  (table) => ({
+    missionIdx: index('mission_agent_mission_idx').on(table.missionId),
+    agentIdx: index('mission_agent_agent_idx').on(table.agentId),
+  }),
+);
+
+export type MissionAgent = typeof missionAgents.$inferSelect;
 
 // --- ADR Drafts ---
 

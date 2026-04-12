@@ -895,6 +895,19 @@ html, body { height: 100%; font-family: var(--font); background: var(--bg); colo
 #mission-list li.active-mission { background: var(--surface-alt); outline: 2px solid var(--accent-light); outline-offset: -2px; }
 
 .mission-title-text { font-weight: 600; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mission-pause-btn {
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  font-size: 10px;
+  padding: 2px 4px;
+  opacity: 0;
+  transition: opacity 0.15s;
+  flex-shrink: 0;
+}
+#mission-list li:hover .mission-pause-btn { opacity: 1; }
+.mission-pause-btn:hover { color: var(--text); }
 .mission-status-dot {
   width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; margin-left: 6px;
 }
@@ -963,7 +976,7 @@ html, body { height: 100%; font-family: var(--font); background: var(--bg); colo
 
 .checklist-header h4 {
   font-size: 12px;
-  color: var(--accent);
+  color: var(--accent-light);
   text-transform: uppercase;
   letter-spacing: 1px;
   font-family: var(--mono);
@@ -1020,7 +1033,7 @@ html, body { height: 100%; font-family: var(--font); background: var(--bg); colo
 .checklist-replan-btn {
   background: none;
   border: 1px solid var(--border);
-  color: var(--accent);
+  color: var(--accent-light);
   font-size: 11px;
   padding: 2px 8px;
   border-radius: 4px;
@@ -1060,6 +1073,22 @@ html, body { height: 100%; font-family: var(--font); background: var(--bg); colo
 
 .checklist-text { flex: 1; }
 .checklist-text.verified { text-decoration: line-through; opacity: 0.6; }
+
+.phase-details { margin-bottom: 2px; }
+.phase-details summary { list-style: none; cursor: pointer; }
+.phase-details summary::-webkit-details-marker { display: none; }
+.phase-details[open] summary { margin-bottom: 2px; }
+
+.phase-item { font-weight: 600; }
+.phase-count {
+  font-size: 10px;
+  font-family: var(--mono);
+  color: var(--text-muted);
+  margin-left: 6px;
+  flex-shrink: 0;
+}
+
+.sub-step { padding-left: 28px; font-size: 12px; opacity: 0.85; }
 
 /* Modal overlay */
 .modal-overlay {
@@ -1457,6 +1486,17 @@ html, body { height: 100%; font-family: var(--font); background: var(--bg); colo
 }
 
 .thinking.hidden { display: none; }
+
+.ack-indicator {
+  margin-left: 6px;
+  font-size: 13px;
+  opacity: 0;
+  animation: fade-in 0.2s ease forwards;
+}
+
+@keyframes fade-in {
+  to { opacity: 1; }
+}
 
 @keyframes pulse {
   0%, 100% { opacity: 0.5; }

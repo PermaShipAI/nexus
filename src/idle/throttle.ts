@@ -158,6 +158,12 @@ function moreRestrictive(a: ThrottleLevel, b: ThrottleLevel): ThrottleLevel {
 
 /** Main entry point — computes the throttle level for an org */
 export async function computeThrottleLevel(orgId: string): Promise<ThrottleMetrics> {
+  // Global kill switch: agents_paused setting
+  const { isAgentsPaused } = await import('../settings/service.js');
+  if (await isAgentsPaused(orgId)) {
+    return { level: 'paused', pendingCount: 0, created: 0, resolved: 0, velocity: null, backlogLevel: 'paused', velocityLevel: 'paused', reason: 'Agents paused by user' };
+  }
+
   const cfg = await getThrottleConfig(orgId);
 
   const [pendingCount, metrics] = await Promise.all([

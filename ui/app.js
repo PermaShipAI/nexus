@@ -148,8 +148,22 @@ function connect() {
         appendUserMessage(data);
         break;
       }
+      case 'ack': {
+        // Show 👀 on the user message to indicate it's being processed
+        const ackChannel = data.channel_id || 'local:general';
+        if (ackChannel !== activeChannelId) break;
+        const msgEl = messagesEl.querySelector(`.message.user[data-msg-id="${data.id}"]`);
+        if (msgEl && !msgEl.querySelector('.ack-indicator')) {
+          const ack = document.createElement('span');
+          ack.className = 'ack-indicator';
+          ack.textContent = '\u{1F440}';
+          msgEl.querySelector('.meta')?.appendChild(ack);
+        }
+        if (thinkingEl) thinkingEl.classList.remove('hidden');
+        scrollToBottom();
+        break;
+      }
       case 'reaction':
-        // Could show reactions — skip for now
         break;
       case 'proposal_resolved':
         handleProposalResolved(data);
@@ -255,6 +269,7 @@ function appendUserMessage(data) {
   hideEmptyState();
   const el = document.createElement('div');
   el.className = 'message user';
+  if (data.id) el.dataset.msgId = data.id;
   el.innerHTML = `
     <div class="meta">
       <span class="author">${escapeHtml(data.authorName || 'You')}</span>
@@ -631,6 +646,15 @@ async function handleRetryExecution(ticketId, btn) {
 const proposalsListEl = document.getElementById('proposals-list');
 const proposalsEmptyEl = document.getElementById('proposals-empty');
 let currentProposalFilter = 'pending';
+let currentProposalProject = '';
+const proposalsProjectFilter = document.getElementById('proposals-project-filter');
+
+if (proposalsProjectFilter) {
+  proposalsProjectFilter.addEventListener('change', () => {
+    currentProposalProject = proposalsProjectFilter.value;
+    loadProposals();
+  });
+}
 
 // Proposals panel toggle
 const proposalsPanel = document.getElementById('proposals-panel');
@@ -663,10 +687,31 @@ document.querySelectorAll('.proposal-filter').forEach(btn => {
 async function loadProposals() {
   if (!proposalsListEl) return;
   try {
-    const query = currentProposalFilter ? `?status=${currentProposalFilter}` : '';
+    const params = new URLSearchParams();
+    if (currentProposalFilter) params.set('status', currentProposalFilter);
+    if (currentProposalProject) params.set('project', currentProposalProject);
+    const query = params.toString() ? `?${params}` : '';
     const resp = await apiFetch(`/api/proposals${query}`);
     const { proposals } = await resp.json();
     proposalsListEl.innerHTML = '';
+
+    // Populate project filter dropdown from all proposals (unfiltered)
+    if (proposalsProjectFilter && !currentProposalProject) {
+      const projectNames = new Set();
+      for (const p of proposals) {
+        const args = typeof p.args === 'string' ? JSON.parse(p.args) : (p.args || {});
+        const pName = args.project || '';
+        if (pName) projectNames.add(pName);
+      }
+      // Also fetch from registered projects
+      try {
+        const projResp = await apiFetch('/api/projects');
+        const { projects: regProjects } = await projResp.json();
+        for (const rp of (regProjects || [])) projectNames.add(rp.name);
+      } catch { /* ok */ }
+      proposalsProjectFilter.innerHTML = '<option value="">All Projects</option>' +
+        Array.from(projectNames).sort().map(n => `<option value="${escapeHtml(n)}">${escapeHtml(n)}</option>`).join('');
+    }
 
     if (!proposals || proposals.length === 0) {
       proposalsEmptyEl.style.display = 'block';
@@ -1110,6 +1155,26 @@ async function setMissionAutonomous(missionId, value) {
   });
 }
 
+async function toggleMissionAgent(missionId, agentId, checked) {
+  try {
+    // Get current roster, toggle agent, save
+    const resp = await apiFetch(`/api/missions/${missionId}`);
+    const data = await resp.json();
+    let roster = data.roster || [];
+    if (checked && !roster.includes(agentId)) {
+      roster.push(agentId);
+    } else if (!checked) {
+      roster = roster.filter(id => id !== agentId);
+    }
+    await apiFetch(`/api/missions/${missionId}/roster`, {
+      method: 'PUT',
+      body: JSON.stringify({ agentIds: roster }),
+    });
+    // Refresh checklist to show updated roster
+    loadMissionChecklist(missionId);
+  } catch { /* ok */ }
+}
+
 async function cycleProjectAutonomous(projectId, current) {
   const next = current === null ? true : current === true ? false : null;
   await apiFetch(`/api/projects/${projectId}/autonomous`, {
@@ -1122,7 +1187,7 @@ async function cycleProjectAutonomous(projectId, current) {
 async function removeProject(id) {
   if (!confirm('Remove this project? Agents will lose access to its code and docs.')) return;
   try {
-    await fetch(`/api/projects/${id}`, { method: 'DELETE' });
+    await apiFetch(`/api/projects/${id}`, { method: 'DELETE', body: '{}' });
     loadProjects();
   } catch (err) {
     appendSystemMessage('Failed to remove project.');
@@ -1250,6 +1315,7 @@ const executorSelect = document.getElementById('executor-select');
 const permashipHint = document.getElementById('permaship-hint');
 const autonomousToggle = document.getElementById('autonomous-toggle');
 const worktreeToggle = document.getElementById('worktree-toggle');
+const agentsPausedToggle = document.getElementById('agents-paused-toggle');
 
 async function loadConfig() {
   try {
@@ -1263,6 +1329,8 @@ async function loadConfig() {
     permashipHint.classList.toggle('hidden', backend !== 'permaship');
     autonomousToggle.checked = cfg.autonomousMode || false;
     if (worktreeToggle) worktreeToggle.checked = cfg.useWorktrees || false;
+    if (agentsPausedToggle) agentsPausedToggle.checked = cfg.agentsPaused || false;
+    if (maxExecutorsInput) maxExecutorsInput.value = cfg.maxExecutors ?? 5;
     showSetupIfNeeded(cfg);
     // Test executor on load if one is configured (skip noop)
     if (backend !== 'noop') testExecutor(backend);
@@ -1361,6 +1429,37 @@ if (worktreeToggle) {
     } catch (err) {
       worktreeToggle.checked = !worktreeToggle.checked;
       appendSystemMessage('Failed to update worktree setting.');
+    }
+  });
+}
+
+if (agentsPausedToggle) {
+  agentsPausedToggle.addEventListener('change', async () => {
+    try {
+      await apiFetch('/api/settings/agents-paused', {
+        method: 'POST',
+        body: JSON.stringify({ paused: agentsPausedToggle.checked }),
+      });
+      appendSystemMessage(agentsPausedToggle.checked ? 'All agents paused.' : 'Agents resumed.');
+    } catch (err) {
+      agentsPausedToggle.checked = !agentsPausedToggle.checked;
+      appendSystemMessage('Failed to update pause setting.');
+    }
+  });
+}
+
+const maxExecutorsInput = document.getElementById('max-executors-input');
+if (maxExecutorsInput) {
+  maxExecutorsInput.addEventListener('change', async () => {
+    const val = parseInt(maxExecutorsInput.value, 10);
+    if (val < 1 || val > 20) return;
+    try {
+      await apiFetch('/api/settings/max-executors', {
+        method: 'POST',
+        body: JSON.stringify({ max: val }),
+      });
+    } catch {
+      appendSystemMessage('Failed to update max executors.');
     }
   });
 }
@@ -1915,10 +2014,13 @@ function hideAgentTooltip() {
 
 // ── Init ─────────────────────────────────────────────────────────────────────
 
+let loadedAgents = [];
+
 async function loadAgents() {
   try {
     const resp = await apiFetch('/api/agents');
     const { agents } = await resp.json();
+    loadedAgents = agents;
     agentListEl.innerHTML = '';
     for (const agent of agents) {
       const li = document.createElement('li');
@@ -1998,10 +2100,25 @@ function renderMissionList() {
   for (const m of missions) {
     const li = document.createElement('li');
     li.className = activeChannelId === m.channelId ? 'active-mission' : '';
-    li.innerHTML = `<span class="mission-title-text">${escapeHtml(m.title)}</span><span class="mission-status-dot ${m.status}"></span>`;
+    const isPaused = m.status === 'paused';
+    const pauseBtn = m.status === 'active' || m.status === 'paused'
+      ? `<button class="mission-pause-btn" onclick="event.stopPropagation();toggleMissionPause('${m.id}','${m.status}')" title="${isPaused ? 'Resume' : 'Pause'}">${isPaused ? '&#9654;' : '&#9646;&#9646;'}</button>`
+      : '';
+    li.innerHTML = `<span class="mission-title-text">${escapeHtml(m.title)}</span>${pauseBtn}<span class="mission-status-dot ${m.status}"></span>`;
     li.addEventListener('click', () => switchToChannel(m.channelId));
     missionListEl.appendChild(li);
   }
+}
+
+async function toggleMissionPause(missionId, currentStatus) {
+  const newStatus = currentStatus === 'paused' ? 'active' : 'paused';
+  try {
+    await apiFetch(`/api/missions/${missionId}/status`, {
+      method: 'POST',
+      body: JSON.stringify({ status: newStatus }),
+    });
+    loadMissions();
+  } catch { /* ok */ }
 }
 
 function renderMissionTabs() {
@@ -2087,27 +2204,68 @@ async function loadMissionChecklist(missionId) {
     html += `<option value="false"${autoVal === false ? ' selected' : ''}>Off</option>`;
     html += `</select></div>`;
 
-    // Progress stats
-    const verified = items.filter(i => i.status === 'verified').length;
-    const agentDone = items.filter(i => i.status === 'agent_complete').length;
-    const inProgress = items.filter(i => i.status === 'in_progress').length;
-    const total = items.length;
-    const pct = Math.round(((verified + agentDone * 0.5) / total) * 100);
+    // Agent roster
+    const roster = data.roster || [];
+    const allAgentsList = typeof loadedAgents !== 'undefined' ? loadedAgents : [];
+    if (allAgentsList.length > 0 || roster.length > 0) {
+      html += `<div style="margin-bottom:8px"><span style="font-size:11px;color:var(--text-muted);font-family:var(--mono);text-transform:uppercase;letter-spacing:1px">Agent Roster</span>`;
+      html += `<div style="display:flex;flex-wrap:wrap;gap:4px;margin-top:4px">`;
+      const agentsForRoster = allAgentsList.length > 0 ? allAgentsList : roster.map(id => ({ id, title: id }));
+      for (const a of agentsForRoster) {
+        if (a.id === 'nexus') continue; // Nexus always has access
+        const checked = roster.includes(a.id) ? 'checked' : '';
+        html += `<label style="font-size:11px;display:flex;align-items:center;gap:3px;cursor:pointer;padding:2px 6px;border:1px solid var(--border);border-radius:4px;${checked ? 'background:var(--surface-alt)' : ''}"><input type="checkbox" ${checked} onchange="toggleMissionAgent('${mId}','${a.id}',this.checked)" style="margin:0"> ${escapeHtml(a.title?.split(' ')[0] || a.id)}</label>`;
+      }
+      html += `</div></div>`;
+    }
+
+    // Separate phases from sub-steps
+    const phases = items.filter(i => i.isPhase);
+    const subSteps = items.filter(i => !i.isPhase);
+
+    // If no phases exist (legacy), treat all items as phases
+    const displayPhases = phases.length > 0 ? phases : items.filter(i => !i.parentId);
+
+    // Phase-level progress
+    const completedPhases = displayPhases.filter(p => {
+      const children = subSteps.filter(s => s.parentId === p.id);
+      if (children.length === 0) return p.status === 'verified';
+      return children.every(c => c.status === 'verified');
+    }).length;
+    const totalPhases = displayPhases.length;
+    const phasePct = totalPhases > 0 ? Math.round((completedPhases / totalPhases) * 100) : 0;
 
     html += `<div class="checklist-progress">
-      <div class="checklist-progress-bar"><div class="checklist-progress-fill" style="width:${pct}%"></div></div>
-      <span class="checklist-progress-text">${verified}/${total} verified${agentDone ? ` (${agentDone} awaiting review)` : ''}${inProgress ? ` (${inProgress} in progress)` : ''}</span>
+      <div class="checklist-progress-bar"><div class="checklist-progress-fill" style="width:${phasePct}%"></div></div>
+      <span class="checklist-progress-text">${completedPhases}/${totalPhases} phases complete</span>
     </div>`;
-    for (const item of items) {
-      const marker = item.status === 'verified' ? '&#10003;'
-        : item.status === 'agent_complete' ? '?'
-        : item.status === 'in_progress' ? '~' : '&#9675;';
-      const markerClass = item.status === 'verified' ? 'verified'
-        : item.status === 'agent_complete' ? 'agent-complete'
-        : item.status === 'in_progress' ? 'in-progress' : '';
-      const textClass = item.status === 'verified' ? 'verified' : '';
-      const assignee = item.assignedAgentId ? `<span class="checklist-assignee">${escapeHtml(item.assignedAgentId)}</span>` : '';
-      html += `<div class="checklist-item"><span class="checklist-marker ${markerClass}">${marker}</span><span class="checklist-text ${textClass}">${escapeHtml(item.title)}</span>${assignee}</div>`;
+
+    for (const phase of displayPhases) {
+      const children = subSteps.filter(s => s.parentId === phase.id);
+      const childDone = children.filter(c => c.status === 'verified').length;
+      const phaseComplete = children.length > 0 ? children.every(c => c.status === 'verified') : phase.status === 'verified';
+
+      const phaseMarker = phaseComplete ? '&#10003;' : phase.status === 'in_progress' ? '~' : '&#9675;';
+      const phaseMarkerClass = phaseComplete ? 'verified' : phase.status === 'in_progress' ? 'in-progress' : '';
+      const phaseTextClass = phaseComplete ? 'verified' : '';
+
+      if (children.length > 0) {
+        html += `<details class="phase-details"${phase.status === 'in_progress' ? ' open' : ''}>
+          <summary class="checklist-item phase-item">
+            <span class="checklist-marker ${phaseMarkerClass}">${phaseMarker}</span>
+            <span class="checklist-text ${phaseTextClass}">${escapeHtml(phase.title)}</span>
+            <span class="phase-count">${childDone}/${children.length}</span>
+          </summary>`;
+        for (const step of children) {
+          const sMarker = step.status === 'verified' ? '&#10003;' : step.status === 'agent_complete' ? '?' : step.status === 'in_progress' ? '~' : '&#9675;';
+          const sMarkerClass = step.status === 'verified' ? 'verified' : step.status === 'agent_complete' ? 'agent-complete' : step.status === 'in_progress' ? 'in-progress' : '';
+          const sTextClass = step.status === 'verified' ? 'verified' : '';
+          html += `<div class="checklist-item sub-step"><span class="checklist-marker ${sMarkerClass}">${sMarker}</span><span class="checklist-text ${sTextClass}">${escapeHtml(step.title)}</span></div>`;
+        }
+        html += `</details>`;
+      } else {
+        html += `<div class="checklist-item phase-item"><span class="checklist-marker ${phaseMarkerClass}">${phaseMarker}</span><span class="checklist-text ${phaseTextClass}">${escapeHtml(phase.title)}</span></div>`;
+      }
     }
 
     missionChecklistEl.innerHTML = html;

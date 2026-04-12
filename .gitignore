@@ -8,3 +8,4 @@ drizzle/
 src/db/migrations/meta
 coverage/
 data/
+.nexus-worktrees/

@@ -67,6 +67,11 @@ export async function startMissionScheduler(): Promise<void> {
 }
 
 async function checkMissionHeartbeats(): Promise<void> {
+  // Check global pause
+  const { isAgentsPaused } = await import('../settings/service.js');
+  const orgId = (await getActiveMissionsDueForHeartbeat())[0]?.orgId;
+  if (orgId && await isAgentsPaused(orgId)) return;
+
   const dueMissions = await getActiveMissionsDueForHeartbeat();
   if (dueMissions.length === 0) return;
 
@@ -136,9 +141,23 @@ async function reconcileItemsWithTickets(
     }
   }
 
+  // Collect failures for Nexus to evaluate
+  const failedTickets = orgTickets.filter(t =>
+    t.executionStatus === 'failed' || t.executionStatus === 'review_failed'
+  );
+
+  let failureContext = '';
+  if (failedTickets.length > 0) {
+    const failureLines = failedTickets.slice(0, 10).map(t => {
+      const review = t.executionReview?.slice(0, 150) ?? 'No review';
+      return `- "${t.title}" [${t.executionStatus}]: ${review}`;
+    });
+    failureContext = `\n**Failed tickets (${failedTickets.length} total):**\n${failureLines.join('\n')}`;
+  }
+
   return {
-    executionContext: contextLines.length > 0
-      ? `\n**Execution History (tickets related to this mission):**\n${contextLines.join('\n')}`
+    executionContext: (contextLines.length > 0 || failureContext)
+      ? `\n**Execution History:**\n${contextLines.join('\n')}${failureContext}`
       : '',
   };
 }
@@ -219,7 +238,68 @@ If an item should be removed entirely (duplicate or no longer relevant):
     return;
   }
 
-  // Check completion (before verification — some items may already be done)
+  // Evaluate phase goal completion — ask Nexus to verify phases that have
+  // significant work done (not just "all sub-steps checked")
+  const { getMissionPhaseProgress } = await import('./service.js');
+  const phaseProgress = await getMissionPhaseProgress(mission.id);
+  for (const { phase, completedSubSteps, totalSubSteps } of phaseProgress) {
+    // Only evaluate phases that are in_progress with meaningful work done
+    if (phase.status !== 'in_progress') continue;
+    if (totalSubSteps === 0 || completedSubSteps === 0) continue;
+    // Only evaluate when at least half the sub-steps are done (avoid premature checks)
+    if (completedSubSteps < totalSubSteps * 0.5) continue;
+    // Don't re-evaluate too frequently
+    if ((phase.heartbeatCount ?? 0) % 3 !== 0) continue;
+
+    const evalPrompt = `Evaluate whether this mission phase's GOALS have been met.
+
+**Phase:** ${phase.title}
+**Phase Goals:** ${phase.description}
+**Sub-step progress:** ${completedSubSteps}/${totalSubSteps} completed
+
+The phase is complete when its stated goals are fulfilled — not just when all sub-steps are checked off. Sub-steps are implementation tasks, but the phase represents a higher-level outcome.
+
+Review the goals above. Based on the work completed, have the phase's goals been achieved?
+
+If YES — the phase goals are met:
+<mission-verify>{"itemId":"${phase.id}"}</mission-verify>
+
+If NO — explain what's still missing and what additional work is needed. Do NOT verify the phase.`;
+
+    try {
+      const evalResponse = await executeAgent({
+        orgId: mission.orgId,
+        agentId: 'nexus' as AgentId,
+        channelId: mission.channelId,
+        userId: 'system',
+        userName: 'Phase Evaluator',
+        userMessage: evalPrompt,
+        needsCodeAccess: false,
+        source: 'idle',
+      });
+
+      if (evalResponse && evalResponse !== '[error]') {
+        await sendAgentMessage(mission.channelId, 'Nexus (Phase Review)', evalResponse, mission.orgId);
+        await storeMessage({
+          orgId: mission.orgId,
+          channelId: mission.channelId,
+          discordMessageId: `phase-eval-${Date.now()}`,
+          authorId: 'agent',
+          authorName: 'Nexus (Phase Review)',
+          content: evalResponse,
+          isAgent: true,
+          agentId: 'nexus',
+        });
+      }
+    } catch (err) {
+      logger.warn({ err, phaseId: phase.id }, 'Phase goal evaluation failed');
+    }
+
+    // Only evaluate one phase per heartbeat to avoid token burn
+    break;
+  }
+
+  // Check overall mission completion
   const completed = await checkMissionCompletion(mission.id, mission.orgId);
   if (completed) {
     await sendAgentMessage(
@@ -234,6 +314,75 @@ If an item should be removed entirely (duplicate or no longer relevant):
       await spawnRecurrence(mission);
     }
     return;
+  }
+
+  // Escalate repeated failures to Nexus for re-scoping
+  // (only check every 3rd heartbeat to avoid spamming)
+  const allOrgTickets = await db.select({
+    id: tickets.id, title: tickets.title,
+    executionStatus: tickets.executionStatus,
+    executionReview: tickets.executionReview,
+  }).from(tickets).where(eq(tickets.orgId, mission.orgId)).limit(100);
+
+  const failedTickets = allOrgTickets.filter(t =>
+    t.executionStatus === 'failed' || t.executionStatus === 'review_failed'
+  );
+
+  if (failedTickets.length >= 3 && focusItem && (focusItem.heartbeatCount ?? 0) % 3 === 0) {
+    // Check if failures relate to the current focus item
+    const focusKeywords = focusItem.title.toLowerCase().split(/\s+/).filter(w => w.length > 3);
+    const relatedFailures = failedTickets.filter(t => {
+      const tl = t.title.toLowerCase();
+      return focusKeywords.some(kw => tl.includes(kw));
+    });
+
+    if (relatedFailures.length >= 2) {
+      const failureSummary = relatedFailures.slice(0, 5).map(t => {
+        const review = t.executionReview?.slice(0, 150) ?? 'No review available';
+        return `- "${t.title}" [${t.executionStatus}]: ${review}`;
+      }).join('\n');
+
+      const escalationPrompt = `Multiple tickets for "${focusItem.title}" have failed execution or review:
+
+${failureSummary}
+
+The same work has been attempted ${relatedFailures.length} times and keeps failing. Please evaluate:
+1. Is the scope too broad? Should it be broken into smaller pieces?
+2. Are there missing prerequisites that need to be done first?
+3. Should we take a different approach entirely?
+
+Recommend a concrete next step. If the item should be broken down, use:
+<mission-replace-item>{"itemId":"${focusItem.id}","reason":"Repeated execution failures","replacements":[{"title":"Smaller task","description":"Verification criteria"}]}</mission-replace-item>`;
+
+      try {
+        const escalationResponse = await executeAgent({
+          orgId: mission.orgId,
+          agentId: 'nexus' as AgentId,
+          channelId: mission.channelId,
+          userId: 'system',
+          userName: 'Failure Escalation',
+          userMessage: escalationPrompt,
+          needsCodeAccess: false,
+          source: 'idle',
+        });
+
+        if (escalationResponse && escalationResponse !== '[error]') {
+          await sendAgentMessage(mission.channelId, 'Nexus (Failure Review)', escalationResponse, mission.orgId);
+          await storeMessage({
+            orgId: mission.orgId,
+            channelId: mission.channelId,
+            discordMessageId: `failure-escalation-${Date.now()}`,
+            authorId: 'agent',
+            authorName: 'Nexus (Failure Review)',
+            content: escalationResponse,
+            isAgent: true,
+            agentId: 'nexus',
+          });
+        }
+      } catch (err) {
+        logger.warn({ err, missionId: mission.id }, 'Failure escalation failed');
+      }
+    }
   }
 
   if (focusItem) {
@@ -266,9 +415,9 @@ If an item should be removed entirely (duplicate or no longer relevant):
     const projectContext = projects.map((p) => p.name).join(', ');
 
     // Compose a natural request — like a human asking the team to work on something
-    const heartbeatMessage = `Checking in on Mission "${mission.title}" — focusing on: **${focusItem.title}** (item ID: \`${focusItem.id}\`)
+    const heartbeatMessage = `We need to work on the next item for our mission "${mission.title}".
 
-**Next item:** ${focusItem.title}
+**Next item:** ${focusItem.title} (item ID: \`${focusItem.id}\`)
 **Goal:** ${focusItem.description}
 **Project:** ${projectContext || projectName}
 
@@ -296,12 +445,15 @@ To add new items to the mission (mission ID: \`${mission.id}\`):
       heartbeatCount: (focusItem.heartbeatCount ?? 0) + 1,
     });
 
-    // Route through the normal message router — same as a human request
+    // Route to agents on the mission roster (or all agents if no roster)
+    const { getMissionRoster } = await import('./service.js');
+    const roster = await getMissionRoster(mission.id);
     const routes = await routeMessage(
       heartbeatMessage,
       mission.channelId,
       'Nexus',
       mission.orgId,
+      roster.length > 0 ? roster : undefined,
     );
 
     const route = routes[0];

@@ -110,6 +110,9 @@
           <button class="proposal-filter" data-status="rejected">Rejected</button>
           <button class="proposal-filter" data-status="">All</button>
         </div>
+        <select id="proposals-project-filter" class="config-select" style="font-size:11px;margin-left:8px">
+          <option value="">All Projects</option>
+        </select>
         <button id="proposals-close" aria-label="Close proposals">&times;</button>
       </div>
       <div class="settings-body">
@@ -149,6 +152,11 @@
             <a href="https://permaship.ai/pricing" target="_blank" rel="noopener">Sign up for PermaShip</a> for managed execution
           </div>
           <div class="setting-row">
+            <span class="setting-label">Pause All Agents</span>
+            <label class="toggle"><input type="checkbox" id="agents-paused-toggle" aria-label="Pause all agents"><span class="toggle-slider" style="background:var(--danger)"></span></label>
+          </div>
+          <div class="setting-desc">Stops all idle activity, mission heartbeats, and proactive agent work. Chat still works.</div>
+          <div class="setting-row">
             <span class="setting-label">Autonomous Mode</span>
             <label class="toggle"><input type="checkbox" id="autonomous-toggle" aria-label="Autonomous mode"><span class="toggle-slider"></span></label>
           </div>
@@ -158,6 +166,11 @@
             <label class="toggle"><input type="checkbox" id="worktree-toggle" aria-label="Use git worktrees"><span class="toggle-slider"></span></label>
           </div>
           <div class="setting-desc">Execute approved tickets in isolated git worktrees instead of the main working directory. Changes land on separate branches for review.</div>
+          <div class="setting-row">
+            <span class="setting-label">Max Concurrent Executors</span>
+            <input type="number" id="max-executors-input" class="config-select" style="width:60px;text-align:center" min="1" max="20" value="5">
+          </div>
+          <div class="setting-desc">Maximum number of coding agents (Claude Code, Gemini CLI) running simultaneously.</div>
         </div>
         <!-- Agents Tab -->
         <div id="tab-agents" class="tab-content">

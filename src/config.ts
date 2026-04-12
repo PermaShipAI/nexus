@@ -3,8 +3,7 @@ import { z } from 'zod';
 
 /**
  * Core configuration required by all adapter profiles.
- * PermaShip-specific vars (PERMASHIP_*, COMMS_*, GEMINI_*) are loaded
- * by the PermaShip adapters themselves, not here.
+ * Profile-specific vars are loaded by their respective adapters, not here.
  */
 const envSchema = z.object({
   // Adapter profile selection
@@ -52,21 +51,15 @@ const envSchema = z.object({
 
   // Webhook verification (generic — used by any comms integration)
   WEBHOOK_SIGNING_SECRET: z.preprocess(
-    (v: unknown) => v || process.env.COMMS_SIGNING_SECRET || process.env.CONDUCTOR_BOT_SECRET,
+    (v: unknown) => v || process.env.COMMS_SIGNING_SECRET,
     z.string().optional(),
   ),
 
   // Internal API secret (for /api/internal/* routes)
-  INTERNAL_SECRET: z.preprocess(
-    (v: unknown) => v || process.env.PERMASHIP_INTERNAL_SECRET,
-    z.string().optional(),
-  ),
+  INTERNAL_SECRET: z.string().optional(),
 
   // Activation / connect URL base (for workspace linking flow)
-  ACTIVATION_URL: z.preprocess(
-    (v: unknown) => v || process.env.PERMASHIP_API_URL,
-    z.string().optional(),
-  ),
+  ACTIVATION_URL: z.string().optional(),
 
   // LLM provider selection (local / multi-provider mode)
   LLM_PROVIDER: z.string().default('gemini'),
