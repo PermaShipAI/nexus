@@ -162,6 +162,9 @@ export async function createLocalServer(_port = 3000) {
       channel_id: LOCAL_CHANNEL_ID,
     });
 
+    // Acknowledge receipt — shows 👀 on the message so user knows it's being processed
+    broadcast('ack', { id: messageId, channel_id: LOCAL_CHANNEL_ID });
+
     // Process async (same pattern as the webhook handler)
     processWebhookMessage(unified).catch(err => {
       logger.error({ err }, 'Local message processing failed');
@@ -1203,6 +1206,9 @@ export async function createLocalServer(_port = 3000) {
       timestamp: new Date().toISOString(),
       channel_id: mission.channelId,
     });
+
+    // Acknowledge receipt — shows 👀 on the message so user knows it's being processed
+    broadcast('ack', { id: messageId, channel_id: mission.channelId });
 
     // Enrich with checklist context so Nexus can modify the checklist
     const missionItems = await getMissionItems(id);

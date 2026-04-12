@@ -174,13 +174,31 @@ export class LocalExecutingTicketTracker extends LocalTicketTracker {
     return { success: true };
   }
 
-  /** Create a git worktree for isolated execution */
+  /** Create a git worktree for isolated execution.
+   *  Handles stale branches/worktrees from previous crashes. */
   private async createWorktree(repoPath: string, branchName: string): Promise<{ worktreePath: string; cleanup: () => Promise<void> }> {
     const worktreeDir = join(repoPath, '.nexus-worktrees');
     const worktreePath = join(worktreeDir, branchName);
 
     await execFileAsync('mkdir', ['-p', worktreeDir]);
-    // Create an orphan-style worktree on a new branch
+
+    // Prune stale worktrees from previous crashes
+    try {
+      await execFileAsync('git', ['worktree', 'prune'], { cwd: repoPath, timeout: 10_000 });
+    } catch { /* ok */ }
+
+    // Delete stale branch if it exists (leftover from a previous run)
+    try {
+      const { stdout } = await execFileAsync('git', ['branch', '--list', branchName], { cwd: repoPath });
+      if (stdout.trim()) {
+        await execFileAsync('git', ['branch', '-D', branchName], { cwd: repoPath, timeout: 10_000 });
+        logger.info({ branchName }, 'Deleted stale branch before worktree creation');
+      }
+    } catch { /* branch doesn't exist — fine */ }
+
+    // Remove leftover worktree directory from a previous crash
+    try { await execFileAsync('rm', ['-rf', worktreePath]); } catch { /* ok */ }
+
     await execFileAsync('git', ['worktree', 'add', '-b', branchName, worktreePath], { cwd: repoPath, timeout: 15_000 });
 
     logger.info({ repoPath, worktreePath, branchName }, 'Created git worktree for execution');
@@ -188,7 +206,6 @@ export class LocalExecutingTicketTracker extends LocalTicketTracker {
     const cleanup = async () => {
       try {
         await execFileAsync('git', ['worktree', 'remove', worktreePath, '--force'], { cwd: repoPath, timeout: 15_000 });
-        // Don't delete the branch — keep it for review
         logger.info({ worktreePath, branchName }, 'Cleaned up git worktree (branch preserved)');
       } catch (err) {
         logger.warn({ err, worktreePath }, 'Failed to clean up worktree');
@@ -238,29 +255,26 @@ export class LocalExecutingTicketTracker extends LocalTicketTracker {
       repoPath = join(this.repoRoot, input.repoKey);
     }
 
-    // Check if worktree isolation is enabled
-    const useWorktree = await getSetting('use_worktrees', input.orgId) === true;
-    let execPath = repoPath;
-    let worktreeCleanup: (() => Promise<void>) | null = null;
-    let branchName: string | undefined;
+    // Always use worktree for isolated execution — no shared-directory fallback.
+    // This prevents cross-contamination when multiple executors run concurrently.
+    const branchName = `nexus/${ticketId.slice(0, 8)}-${input.title.toLowerCase().replace(/[^a-z0-9]+/g, '-').slice(0, 40)}`;
+    const wt = await this.createWorktree(repoPath, branchName);
+    const execPath = wt.worktreePath;
+    const worktreeCleanup = wt.cleanup;
 
-    if (useWorktree) {
-      try {
-        branchName = `nexus/${ticketId.slice(0, 8)}-${input.title.toLowerCase().replace(/[^a-z0-9]+/g, '-').slice(0, 40)}`;
-        const wt = await this.createWorktree(repoPath, branchName);
-        execPath = wt.worktreePath;
-        worktreeCleanup = wt.cleanup;
-      } catch (err) {
-        logger.warn({ err, repoPath }, 'Failed to create worktree — falling back to direct execution');
-      }
-    }
+    // Record base commit before execution for scoped diff capture
+    let baseCommit: string | undefined;
+    try {
+      const { stdout } = await execFileAsync('git', ['rev-parse', 'HEAD'], { cwd: execPath, timeout: 5000 });
+      baseCommit = stdout.trim();
+    } catch { /* ok */ }
 
-    logger.info({ ticketId, backend: this.backend.name, repoPath: execPath, useWorktree, title: input.title },
+    logger.info({ ticketId, backend: this.backend.name, repoPath: execPath, branch: branchName, title: input.title },
       'Dispatching ticket to execution backend');
 
     this.emitStatus({
       id: `exec-start-${ticketId}`,
-      content: `**[Executor]** Started: **${input.title}** via ${this.backend.name}${useWorktree && branchName ? ` (branch \`${branchName}\`)` : ''}`,
+      content: `**[Executor]** Started: **${input.title}** via ${this.backend.name} (branch \`${branchName}\`)`,
     }, missionChannel);
 
     const execResult = await this.backend.execute({
@@ -272,25 +286,13 @@ export class LocalExecutingTicketTracker extends LocalTicketTracker {
       repoKey: input.repoKey,
     });
 
-    // Detect the branch the executor created/used
-    if (branchName) {
-      execResult.branch = branchName;
-    } else {
-      // No worktree — detect whatever branch the executor created
-      try {
-        const { stdout } = await execFileAsync('git', ['rev-parse', '--abbrev-ref', 'HEAD'], { cwd: execPath, timeout: 5000 });
-        const detectedBranch = stdout.trim();
-        if (detectedBranch && detectedBranch !== 'main' && detectedBranch !== 'master') {
-          execResult.branch = detectedBranch;
-        }
-      } catch { /* ok */ }
-    }
+    execResult.branch = branchName;
 
-    // Capture git diff of what changed
-    const diff = await this.captureGitDiff(execPath);
+    // Capture git diff scoped to this executor's changes only
+    const diff = await this.captureGitDiff(execPath, baseCommit);
 
-    // Clean up worktree (branch is preserved for review)
-    if (worktreeCleanup) await worktreeCleanup();
+    // Clean up worktree (branch is preserved for review/merge)
+    await worktreeCleanup();
 
     // Store results in DB
     await db.update(tickets).set({
@@ -322,14 +324,14 @@ export class LocalExecutingTicketTracker extends LocalTicketTracker {
 
     // Trigger agent review of the work
     if (execResult.success && diff) {
-      await this.triggerReview(ticketId, input, diff, execResult, execPath);
+      await this.triggerReview(ticketId, input, diff, execResult, repoPath);
     }
 
     logger.info({ ticketId, backend: this.backend.name, success: execResult.success },
       'Execution backend finished');
   }
 
-  private async captureGitDiff(repoPath: string): Promise<string | null> {
+  private async captureGitDiff(repoPath: string, baseCommit?: string): Promise<string | null> {
     try {
       let diffContent = '';
 
@@ -342,7 +344,22 @@ export class LocalExecutingTicketTracker extends LocalTicketTracker {
         diffContent = stdout;
       }
 
-      // Also capture committed changes — diff against merge-base with main/master
+      // If we have a known base commit, diff against it directly — this scopes
+      // the diff to exactly the changes made by this executor, preventing
+      // contamination from other concurrent executors
+      if (baseCommit) {
+        try {
+          const { stdout } = await execFileAsync(
+            'git', ['diff', baseCommit, 'HEAD'], { cwd: repoPath },
+          );
+          if (stdout.trim()) {
+            diffContent = diffContent ? diffContent + '\n' + stdout : stdout;
+          }
+          return diffContent.trim() || null;
+        } catch { /* fall through to merge-base approach */ }
+      }
+
+      // Fallback: diff against merge-base with main/master
       // This catches ALL commits on the branch, not just the last one
       for (const base of ['main', 'master']) {
         try {
@@ -398,7 +415,7 @@ export class LocalExecutingTicketTracker extends LocalTicketTracker {
     input: CreateTicketInput,
     diff: string,
     execResult: ExecutionResult,
-    repoPath?: string,
+    repoPath: string,
   ): Promise<void> {
     const reviewPrompt = `An execution backend (${this.backend.name}) has completed work on a ticket. Please review the changes and provide feedback.
 
@@ -457,7 +474,7 @@ Keep your review concise and actionable.`;
           const previouslyRetried = (ticket?.executionOutput ?? '').includes('[AUTO-RETRY]');
 
           if (!previouslyRetried) {
-            // First failure — auto-retry with the review feedback
+            // First failure — auto-retry with review feedback in a fresh worktree
             logger.info({ ticketId, title: input.title }, 'Review failed — auto-retrying with feedback');
 
             await db.update(tickets).set({
@@ -474,35 +491,40 @@ Keep your review concise and actionable.`;
               content: `**[Executor]** Auto-retrying: **${input.title}** — incorporating review feedback`,
             }, reviewMissionCh);
 
-            // Build a new prompt that includes the review feedback
-            const { buildPrompt } = await import('./execution-backends/index.js');
-            const retryPrompt = buildPrompt({
-              ticketId,
-              kind: input.kind,
-              title: input.title,
-              description: `${input.description}\n\n## IMPORTANT: Previous attempt was reviewed and rejected. Address this feedback:\n${review.slice(0, 1500)}`,
-              repoPath: repoPath ?? '.',
-              repoKey: input.repoKey,
-            });
+            // Create a fresh worktree for the retry
+            const retryBranch = `nexus/${ticketId.slice(0, 8)}-retry-${input.title.toLowerCase().replace(/[^a-z0-9]+/g, '-').slice(0, 35)}`;
+            let retryExecPath: string;
+            let retryCleanup: (() => Promise<void>) | null = null;
+            let retryBaseCommit: string | undefined;
 
-            // Re-execute
+            try {
+              const wt = await this.createWorktree(repoPath, retryBranch);
+              retryExecPath = wt.worktreePath;
+              retryCleanup = wt.cleanup;
+              try {
+                const { stdout } = await execFileAsync('git', ['rev-parse', 'HEAD'], { cwd: retryExecPath, timeout: 5000 });
+                retryBaseCommit = stdout.trim();
+              } catch { /* ok */ }
+            } catch (wtErr) {
+              logger.error({ err: wtErr, ticketId }, 'Failed to create worktree for retry — marking as failed');
+              await db.update(tickets).set({
+                executionStatus: 'review_failed',
+                executedAt: new Date(),
+              }).where(eq(tickets.id, ticketId));
+              return;
+            }
+
             this.backend.execute({
               ticketId,
               kind: input.kind,
               title: input.title,
               description: `${input.description}\n\nPrevious review feedback:\n${review.slice(0, 1500)}`,
-              repoPath: repoPath ?? '.',
+              repoPath: retryExecPath,
               repoKey: input.repoKey,
             }).then(async (retryResult) => {
-              const retryDiff = await this.captureGitDiff(repoPath ?? '.');
-              if (retryResult.branch || !retryResult.branch) {
-                // Detect branch
-                try {
-                  const { stdout } = await execFileAsync('git', ['rev-parse', '--abbrev-ref', 'HEAD'], { cwd: repoPath ?? '.', timeout: 5000 });
-                  const detected = stdout.trim();
-                  if (detected && detected !== 'main' && detected !== 'master') retryResult.branch = detected;
-                } catch { /* ok */ }
-              }
+              retryResult.branch = retryBranch;
+              const retryDiff = await this.captureGitDiff(retryExecPath, retryBaseCommit);
+              if (retryCleanup) await retryCleanup();
 
               await db.update(tickets).set({
                 executionStatus: retryResult.success ? 'completed' : 'failed',
@@ -512,7 +534,6 @@ Keep your review concise and actionable.`;
                 executedAt: new Date(),
               }).where(eq(tickets.id, ticketId));
 
-              // Re-trigger review on the retry result
               if (retryResult.success && retryDiff) {
                 await this.triggerReview(ticketId, input, retryDiff, retryResult, repoPath);
               } else {
@@ -525,13 +546,13 @@ Keep your review concise and actionable.`;
               }
             }).catch(async (err) => {
               logger.error({ err, ticketId }, 'Auto-retry execution failed');
+              if (retryCleanup) await retryCleanup();
               await db.update(tickets).set({
                 executionStatus: 'failed',
                 executedAt: new Date(),
               }).where(eq(tickets.id, ticketId));
             });
 
-            // Don't continue to the normal review_failed handling
             return;
           }
 

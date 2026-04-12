@@ -148,8 +148,22 @@ function connect() {
         appendUserMessage(data);
         break;
       }
+      case 'ack': {
+        // Show 👀 on the user message to indicate it's being processed
+        const ackChannel = data.channel_id || 'local:general';
+        if (ackChannel !== activeChannelId) break;
+        const msgEl = messagesEl.querySelector(`.message.user[data-msg-id="${data.id}"]`);
+        if (msgEl && !msgEl.querySelector('.ack-indicator')) {
+          const ack = document.createElement('span');
+          ack.className = 'ack-indicator';
+          ack.textContent = '\u{1F440}';
+          msgEl.querySelector('.meta')?.appendChild(ack);
+        }
+        if (thinkingEl) thinkingEl.classList.remove('hidden');
+        scrollToBottom();
+        break;
+      }
       case 'reaction':
-        // Could show reactions — skip for now
         break;
       case 'proposal_resolved':
         handleProposalResolved(data);
@@ -242,6 +256,7 @@ function appendUserMessage(data) {
   hideEmptyState();
   const el = document.createElement('div');
   el.className = 'message user';
+  if (data.id) el.dataset.msgId = data.id;
   el.innerHTML = `
     <div class="meta">
       <span class="author">${escapeHtml(data.authorName || 'You')}</span>
