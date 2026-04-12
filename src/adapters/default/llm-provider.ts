@@ -1,6 +1,8 @@
 import { GoogleGenerativeAI, type Content, type FunctionDeclaration } from '@google/generative-ai';
 import { getModelId } from '../../settings/service.js';
 import { withRetry } from '../providers/retry.js';
+import { geminiCircuitBreaker, GeminiCircuitOpenError } from '../providers/gemini-circuit-breaker.js';
+import { geminiCbRejectedTotal } from '../../telemetry/prometheus.js';
 import type {
   LLMProvider,
   GenerateTextOptions,
@@ -24,23 +26,38 @@ export class DefaultLLMProvider implements LLMProvider {
   }
 
   async generateText(options: GenerateTextOptions): Promise<string> {
+    if (geminiCircuitBreaker.isOpen()) {
+      geminiCbRejectedTotal.inc();
+      throw new GeminiCircuitOpenError();
+    }
     const override = options.orgId ? await getModelId(options.model, options.orgId) : null;
     const modelId = override || DEFAULT_MODEL_MAP[options.model];
-    
+
     const model = this.genAI.getGenerativeModel({
       model: modelId,
       systemInstruction: options.systemInstruction,
     });
-    const result = await withRetry(
-      () => model.generateContent({ contents: options.contents as Content[] }),
-      undefined,
-      `gemini.generateText[${modelId}]`,
-    );
-    const response = await result.response;
-    return response.text();
+    try {
+      const result = await withRetry(
+        () => model.generateContent({ contents: options.contents as Content[] }),
+        undefined,
+        `gemini.generateText[${modelId}]`,
+      );
+      const response = await result.response;
+      const text = response.text();
+      geminiCircuitBreaker.recordSuccess();
+      return text;
+    } catch (err) {
+      geminiCircuitBreaker.recordFailure(err);
+      throw err;
+    }
   }
 
   async generateWithTools(options: GenerateWithToolsOptions): Promise<LLMToolCallResult> {
+    if (geminiCircuitBreaker.isOpen()) {
+      geminiCbRejectedTotal.inc();
+      throw new GeminiCircuitOpenError();
+    }
     const override = options.orgId ? await getModelId(options.model, options.orgId) : null;
     const modelId = override || DEFAULT_MODEL_MAP[options.model];
 
@@ -49,27 +66,33 @@ export class DefaultLLMProvider implements LLMProvider {
       systemInstruction: options.systemInstruction,
       tools: [{ functionDeclarations: options.tools as FunctionDeclaration[] }],
     });
-    const result = await withRetry(
-      () => model.generateContent({ contents: options.contents as Content[] }),
-      undefined,
-      `gemini.generateWithTools[${modelId}]`,
-    );
-    const response = await result.response;
+    try {
+      const result = await withRetry(
+        () => model.generateContent({ contents: options.contents as Content[] }),
+        undefined,
+        `gemini.generateWithTools[${modelId}]`,
+      );
+      const response = await result.response;
 
-    const parts = response.candidates?.[0]?.content?.parts ?? [];
-    const functionCalls = parts
-      .filter((p) => p.functionCall)
-      .map((p) => ({
-        name: p.functionCall!.name!,
-        args: (p.functionCall!.args ?? {}) as Record<string, unknown>,
-      }));
+      const parts = response.candidates?.[0]?.content?.parts ?? [];
+      const functionCalls = parts
+        .filter((p) => p.functionCall)
+        .map((p) => ({
+          name: p.functionCall!.name!,
+          args: (p.functionCall!.args ?? {}) as Record<string, unknown>,
+        }));
 
-    const text = parts
-      .filter((p) => p.text)
-      .map((p) => p.text)
-      .join('');
+      const text = parts
+        .filter((p) => p.text)
+        .map((p) => p.text)
+        .join('');
 
-    return { text: text || null, functionCalls, raw: response };
+      geminiCircuitBreaker.recordSuccess();
+      return { text: text || null, functionCalls, raw: response };
+    } catch (err) {
+      geminiCircuitBreaker.recordFailure(err);
+      throw err;
+    }
   }
 
   async embedText(text: string): Promise<number[] | null> {

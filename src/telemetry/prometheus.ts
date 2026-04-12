@@ -60,3 +60,17 @@ export const confirmationResolutionLatencyMs = new Histogram({
   buckets: [1000, 5000, 10000, 30000, 60000, 120000, 300000],
   registers: [registry],
 });
+
+export const geminiCbTransitionsTotal = new Counter({
+  name: 'nexus_gemini_circuit_breaker_transitions_total',
+  help: 'State transitions of the Gemini API circuit breaker',
+  labelNames: ['from_state', 'to_state'] as const,
+  registers: [registry],
+});
+
+export const geminiCbRejectedTotal = new Counter({
+  name: 'nexus_gemini_circuit_breaker_rejected_total',
+  help: 'Requests fast-failed because the Gemini circuit breaker is open',
+  labelNames: [] as const,
+  registers: [registry],
+});

@@ -28,6 +28,8 @@ const envSchema = z.object({
 
   // Idle timer
   IDLE_TIMEOUT_MS: z.coerce.number().default(1_200_000),
+  LLM_CB_TRIP_THRESHOLD: z.coerce.number().default(3),
+  LLM_CB_RESET_WINDOW_MS: z.coerce.number().default(60_000),
 
   // CTO scheduler
   CTO_REVIEW_INTERVAL_MS: z.coerce.number().default(4 * 60 * 60 * 1000), // 4 hours

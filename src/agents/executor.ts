@@ -2,6 +2,7 @@ import { spawn } from 'node:child_process';
 import { writeGeminiContext, buildAgentPrompt } from './prompt-builder.js';
 import { getLLMProvider, getSourceExplorer, getWorkspaceProvider } from '../adapters/registry.js';
 import { logger } from '../logger.js';
+import { GeminiCircuitOpenError } from '../adapters/providers/gemini-circuit-breaker.js';
 import { logToolStrippingEvent } from '../../agents/telemetry/logger.js';
 import type { AgentId } from './types.js';
 import type { LLMContent } from '../adapters/interfaces/llm-provider.js';
@@ -563,7 +564,9 @@ Please refine your proposal based on this feedback.
     return suppressProposalDetails(agentId, cleaned, proposalCount);
   } catch (err) {
     logger.error({ err, agentId, source }, 'Gemini API execution failed');
-    // For user-initiated messages, return an error indicator instead of silent null
+    if (err instanceof GeminiCircuitOpenError) {
+      return '[circuit_open]';
+    }
     if (source === 'user') {
       return '[error]';
     }
