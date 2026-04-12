@@ -6,6 +6,7 @@ import { parseArgs } from '../utils/parse-args.js';
 import { getPublicChannels } from '../settings/service.js';
 import { getCommunicationAdapter } from '../adapters/registry.js';
 import { buildSignedCustomId } from './interaction-crypto.js';
+import { storeClarification } from './admin-clarification-store.js';
 
 export async function sendApprovalMessage(
   channelId: string,
@@ -123,6 +124,68 @@ export async function sendAutonomousNotification(
     await db.update(pendingActions)
       .set({ discordMessageId: result.message_id, channelId: unifiedId })
       .where(eq(pendingActions.id, actionId));
+  }
+}
+
+const KNOWN_SETTINGS: Record<string, string> = {
+  autonomous_mode: 'Autonomous Mode',
+  nexus_reports: 'Nexus Reports',
+};
+
+export async function sendAdminClarificationMessage(
+  channelId: string,
+  orgId: string,
+  authorId: string,
+  settingKey: string | undefined,
+): Promise<void> {
+  const displayName = settingKey ? KNOWN_SETTINGS[settingKey] : undefined;
+
+  if (displayName) {
+    const clarId = storeClarification({ orgId, channelId, authorId, settingKey });
+    await getCommunicationAdapter().sendMessage(
+      {
+        content: `**[System]** What would you like to do with **${displayName}**?`,
+        components: [
+          {
+            type: 'button',
+            custom_id: buildSignedCustomId('admin_en', clarId),
+            label: `Enable ${displayName}`,
+            style: 'success',
+          },
+          {
+            type: 'button',
+            custom_id: buildSignedCustomId('admin_dis', clarId),
+            label: `Disable ${displayName}`,
+            style: 'danger',
+          },
+          {
+            type: 'button',
+            custom_id: buildSignedCustomId('admin_cancel', clarId),
+            label: 'Cancel',
+            style: 'secondary',
+          },
+        ],
+      },
+      { thread_id: channelId, orgId },
+    );
+  } else {
+    const clarId = storeClarification({ orgId, channelId, authorId, settingKey: undefined });
+    await getCommunicationAdapter().sendMessage(
+      {
+        content: `**[System]** I wasn't sure what you wanted to configure. Here are the available admin commands:`,
+        embed_description:
+          '`!autonomous on` — Enable Autonomous Mode\n`!autonomous off` — Disable Autonomous Mode\n`!nexus-reports on` — Enable Nexus Reports\n`!nexus-reports off` — Disable Nexus Reports\n`!public #channel` — Set a public announcement channel',
+        components: [
+          {
+            type: 'button',
+            custom_id: buildSignedCustomId('admin_cancel', clarId),
+            label: 'Cancel',
+            style: 'secondary',
+          },
+        ],
+      },
+      { thread_id: channelId, orgId },
+    );
   }
 }
 
