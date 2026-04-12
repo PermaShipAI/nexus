@@ -242,7 +242,7 @@ If an item should be removed entirely (duplicate or no longer relevant):
   // significant work done (not just "all sub-steps checked")
   const { getMissionPhaseProgress } = await import('./service.js');
   const phaseProgress = await getMissionPhaseProgress(mission.id);
-  for (const { phase, subSteps, completedSubSteps, totalSubSteps } of phaseProgress) {
+  for (const { phase, completedSubSteps, totalSubSteps } of phaseProgress) {
     // Only evaluate phases that are in_progress with meaningful work done
     if (phase.status !== 'in_progress') continue;
     if (totalSubSteps === 0 || completedSubSteps === 0) continue;

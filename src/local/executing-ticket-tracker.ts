@@ -14,7 +14,7 @@ import { sendAgentMessage } from '../bot/formatter.js';
 import { LOCAL_CHANNEL_ID } from './tenant-resolver.js';
 import { getProjectRegistry } from '../adapters/registry.js';
 import { getSetting, resolveAutonomousMode } from '../settings/service.js';
-import { mergeTicketBranch, cleanupBranch, getMergeTargetBranch, queueMerge } from './branch-manager.js';
+import { getMergeTargetBranch, queueMerge } from './branch-manager.js';
 
 const execFileAsync = promisify(execFile);
 
@@ -218,12 +218,7 @@ export class LocalExecutingTicketTracker extends LocalTicketTracker {
   /** Find the mission channel for a ticket (if it originated from a mission) */
   private async findMissionChannel(ticketId: string, orgId: string): Promise<string | null> {
     try {
-      // Look up the proposal that created this ticket
-      const [action] = await db.select({ channelId: pendingActions.channelId })
-        .from(pendingActions)
-        .where(eq(pendingActions.orgId, orgId))
-        .limit(50);
-      // Actually need to match by title or check all approved actions
+      // Find approved actions for this org that originated from a mission channel
       const allActions = await db.select({ channelId: pendingActions.channelId, status: pendingActions.status })
         .from(pendingActions)
         .where(eq(pendingActions.orgId, orgId))
@@ -307,10 +302,6 @@ export class LocalExecutingTicketTracker extends LocalTicketTracker {
     // Notify UI
     // eslint-disable-next-line no-control-regex
     const stripAnsi = (s: string) => s.replace(/\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])/g, '');
-
-    const statusMsg = execResult.success
-      ? `Successfully executed ticket: **${input.title}** via **${this.backend.name}**.${execResult.branch ? ` Branch: \`${execResult.branch}\`` : ''}`
-      : `Failed to execute ticket: **${input.title}**. Error: ${stripAnsi(execResult.error ?? 'unknown error')}`;
 
     this.emitStatus({
       id: `exec-result-${ticketId}`,

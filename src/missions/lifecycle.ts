@@ -2,7 +2,6 @@ import { executeAgent } from '../agents/executor.js';
 import { logger } from '../logger.js';
 import {
   getMission,
-  getMissionItems,
   getMissionProjects,
   addMissionPhases,
   updateMissionStatus,

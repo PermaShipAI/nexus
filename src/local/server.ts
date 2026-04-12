@@ -1219,7 +1219,7 @@ export async function createLocalServer(_port = 3000) {
     const { phaseIds } = request.body as { phaseIds: string[] };
     if (!phaseIds?.length) return { success: false, error: 'phaseIds required' };
 
-    const { getMissionItems, updateMissionItem } = await import('../missions/service.js');
+    const { getMissionItems } = await import('../missions/service.js');
     const items = await getMissionItems(id);
 
     const phaseSet = new Set(phaseIds);
