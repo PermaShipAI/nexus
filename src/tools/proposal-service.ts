@@ -11,6 +11,8 @@ import { onProposalCreated } from '../nexus/scheduler.js';
 import { logCrossAgentConflictResolved } from '../telemetry/cross-agent.js';
 import { logGuardrailEvent } from '../telemetry/index.js';
 
+export const DISCUSSION_CONTEXT_MAX_CHARS = 1500;
+
 export interface TicketProposalInput {
   orgId: string;
   kind: 'bug' | 'feature' | 'task';
@@ -207,6 +209,15 @@ export async function createTicketProposal(input: TicketProposalInput): Promise<
     return {
       success: false,
       message: 'Idle proposals must include a fallbackPlan. Add a "**Fallback:**" section describing the alternative execution path.',
+    };
+  }
+
+  // Enforce maximum length on agentDiscussionContext
+  if (agentDiscussionContext !== undefined && agentDiscussionContext.length > DISCUSSION_CONTEXT_MAX_CHARS) {
+    logGuardrailEvent({ event: 'discussion_context_too_long', orgId, agentId, title, actualLength: agentDiscussionContext.length, maxLength: DISCUSSION_CONTEXT_MAX_CHARS });
+    return {
+      success: false,
+      message: `VALIDATION ERROR: agentDiscussionContext exceeds the maximum of 1500 characters (got ${agentDiscussionContext.length}). Please synthesize the discussion context and resubmit.`,
     };
   }
 

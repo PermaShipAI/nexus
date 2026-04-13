@@ -55,7 +55,7 @@ All decision blocks REQUIRE a substantive reason. Generic phrases like "well-sco
 
 ### Ticket Description Quality
 When creating tickets directly (using \`create-ticket\` or \`<ticket-proposal>\` blocks), every Nexus-originated ticket MUST include both:
-- **agentDiscussionContext**: A synthesized prose summary of the agent discussion that motivated this ticket (max 1500 chars). Synthesize key points — do NOT paste raw conversation transcripts.
+- **agentDiscussionContext**: A synthesized prose summary of the agent discussion that motivated this ticket (max 1500 chars). Synthesize key points — do NOT paste raw conversation transcripts. Exceeding this limit will AUTOMATICALLY REJECT your proposal with a validation error requiring condensed resubmission.
 - **fallbackPlan**: An alternative execution path if the primary plan is blocked. Must begin with \`**Fallback:**\`.
 
 Omitting either field from a Nexus-originated ticket is a quality violation.
@@ -96,7 +96,7 @@ Fields:
 - **description** (required): Detailed description with context and acceptance criteria
 - **project** (required): MUST be an exact project name from the "Available Projects" section above. NEVER guess or invent project names.
 - **repoKey** (optional): Repository key. Omit to let the system resolve it automatically from the project configuration.
-- **agentDiscussionContext** (optional): Synthesized prose summary of agent discussion relevant to this ticket. Max 1500 characters. Do NOT paste raw transcripts — synthesize key points only.
+- **agentDiscussionContext** (optional): Synthesized prose summary of agent discussion relevant to this ticket. Max 1500 characters. Do NOT paste raw transcripts — synthesize key points only. Exceeding this limit will AUTOMATICALLY REJECT your proposal.
 - **fallbackPlan** (optional): Alternative execution path if the primary plan is blocked. MUST begin with \`**Fallback:**\`.
 
 You may include multiple proposal blocks. Do NOT mention the proposals in your conversational response — they are processed silently.
@@ -174,7 +174,7 @@ All decision blocks REQUIRE a substantive reason. Generic phrases like "well-sco
 
 ### Ticket Description Quality
 When creating tickets directly (using \`create-ticket\` or \`<ticket-proposal>\` blocks), every Nexus-originated ticket MUST include both:
-- **agentDiscussionContext**: A synthesized prose summary of the agent discussion that motivated this ticket (max 1500 chars). Synthesize key points — do NOT paste raw conversation transcripts.
+- **agentDiscussionContext**: A synthesized prose summary of the agent discussion that motivated this ticket (max 1500 chars). Synthesize key points — do NOT paste raw conversation transcripts. Exceeding this limit will AUTOMATICALLY REJECT your proposal with a validation error requiring condensed resubmission.
 - **fallbackPlan**: An alternative execution path if the primary plan is blocked. Must begin with \`**Fallback:**\`.
 
 Omitting either field from a Nexus-originated ticket is a quality violation.
@@ -215,7 +215,7 @@ Fields:
 - **description** (required): Detailed description with context and acceptance criteria
 - **project** (required): MUST be an exact project name from the "Available Projects" section above. NEVER guess or invent project names.
 - **repoKey** (optional): Repository key. Omit to let the system resolve it automatically from the project configuration.
-- **agentDiscussionContext** (optional): Synthesized prose summary of agent discussion relevant to this ticket. Max 1500 characters. Do NOT paste raw transcripts — synthesize key points only.
+- **agentDiscussionContext** (optional): Synthesized prose summary of agent discussion relevant to this ticket. Max 1500 characters. Do NOT paste raw transcripts — synthesize key points only. Exceeding this limit will AUTOMATICALLY REJECT your proposal.
 - **fallbackPlan** (optional): Alternative execution path if the primary plan is blocked. MUST begin with \`**Fallback:**\`.
 
 You may include multiple proposal blocks. Do NOT mention the proposals in your conversational response — they are processed silently.
@@ -287,7 +287,7 @@ All decision blocks REQUIRE a substantive reason. Generic phrases like "well-sco
 
 ### Ticket Description Quality
 When creating tickets directly (using \`create-ticket\` or \`<ticket-proposal>\` blocks), every Nexus-originated ticket MUST include both:
-- **agentDiscussionContext**: A synthesized prose summary of the agent discussion that motivated this ticket (max 1500 chars). Synthesize key points — do NOT paste raw conversation transcripts.
+- **agentDiscussionContext**: A synthesized prose summary of the agent discussion that motivated this ticket (max 1500 chars). Synthesize key points — do NOT paste raw conversation transcripts. Exceeding this limit will AUTOMATICALLY REJECT your proposal with a validation error requiring condensed resubmission.
 - **fallbackPlan**: An alternative execution path if the primary plan is blocked. Must begin with \`**Fallback:**\`.
 
 Omitting either field from a Nexus-originated ticket is a quality violation.
@@ -328,7 +328,7 @@ Fields:
 - **description** (required): Detailed description with context and acceptance criteria
 - **project** (required): MUST be an exact project name from the "Available Projects" section above. NEVER guess or invent project names.
 - **repoKey** (optional): Repository key. Omit to let the system resolve it automatically from the project configuration.
-- **agentDiscussionContext** (optional): Synthesized prose summary of agent discussion relevant to this ticket. Max 1500 characters. Do NOT paste raw transcripts — synthesize key points only.
+- **agentDiscussionContext** (optional): Synthesized prose summary of agent discussion relevant to this ticket. Max 1500 characters. Do NOT paste raw transcripts — synthesize key points only. Exceeding this limit will AUTOMATICALLY REJECT your proposal.
 - **fallbackPlan** (optional): Alternative execution path if the primary plan is blocked. MUST begin with \`**Fallback:**\`.
 
 You may include multiple proposal blocks. Do NOT mention the proposals in your conversational response — they are processed silently.
@@ -415,7 +415,7 @@ All decision blocks REQUIRE a substantive reason. Generic phrases like "well-sco
 
 ### Ticket Description Quality
 When creating tickets directly (using \`create-ticket\` or \`<ticket-proposal>\` blocks), every Nexus-originated ticket MUST include both:
-- **agentDiscussionContext**: A synthesized prose summary of the agent discussion that motivated this ticket (max 1500 chars). Synthesize key points — do NOT paste raw conversation transcripts.
+- **agentDiscussionContext**: A synthesized prose summary of the agent discussion that motivated this ticket (max 1500 chars). Synthesize key points — do NOT paste raw conversation transcripts. Exceeding this limit will AUTOMATICALLY REJECT your proposal with a validation error requiring condensed resubmission.
 - **fallbackPlan**: An alternative execution path if the primary plan is blocked. Must begin with \`**Fallback:**\`.
 
 Omitting either field from a Nexus-originated ticket is a quality violation.
@@ -451,7 +451,7 @@ Fields:
 - **description** (required): Detailed description with context and acceptance criteria
 - **project** (required): MUST be an exact project name from the "Available Projects" section above. NEVER guess or invent project names.
 - **repoKey** (optional): Repository key. Omit to let the system resolve it automatically from the project configuration.
-- **agentDiscussionContext** (optional): Synthesized prose summary of agent discussion relevant to this ticket. Max 1500 characters. Do NOT paste raw transcripts — synthesize key points only.
+- **agentDiscussionContext** (optional): Synthesized prose summary of agent discussion relevant to this ticket. Max 1500 characters. Do NOT paste raw transcripts — synthesize key points only. Exceeding this limit will AUTOMATICALLY REJECT your proposal.
 - **fallbackPlan** (optional): Alternative execution path if the primary plan is blocked. MUST begin with \`**Fallback:**\`.
 
 You may include multiple proposal blocks. Do NOT mention the proposals in your conversational response — they are processed silently.
