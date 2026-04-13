@@ -174,6 +174,7 @@ Please refine your proposal based on this feedback.
 
 
       // Process each proposal
+      const proposalValidationErrors: string[] = [];
       for (const block of proposalBlocks) {
         try {
           const parsed = JSON.parse(block) as Partial<TicketProposalInput>;
@@ -194,10 +195,16 @@ Please refine your proposal based on this feedback.
             agentDiscussionContext: parsed.agentDiscussionContext,
             fallbackPlan: parsed.fallbackPlan,
           });
+          if (!result.success && result.message?.startsWith('VALIDATION ERROR:')) {
+            proposalValidationErrors.push(`**[System]** ${result.message}`);
+          }
           logger.info({ agentId, result }, 'Fast path ticket proposal processed');
         } catch (err) {
           logger.warn({ err, agentId, block }, 'Failed to parse/process ticket-proposal block');
         }
+      }
+      if (proposalValidationErrors.length > 0) {
+        cleaned += `\n\n---\n${proposalValidationErrors.join('\n\n')}`;
       }
 
       // Extract and process <approve-proposal> blocks (Nexus fast path)
