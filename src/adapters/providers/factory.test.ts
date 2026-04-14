@@ -24,7 +24,11 @@ const {
       LLM_PROVIDER: 'gemini',
       LLM_API_KEY: 'test-api-key',
       GEMINI_API_KEY: 'test-gemini-key',
-      OLLAMA_BASE_URL: 'http://localhost:11434',
+      OLLAMA_BASE_URL: 'http://127.0.0.1:11434',
+      OLLAMA_ROUTER_MODEL: '',
+      OLLAMA_AGENT_MODEL: '',
+      OLLAMA_WORK_MODEL: '',
+      OLLAMA_EMBEDDING_MODEL: '',
       LOG_LEVEL: 'info',
       NODE_ENV: 'test',
     } as Record<string, string>,
@@ -51,6 +55,11 @@ describe('createLLMProvider', () => {
     mockConfig.LLM_PROVIDER = 'gemini';
     mockConfig.LLM_API_KEY = 'test-api-key';
     mockConfig.GEMINI_API_KEY = 'test-gemini-key';
+    mockConfig.OLLAMA_BASE_URL = 'http://127.0.0.1:11434';
+    mockConfig.OLLAMA_ROUTER_MODEL = '';
+    mockConfig.OLLAMA_AGENT_MODEL = '';
+    mockConfig.OLLAMA_WORK_MODEL = '';
+    mockConfig.OLLAMA_EMBEDDING_MODEL = '';
   });
 
   it('creates Gemini provider by default', () => {
@@ -84,7 +93,31 @@ describe('createLLMProvider', () => {
     mockConfig.LLM_PROVIDER = 'ollama';
     mockConfig.LLM_API_KEY = '';
     createLLMProvider();
-    expect(mockOllamaProvider).toHaveBeenCalledWith('http://localhost:11434');
+    expect(mockOllamaProvider).toHaveBeenCalledWith('http://127.0.0.1:11434');
+  });
+
+  it('creates Ollama provider with configured base URL', () => {
+    mockConfig.LLM_PROVIDER = 'ollama';
+    mockConfig.LLM_API_KEY = '';
+    mockConfig.OLLAMA_BASE_URL = 'http://ollama.internal:4242';
+    createLLMProvider();
+    expect(mockOllamaProvider).toHaveBeenCalledWith('http://ollama.internal:4242');
+  });
+
+  it('creates Ollama provider with configured model overrides', () => {
+    mockConfig.LLM_PROVIDER = 'ollama';
+    mockConfig.LLM_API_KEY = '';
+    mockConfig.OLLAMA_ROUTER_MODEL = 'llama3.1';
+    mockConfig.OLLAMA_AGENT_MODEL = 'qwen2.5-coder:32b';
+    mockConfig.OLLAMA_WORK_MODEL = 'deepseek-r1:32b';
+    mockConfig.OLLAMA_EMBEDDING_MODEL = 'bge-m3';
+    createLLMProvider();
+    expect(mockOllamaProvider).toHaveBeenCalledWith('http://127.0.0.1:11434', {
+      ROUTER: 'llama3.1',
+      AGENT: 'qwen2.5-coder:32b',
+      WORK: 'deepseek-r1:32b',
+      EMBEDDING: 'bge-m3',
+    });
   });
 
   it('throws for unknown provider', () => {

@@ -7,6 +7,17 @@ import { OllamaProvider } from './ollama.js';
 import { MultiProvider } from './multi.js';
 import { SecretRedactionProvider } from './secret-redaction.js';
 
+function getOllamaModelOverrides(): Partial<Record<ModelTier, string>> | undefined {
+  const overrides: Partial<Record<ModelTier, string>> = {};
+
+  if (config.OLLAMA_ROUTER_MODEL) overrides.ROUTER = config.OLLAMA_ROUTER_MODEL;
+  if (config.OLLAMA_AGENT_MODEL) overrides.AGENT = config.OLLAMA_AGENT_MODEL;
+  if (config.OLLAMA_WORK_MODEL) overrides.WORK = config.OLLAMA_WORK_MODEL;
+  if (config.OLLAMA_EMBEDDING_MODEL) overrides.EMBEDDING = config.OLLAMA_EMBEDDING_MODEL;
+
+  return Object.keys(overrides).length > 0 ? overrides : undefined;
+}
+
 function buildSingleProvider(name: string, apiKey: string): LLMProvider {
   switch (name) {
     case 'gemini':
@@ -20,8 +31,12 @@ function buildSingleProvider(name: string, apiKey: string): LLMProvider {
     case 'openrouter':
       if (!apiKey) throw new Error('LLM_API_KEY is required for OpenRouter provider');
       return new OpenAIProvider(apiKey, {}, 'https://openrouter.ai/api/v1');
-    case 'ollama':
-      return new OllamaProvider(config.OLLAMA_BASE_URL);
+    case 'ollama': {
+      const modelOverrides = getOllamaModelOverrides();
+      return modelOverrides
+        ? new OllamaProvider(config.OLLAMA_BASE_URL, modelOverrides)
+        : new OllamaProvider(config.OLLAMA_BASE_URL);
+    }
     default:
       throw new Error(`Unknown LLM provider: ${name}`);
   }

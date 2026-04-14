@@ -1,0 +1,1 @@
+Whenever `AGENTS.md` is read, always read `CLAUDE.md` as well. Codex (or other harness/agent) must follow all instructions in `CLAUDE.md` and treat them with the same weight and authority as if they were written directly in `AGENTS.md`.
