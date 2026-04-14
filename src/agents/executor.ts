@@ -5,6 +5,7 @@ import { logger } from '../logger.js';
 import { logToolStrippingEvent } from '../../agents/telemetry/logger.js';
 import type { AgentId } from './types.js';
 import type { LLMContent } from '../adapters/interfaces/llm-provider.js';
+import type { ImageAttachment } from '../core/guardrails/image_guard.js';
 import { db } from '../db/index.js';
 import { pendingActions } from '../db/schema.js';
 import { and, eq, isNull, gte } from 'drizzle-orm';
@@ -55,6 +56,7 @@ export interface ExecuteAgentInput {
   needsDeepResearch?: boolean;
   /** Channel-mapped project name hint from comms. */
   projectHint?: string;
+  attachments?: ImageAttachment[];
 }
 
 export async function executeAgent(input: ExecuteAgentInput): Promise<string | null> {
@@ -126,14 +128,16 @@ Please refine your proposal based on this feedback.
         explorer,
         maxRounds: MAX_TOOL_ROUNDS,
         modelTier: 'AGENT',
+        attachments: input.attachments,
       });
     } else {
       // Single-shot: no code tools available
+      const imageParts = (input.attachments ?? []).map(att => ({ inlineData: { mimeType: att.mediaType, data: att.data } }));
       response = await getLLMProvider().generateText({
         model: 'AGENT',
         orgId,
         systemInstruction: systemPrompt,
-        contents: [{ role: 'user', parts: [{ text: fullUserMessage }] }],
+        contents: [{ role: 'user', parts: [{ text: fullUserMessage }, ...imageParts] }],
       });
     }
 
@@ -723,9 +727,12 @@ async function executeToolLoop(opts: {
   explorer: import('../adapters/interfaces/source-explorer.js').SourceExplorer;
   maxRounds: number;
   modelTier: import('../adapters/interfaces/llm-provider.js').ModelTier;
+  attachments?: ImageAttachment[];
 }): Promise<string> {
   const { orgId, systemPrompt, userMessage, explorer, maxRounds, modelTier } = opts;
-  const contents: LLMContent[] = [{ role: 'user', parts: [{ text: userMessage }] }];
+  // image attachments validated upstream by image_guard.ts
+  const imageParts = (opts.attachments ?? []).map(att => ({ inlineData: { mimeType: att.mediaType, data: att.data } }));
+  const contents: LLMContent[] = [{ role: 'user', parts: [{ text: userMessage }, ...imageParts] }];
 
   for (let round = 0; round < maxRounds; round++) {
     const result = await getLLMProvider().generateWithTools({

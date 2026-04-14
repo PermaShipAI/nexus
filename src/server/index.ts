@@ -4,6 +4,7 @@ import { createHmac, timingSafeEqual } from 'crypto';
 import { config } from '../config.js';
 import { logger } from '../logger.js';
 import { processWebhookMessage, type UnifiedMessage, sendAgentMessage } from '../bot/listener.js';
+import { validateImageAttachments } from '../core/guardrails/image_guard.js';
 import { getTenantResolver } from '../adapters/registry.js';
 import { triggerIdleNow } from '../idle/timer.js';
 import { onProposalCreated } from '../nexus/scheduler.js';
@@ -176,7 +177,7 @@ server.post('/api/internal/trigger-nexus', async (request, reply) => {
 /**
  * Webhook Inbound Route
  */
-server.post('/v1/webhooks/comms', async (request) => {
+server.post('/v1/webhooks/comms', async (request, reply) => {
   const body = request.body as any;
   logger.info({ 
     platform: body.platform, 
@@ -308,6 +309,17 @@ server.post('/v1/webhooks/comms', async (request) => {
     enforceReadOnly: body.enforce_read_only === true || body.read_only === true,
     projectHint: body.conductor_project_name || undefined,
   };
+
+  // Extract and validate image attachments from the webhook body
+  const rawAttachments: Array<{ data: string; mediaType: string }> = Array.isArray(body.attachments) ? body.attachments : [];
+  if (rawAttachments.length > 0) {
+    const imgResult = validateImageAttachments(rawAttachments);
+    if (!imgResult.valid) {
+      logger.warn({ error: imgResult.error, userId: body.sender_id, channelId: body.channel_id }, 'image_attachment_rejected');
+      return reply.status(400).send({ success: false, error: imgResult.error });
+    }
+    unified.attachments = imgResult.attachments;
+  }
 
   // Process asynchronously — respond immediately so comms doesn't time out
   processWebhookMessage(unified).catch(err => {

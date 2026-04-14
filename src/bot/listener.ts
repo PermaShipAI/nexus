@@ -410,6 +410,7 @@ async function handleIncomingMessage(message: UnifiedMessage, isPublic: boolean,
       steering: steeringContext,
       isStrictConsultation: enforceReadOnly || route.isStrictConsultation || false,
       projectHint,
+      attachments: message.attachments, // attachments already validated at lines 258-281
       // Approval messages are sent by the Nexus scheduler after review,
       // not here — sending here would show buttons before the agent's
       // response text and before Nexus has reviewed the proposal.
