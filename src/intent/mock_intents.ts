@@ -43,6 +43,16 @@ export const MOCK_INTENT_MAP: Record<string, ClassifiedIntent> = {
     confidenceScore: 0.3,
     params: {},
   },
+  'enable autonomous mode': {
+    kind: 'AdministrativeAction',
+    confidenceScore: 0.92,
+    params: { settingKey: 'autonomous mode', settingValue: 'enable' },
+  },
+  'change some setting maybe': {
+    kind: 'AdministrativeAction',
+    confidenceScore: 0.45,
+    params: {},
+  },
 };
 
 export function getMockIntent(message: string): ClassifiedIntent | null {

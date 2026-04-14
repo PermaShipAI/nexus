@@ -13,6 +13,7 @@ import { routeIntent, RouterResult } from '../../intent/router.js';
 import { getLinkedAccount } from '../../auth/account_linker.js';
 import { RequestContext } from '../../rbac/types.js';
 import { requestAdminApproval } from './autonomous-mode-gate.js';
+import { logGuardrailEvent } from '../../telemetry/index.js';
 
 const CONFIRMATION_TIMEOUT_MS = 60_000;
 let cancellationCounter = 0;
@@ -67,7 +68,60 @@ export async function handleDiscordMessage(message: Message): Promise<void> {
 
   // Confirmation gate for state-mutating intents
   if (result.requiresConfirmation && result.intent) {
-    if (result.intent.kind === 'ManageProject') {
+    if (result.intent.kind === 'AdministrativeAction') {
+      const settingKey = result.intent.params?.settingKey ?? 'this setting';
+      const settingValue = result.intent.params?.settingValue;
+      const isEnable = ['true', 'enable', 'on'].includes((settingValue ?? '').toLowerCase());
+      const actionLabel = settingValue
+        ? `${isEnable ? 'Enable' : 'Disable'} ${settingKey}`
+        : `Update ${settingKey}`;
+
+      const confirmRow = new ActionRowBuilder<ButtonBuilder>().addComponents(
+        new ButtonBuilder()
+          .setCustomId('admin_confirm')
+          .setLabel(`Confirm: ${actionLabel}`)
+          .setStyle(ButtonStyle.Primary),
+        new ButtonBuilder()
+          .setCustomId('admin_cancel')
+          .setLabel('Cancel')
+          .setStyle(ButtonStyle.Danger),
+      );
+
+      const confirmMsg = await message.reply({
+        content: `I understand you want to **${actionLabel}**. Please confirm this administrative change.`,
+        components: [confirmRow],
+      });
+
+      logGuardrailEvent({
+        event: 'autonomous_mode_gate_shown',
+        channelId: message.channelId,
+        userId: message.author.id,
+        settingKey,
+      });
+
+      try {
+        const interaction = await confirmMsg.awaitMessageComponent({
+          componentType: ComponentType.Button,
+          time: 5 * 60 * 1000,
+          filter: (i) => {
+            if (i.user.id !== message.author.id) {
+              i.reply({ content: 'Only the original requester can confirm this action.', ephemeral: true }).catch(() => {});
+              return false;
+            }
+            return true;
+          },
+        });
+        if (interaction.customId === 'admin_cancel') {
+          cancellationCounter++;
+          await interaction.update({ content: 'Administrative action cancelled.', components: [] });
+          return;
+        }
+        await interaction.update({ content: `Executing: **${actionLabel}**...`, components: [] });
+      } catch {
+        await confirmMsg.edit({ content: '⏱️ Confirmation timed out. Administrative action **not executed** (fail-closed).', components: [] }).catch(() => {});
+        return;
+      }
+    } else if (result.intent.kind === 'ManageProject') {
       // ManageProject covers sensitive system settings (e.g. autonomous_mode).
       // Use the Admin/Owner-only HITL gate with a 5-minute fail-closed timeout.
       const settingKey =

@@ -4,6 +4,7 @@ import { classifyIntent } from './classifier.js';
 import { checkPermission } from '../rbac/checker.js';
 import { checkChannelSafety } from '../middleware/channel_safety.js';
 import { logRoutingDecision } from './telemetry.js';
+import { logGuardrailEvent } from '../telemetry/index.js';
 
 export interface RouterResult {
   allowed: boolean;
@@ -13,7 +14,7 @@ export interface RouterResult {
   blockReason?: string;
 }
 
-const CONFIRMATION_REQUIRED_INTENTS = ['ManageProject', 'ProposeTask', 'AccessSecrets', 'DestructiveAction'];
+const CONFIRMATION_REQUIRED_INTENTS = ['ManageProject', 'ProposeTask', 'AccessSecrets', 'DestructiveAction', 'AdministrativeAction'];
 const CLARIFICATION_MESSAGE =
   "I'm not sure what you'd like to do. Could you clarify?";
 const TIMEOUT_MESSAGE =
@@ -64,6 +65,16 @@ export async function routeIntent(
       durationMs,
       timestamp: new Date().toISOString(),
     });
+    if (intent.kind === 'AdministrativeAction') {
+      logGuardrailEvent({
+        event: 'administrative_intent_clarification_triggered',
+        intentKind: intent.kind,
+        confidenceScore: intent.confidenceScore,
+        channelId: '',
+        userId: context.platformUserId,
+        messageId: context.messageId,
+      });
+    }
     return {
       allowed: false,
       intent,

@@ -14,6 +14,7 @@ Classify the user's message into one of these intents:
 - ManageProject: User wants to create, update, delete, or configure a project
 - AccessSecrets: User wants to retrieve, rotate, or manage secrets/credentials
 - DestructiveAction: User wants to delete, drop, wipe, destroy, or irreversibly remove data or resources
+- AdministrativeAction: User wants to enable, disable, toggle, or configure a system-level setting (e.g. autonomous mode, public mode, reporting schedules). Extract settingKey and settingValue from the message. If settingKey or settingValue cannot be clearly determined, set confidenceScore below 0.6.
 - Unknown: The intent is unclear or doesn't match any category
 
 Always return a confidenceScore between 0 and 1 reflecting how confident you are.

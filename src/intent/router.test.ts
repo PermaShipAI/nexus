@@ -72,3 +72,17 @@ describe('routeIntent', () => {
     expect(result.blockReason).toBe('InsufficientRole');
   });
 });
+
+describe('AdministrativeAction routing', () => {
+  it('routes high-confidence AdministrativeAction with requiresConfirmation', async () => {
+    const result = await routeIntent('enable autonomous mode', privateAdminContext);
+    expect(result.allowed).toBe(true);
+    expect(result.requiresConfirmation).toBe(true);
+    expect(result.intent?.kind).toBe('AdministrativeAction');
+  });
+  it('blocks low-confidence AdministrativeAction with LowConfidence', async () => {
+    const result = await routeIntent('change some setting maybe', privateAdminContext);
+    expect(result.allowed).toBe(false);
+    expect(result.blockReason).toBe('LowConfidence');
+  });
+});
