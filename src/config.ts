@@ -65,6 +65,10 @@ const envSchema = z.object({
   LLM_PROVIDER: z.string().default('gemini'),
   GEMINI_API_KEY: z.string().optional(),
   OLLAMA_BASE_URL: z.string().default('http://127.0.0.1:11434'),
+  OLLAMA_ROUTER_MODEL: z.string().optional(),
+  OLLAMA_AGENT_MODEL: z.string().optional(),
+  OLLAMA_WORK_MODEL: z.string().optional(),
+  OLLAMA_EMBEDDING_MODEL: z.string().optional(),
 
   // Local execution backends
   EXECUTION_BACKEND: z.string().default('noop'),
