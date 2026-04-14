@@ -173,6 +173,7 @@ Each persona lives in `personas/` and can be customized. Import more from [agenc
 |----------|----------|-------------|
 | `LLM_API_KEY` | Prompted | API key for your LLM provider (set interactively on first run) |
 | `LLM_PROVIDER` | No | `gemini` (default), `anthropic`, `openai`, `ollama`, `openrouter`, `multi` |
+| `OLLAMA_BASE_URL` | No | Base URL for Ollama when `LLM_PROVIDER=ollama`. Defaults to `http://127.0.0.1:11434`. |
 | `DATABASE_URL` | No | PostgreSQL connection string. Omit for embedded PGlite (zero-config). |
 | `EXECUTION_BACKEND` | No | `noop` (default), `claude-code`, `gemini-cli`, `codex-cli`, `openclaw`, `permaship` |
 | `EXECUTION_TIMEOUT_MS` | No | Execution timeout in ms. Defaults to `3600000` (1 hour). |

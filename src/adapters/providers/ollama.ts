@@ -19,7 +19,7 @@ export class OllamaProvider implements LLMProvider {
   private baseUrl: string;
   private modelMap: Record<ModelTier, string>;
 
-  constructor(baseUrl = 'http://localhost:11434', modelOverrides?: Partial<Record<ModelTier, string>>) {
+  constructor(baseUrl = 'http://127.0.0.1:11434', modelOverrides?: Partial<Record<ModelTier, string>>) {
     this.baseUrl = baseUrl.replace(/\/+$/, '');
     this.modelMap = { ...DEFAULT_MODEL_MAP, ...modelOverrides };
   }

@@ -24,7 +24,7 @@ const {
       LLM_PROVIDER: 'gemini',
       LLM_API_KEY: 'test-api-key',
       GEMINI_API_KEY: 'test-gemini-key',
-      OLLAMA_BASE_URL: 'http://localhost:11434',
+      OLLAMA_BASE_URL: 'http://127.0.0.1:11434',
       LOG_LEVEL: 'info',
       NODE_ENV: 'test',
     } as Record<string, string>,
@@ -51,6 +51,7 @@ describe('createLLMProvider', () => {
     mockConfig.LLM_PROVIDER = 'gemini';
     mockConfig.LLM_API_KEY = 'test-api-key';
     mockConfig.GEMINI_API_KEY = 'test-gemini-key';
+    mockConfig.OLLAMA_BASE_URL = 'http://127.0.0.1:11434';
   });
 
   it('creates Gemini provider by default', () => {
@@ -84,7 +85,15 @@ describe('createLLMProvider', () => {
     mockConfig.LLM_PROVIDER = 'ollama';
     mockConfig.LLM_API_KEY = '';
     createLLMProvider();
-    expect(mockOllamaProvider).toHaveBeenCalledWith('http://localhost:11434');
+    expect(mockOllamaProvider).toHaveBeenCalledWith('http://127.0.0.1:11434');
+  });
+
+  it('creates Ollama provider with configured base URL', () => {
+    mockConfig.LLM_PROVIDER = 'ollama';
+    mockConfig.LLM_API_KEY = '';
+    mockConfig.OLLAMA_BASE_URL = 'http://ollama.internal:4242';
+    createLLMProvider();
+    expect(mockOllamaProvider).toHaveBeenCalledWith('http://ollama.internal:4242');
   });
 
   it('throws for unknown provider', () => {
