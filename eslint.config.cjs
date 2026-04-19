@@ -4,7 +4,7 @@ const vitestPlugin = require('eslint-plugin-vitest');
 
 module.exports = [
   {
-    files: ['src/**/*.ts', 'agents/**/*.ts'],
+    files: ['src/**/*.ts', 'agents/**/*.ts', 'scripts/**/*.ts'],
     languageOptions: {
       parser: tsparser,
       parserOptions: {
