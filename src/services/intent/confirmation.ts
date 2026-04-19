@@ -44,6 +44,7 @@ export function buildConfirmationPrompt(intent: string, entities: Record<string,
     ProposeTask: "create a new task",
     RequestReview: "request a review",
     ManageProject: "modify project configuration",
+    AdministrativeAction: "change system settings",
     AccessSecrets: "access credentials or secrets",
     DestructiveAction: "perform a destructive operation",
   };

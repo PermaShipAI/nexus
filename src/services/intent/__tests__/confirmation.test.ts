@@ -136,4 +136,15 @@ describe("buildConfirmationPrompt", () => {
     const prompt = buildConfirmationPrompt("SomeUnknownIntent", {});
     expect(prompt).toBe("Do you want me to SomeUnknownIntent? [Confirm] [Cancel]");
   });
+
+  it("formats AdministrativeAction without entities", () => {
+    const prompt = buildConfirmationPrompt("AdministrativeAction", {});
+    expect(prompt).toBe("Do you want me to change system settings? [Confirm] [Cancel]");
+  });
+
+  it("formats AdministrativeAction with setting entity", () => {
+    const prompt = buildConfirmationPrompt("AdministrativeAction", { setting: "autonomous mode" });
+    expect(prompt).toContain("change system settings");
+    expect(prompt).toContain("autonomous mode");
+  });
 });
