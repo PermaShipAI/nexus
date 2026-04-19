@@ -38,6 +38,11 @@ export const MOCK_INTENT_MAP: Record<string, ClassifiedIntent> = {
     confidenceScore: 0.93,
     params: { target: 'alpha project' },
   },
+  'enable autonomous mode': {
+    kind: 'AdministrativeAction',
+    confidenceScore: 0.91,
+    params: { setting: 'autonomous mode' },
+  },
   'low confidence message xyz123': {
     kind: 'Unknown',
     confidenceScore: 0.3,

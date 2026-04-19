@@ -46,6 +46,7 @@ import {
   setMissionRoster,
 } from '../missions/service.js';
 import { approveAdrDraft, rejectAdrDraft } from '../agents/adr-service.js';
+import { logAdminIntentConfirmedEvent, logAdminIntentCancelledEvent } from '../../agents/telemetry/logger.js';
 import { planMission } from '../missions/lifecycle.js';
 import { addSharedKnowledge, getSharedKnowledge } from '../knowledge/service.js';
 import type { WebSocket } from 'ws';
@@ -414,6 +415,15 @@ export async function createLocalServer(_port = 3000) {
       elapsedMs: Date.now() - pending.createdAt.getTime(),
     });
 
+    if (pending.intent === 'AdministrativeAction') {
+      logAdminIntentConfirmedEvent({
+        channelId: pending.channelId,
+        userId: pending.userId,
+        confirmationId: id,
+        elapsedMs: Date.now() - pending.createdAt.getTime(),
+      });
+    }
+
     broadcast('confirmation_resolved', { confirmationId: id, status: 'confirmed' });
 
     processWebhookMessage(unified).catch(err => {
@@ -444,6 +454,15 @@ export async function createLocalServer(_port = 3000) {
       confirmationId: id,
       elapsedMs: Date.now() - pending.createdAt.getTime(),
     });
+
+    if (pending.intent === 'AdministrativeAction') {
+      logAdminIntentCancelledEvent({
+        channelId: pending.channelId,
+        userId: pending.userId,
+        confirmationId: id,
+        elapsedMs: Date.now() - pending.createdAt.getTime(),
+      });
+    }
 
     broadcast('confirmation_resolved', { confirmationId: id, status: 'cancelled' });
     return { success: true };
