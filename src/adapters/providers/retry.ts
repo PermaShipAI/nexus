@@ -1,4 +1,22 @@
 import { logger } from '../../logger.js';
+import { llmCircuitBreakerTrippedTotal } from '../../telemetry/prometheus.js';
+
+export class BudgetExhaustedError extends Error {
+  provider: string;
+  modelTier: string;
+  errorStatus: string;
+
+  constructor(provider: string, modelTier: string, errorStatus: string, cause?: unknown) {
+    super(`LLM retry budget exhausted for provider=${provider} modelTier=${modelTier}`);
+    this.name = 'BudgetExhaustedError';
+    this.provider = provider;
+    this.modelTier = modelTier;
+    this.errorStatus = errorStatus;
+    if (cause !== undefined) {
+      (this as unknown as { cause: unknown }).cause = cause;
+    }
+  }
+}
 
 export interface RetryConfig {
   maxRetries?: number;
@@ -6,6 +24,9 @@ export interface RetryConfig {
   maxDelayMs?: number;
   backoffMultiplier?: number;
   jitterFactor?: number;
+  circuitBreaker?: boolean;
+  cbProvider?: string;
+  cbModelTier?: string;
 }
 
 const DEFAULTS: Required<RetryConfig> = {
@@ -14,6 +35,9 @@ const DEFAULTS: Required<RetryConfig> = {
   maxDelayMs: 30_000,
   backoffMultiplier: 2,
   jitterFactor: 0.2,
+  circuitBreaker: false,
+  cbProvider: 'unknown',
+  cbModelTier: 'unknown',
 };
 
 /**
@@ -48,6 +72,16 @@ function isRetriable(err: unknown): boolean {
   return false;
 }
 
+function getErrorStatus(err: unknown): number | string | undefined {
+  if (err instanceof Error) {
+    const status = (err as unknown as { status?: number }).status;
+    if (typeof status === 'number') return status;
+    const match = err.message.match(/\b(429|5\d{2})\b/);
+    if (match) return match[1];
+  }
+  return undefined;
+}
+
 function computeDelay(attempt: number, config: Required<RetryConfig>): number {
   const base = config.initialDelayMs * Math.pow(config.backoffMultiplier, attempt);
   const capped = Math.min(base, config.maxDelayMs);
@@ -75,6 +109,24 @@ export async function withRetry<T>(
       lastError = err;
 
       if (attempt === cfg.maxRetries || !isRetriable(err)) {
+        if (cfg.circuitBreaker && attempt === cfg.maxRetries && isRetriable(err)) {
+          const errorStatus = String(getErrorStatus(err) ?? 'unknown');
+          llmCircuitBreakerTrippedTotal.inc({
+            provider: cfg.cbProvider ?? 'unknown',
+            model_tier: cfg.cbModelTier ?? 'unknown',
+            error_status: errorStatus,
+          });
+          logger.warn(
+            { provider: cfg.cbProvider, modelTier: cfg.cbModelTier, context, errorStatus },
+            'LLM circuit breaker tripped: retry budget exhausted',
+          );
+          throw new BudgetExhaustedError(
+            cfg.cbProvider ?? 'unknown',
+            cfg.cbModelTier ?? 'unknown',
+            errorStatus,
+            err,
+          );
+        }
         throw err;
       }
 

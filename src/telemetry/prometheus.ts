@@ -60,3 +60,10 @@ export const confirmationResolutionLatencyMs = new Histogram({
   buckets: [1000, 5000, 10000, 30000, 60000, 120000, 300000],
   registers: [registry],
 });
+
+export const llmCircuitBreakerTrippedTotal = new Counter({
+  name: 'agentops_llm_circuit_breaker_tripped_total',
+  help: 'Total number of times the LLM retry budget was exhausted and the circuit breaker tripped',
+  labelNames: ['provider', 'model_tier', 'error_status'] as const,
+  registers: [registry],
+});

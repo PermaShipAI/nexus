@@ -1,6 +1,7 @@
 import { GoogleGenerativeAI, type Content, type FunctionDeclaration } from '@google/generative-ai';
 import { getModelId } from '../../settings/service.js';
-import { withRetry } from '../providers/retry.js';
+import { withRetry, type RetryConfig } from '../providers/retry.js';
+import { getFeatureFlags } from '../../config/feature_flags.js';
 import type {
   LLMProvider,
   GenerateTextOptions,
@@ -26,14 +27,19 @@ export class DefaultLLMProvider implements LLMProvider {
   async generateText(options: GenerateTextOptions): Promise<string> {
     const override = options.orgId ? await getModelId(options.model, options.orgId) : null;
     const modelId = override || DEFAULT_MODEL_MAP[options.model];
-    
+
+    const flags = getFeatureFlags();
+    const retryConfig: RetryConfig | undefined = flags.ENABLE_LLM_CIRCUIT_BREAKER
+      ? { maxRetries: 2, circuitBreaker: true, cbProvider: 'gemini', cbModelTier: options.model }
+      : undefined;
+
     const model = this.genAI.getGenerativeModel({
       model: modelId,
       systemInstruction: options.systemInstruction,
     });
     const result = await withRetry(
       () => model.generateContent({ contents: options.contents as Content[] }),
-      undefined,
+      retryConfig,
       `gemini.generateText[${modelId}]`,
     );
     const response = await result.response;
@@ -44,6 +50,11 @@ export class DefaultLLMProvider implements LLMProvider {
     const override = options.orgId ? await getModelId(options.model, options.orgId) : null;
     const modelId = override || DEFAULT_MODEL_MAP[options.model];
 
+    const flags = getFeatureFlags();
+    const retryConfig: RetryConfig | undefined = flags.ENABLE_LLM_CIRCUIT_BREAKER
+      ? { maxRetries: 2, circuitBreaker: true, cbProvider: 'gemini', cbModelTier: options.model }
+      : undefined;
+
     const model = this.genAI.getGenerativeModel({
       model: modelId,
       systemInstruction: options.systemInstruction,
@@ -51,7 +62,7 @@ export class DefaultLLMProvider implements LLMProvider {
     });
     const result = await withRetry(
       () => model.generateContent({ contents: options.contents as Content[] }),
-      undefined,
+      retryConfig,
       `gemini.generateWithTools[${modelId}]`,
     );
     const response = await result.response;

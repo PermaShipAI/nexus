@@ -3,6 +3,7 @@ export interface FeatureFlags {
   ENABLE_CONFIRMATION_GATES: boolean;
   ENABLE_PROCESSING_INDICATORS: boolean;
   INTENT_MODE: "structured" | "legacy_commands";
+  ENABLE_LLM_CIRCUIT_BREAKER: boolean;
 }
 
 import { readFileSync } from "fs";
