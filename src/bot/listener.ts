@@ -424,6 +424,16 @@ async function handleIncomingMessage(message: UnifiedMessage, isPublic: boolean,
       continue;
     }
 
+    if (response === '[budget_exhausted]') {
+      await sendAgentMessage(
+        message.channelId,
+        agent.title,
+        `The AI service is temporarily unavailable due to rate limiting. Your request has been stopped to prevent excessive retries. Please try again in a few minutes.`,
+        orgId,
+      );
+      continue;
+    }
+
     if (isPublic) {
       publicResponses.push({ agentTitle: agent.title, agentId: route.agentId as AgentId, content: response });
     } else {

@@ -1,6 +1,7 @@
 import { spawn } from 'node:child_process';
 import { writeGeminiContext, buildAgentPrompt } from './prompt-builder.js';
 import { getLLMProvider, getSourceExplorer, getWorkspaceProvider } from '../adapters/registry.js';
+import { BudgetExhaustedError } from '../adapters/providers/retry.js';
 import { logger } from '../logger.js';
 import { logToolStrippingEvent } from '../../agents/telemetry/logger.js';
 import type { AgentId } from './types.js';
@@ -616,6 +617,11 @@ Please refine your proposal based on this feedback.
     const proposalCount = await agentCreatedProposalsSince(agentId, orgId, executionStart);
     return suppressProposalDetails(agentId, cleaned, proposalCount);
   } catch (err) {
+    if (err instanceof BudgetExhaustedError) {
+      logger.warn({ err, agentId, source }, 'LLM circuit breaker tripped — aborting agent execution');
+      if (source === 'user') return '[budget_exhausted]';
+      return null;
+    }
     logger.error({ err, agentId, source }, 'Gemini API execution failed');
     // For user-initiated messages, return an error indicator instead of silent null
     if (source === 'user') {
