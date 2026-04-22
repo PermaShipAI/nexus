@@ -26,6 +26,7 @@ import { CODE_TOOL_DECLARATIONS, executeCodeTool } from './code-tools.js';
 const WORKSPACE_ROOT = process.env.WORKSPACE_ROOT
   ?? (process.env.NODE_ENV === 'production' ? '/app' : process.cwd());
 const GEMINI_TIMEOUT_MS = 19 * 60 * 1000; // 19 minutes
+const HUMAN_GATE_STATUS = 'waiting_for_human' as const;
 const MAX_TOOL_ROUNDS = 6;
 const DEEP_RESEARCH_MAX_TURNS = 25;
 const DEEP_RESEARCH_TIMEOUT_MS = 10 * 60 * 1000; // 10 minutes
@@ -215,6 +216,13 @@ Please refine your proposal based on this feedback.
             logger.warn({ agentId, actionId: parsed.id }, 'approve-proposal: action not found');
             continue;
           }
+          if (action.status === HUMAN_GATE_STATUS) {
+            logger.warn(
+              { agentId, actionId: parsed.id, event: 'preflight_block' },
+              'approve-proposal blocked: action requires human approval',
+            );
+            continue;
+          }
           const existingArgs = parseArgs(action.args);
           const updatedArgs: Record<string, unknown> = { ...existingArgs, ctoDecisionReason: parsed.reason };
           await db.update(pendingActions)
@@ -346,6 +354,13 @@ Please refine your proposal based on this feedback.
           const [action] = await db.select().from(pendingActions).where(eq(pendingActions.id, parsed.id)).limit(1);
           if (!action) {
             logger.warn({ agentId, actionId: parsed.id }, 'reject-proposal: action not found');
+            continue;
+          }
+          if (action.status === HUMAN_GATE_STATUS) {
+            logger.warn(
+              { agentId, actionId: parsed.id, event: 'preflight_block' },
+              'reject-proposal blocked: action requires human approval',
+            );
             continue;
           }
           const updatedArgs: Record<string, unknown> = { ...parseArgs(action.args), ctoRejectionReason: parsed.reason };
