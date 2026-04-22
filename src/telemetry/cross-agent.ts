@@ -51,3 +51,20 @@ export function logCircuitBreakerTripped(details: {
     ...details,
   });
 }
+
+/**
+ * Emitted when an agent attempts to act on a ticket/item that is locked in
+ * the `waiting_for_human` state, preventing the bypass.
+ */
+export function logWaitingForHumanBlock(details: {
+  orgId: string;
+  agentId: string;
+  actionId: string;
+  actionType: string;
+}): void {
+  logger.warn({
+    event: 'preflight_waiting_for_human_blocked',
+    state: 'waiting_for_human',
+    ...details,
+  });
+}
