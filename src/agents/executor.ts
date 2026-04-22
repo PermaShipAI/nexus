@@ -3,6 +3,7 @@ import { writeGeminiContext, buildAgentPrompt } from './prompt-builder.js';
 import { getLLMProvider, getSourceExplorer, getWorkspaceProvider } from '../adapters/registry.js';
 import { logger } from '../logger.js';
 import { logToolStrippingEvent } from '../../agents/telemetry/logger.js';
+import { logWaitingForHumanBlock } from '../telemetry/cross-agent.js';
 import type { AgentId } from './types.js';
 import type { LLMContent } from '../adapters/interfaces/llm-provider.js';
 import { db } from '../db/index.js';
@@ -215,6 +216,11 @@ Please refine your proposal based on this feedback.
             logger.warn({ agentId, actionId: parsed.id }, 'approve-proposal: action not found');
             continue;
           }
+          if (action.status === 'pending') {
+            logWaitingForHumanBlock({ orgId, agentId, actionId: parsed.id, actionType: 'approve-proposal' });
+            cleaned += `\n\n[SYSTEM] Action Blocked: Ticket is locked in 'waiting_for_human' pending mandatory manual approval. Do not attempt to retry this action.`;
+            continue;
+          }
           const existingArgs = parseArgs(action.args);
           const updatedArgs: Record<string, unknown> = { ...existingArgs, ctoDecisionReason: parsed.reason };
           await db.update(pendingActions)
@@ -407,12 +413,21 @@ Please refine your proposal based on this feedback.
             continue;
           }
           const completedItem = await getMissionItem(parsed.itemId);
+          if (!completedItem) {
+            logger.warn({ agentId, itemId: parsed.itemId }, 'mission-item-complete: item not found');
+            continue;
+          }
+          if (completedItem.status === 'waiting_for_human') {
+            logWaitingForHumanBlock({ orgId, agentId, actionId: parsed.itemId, actionType: 'mission-item-complete' });
+            cleaned += `\n\n[SYSTEM] Action Blocked: Ticket is locked in 'waiting_for_human' pending mandatory manual approval. Do not attempt to retry this action.`;
+            continue;
+          }
           await updateMissionItem(parsed.itemId, {
             status: 'agent_complete',
             completedByAgentId: agentId,
           });
           logger.info({ agentId, itemId: parsed.itemId }, 'Mission item marked agent_complete');
-          if (completedItem) onMissionItemChanged(completedItem.missionId);
+          onMissionItemChanged(completedItem.missionId);
         } catch (err) {
           logger.warn({ err, agentId }, 'Failed to parse/process mission-item-complete block');
         }

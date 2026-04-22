@@ -93,6 +93,9 @@ vi.mock('./code-tools.js', () => ({
   CODE_TOOL_DECLARATIONS: [],
   executeCodeTool: vi.fn().mockResolvedValue('tool result'),
 }));
+vi.mock('../telemetry/cross-agent.js', () => ({
+  logWaitingForHumanBlock: vi.fn(),
+}));
 
 describe('executor', () => {
   beforeEach(() => {
@@ -185,6 +188,76 @@ describe('executor', () => {
 
     // Idle-initiated failures should return null (no user-facing error needed)
     expect(result).toBeNull();
+  });
+
+  it('<approve-proposal> blocked when action is waiting_for_human (pending status)', async () => {
+    const { db } = await import('../db/index.js');
+    const { logWaitingForHumanBlock } = await import('../telemetry/cross-agent.js');
+
+    // Mock db.select to return an action with status: 'pending' (waiting_for_human)
+    const mockQuery = {
+      from: vi.fn().mockReturnThis(),
+      where: vi.fn().mockReturnThis(),
+      limit: vi.fn().mockResolvedValue([{ id: 'action-1', status: 'pending', args: {}, agentId: 'sre', channelId: 'chan-1', description: 'Some action' }]),
+      orderBy: vi.fn().mockReturnThis(),
+      update: vi.fn().mockReturnThis(),
+      set: vi.fn().mockReturnThis(),
+      then: (resolve: any) => Promise.resolve([]).then(resolve),
+    };
+    vi.mocked(db.select).mockReturnValue(mockQuery as any);
+
+    mockGenerateText.mockResolvedValue(
+      '<approve-proposal>{"id":"action-1","reason":"looks good"}</approve-proposal>',
+    );
+
+    const result = await executeAgent({
+      orgId: 'org-1',
+      agentId: 'nexus',
+      channelId: 'chan-1',
+      userId: 'user-1',
+      userName: 'Alice',
+      userMessage: 'Approve action-1',
+      needsCodeAccess: false,
+    });
+
+    // db.update must NOT be called — action should be blocked
+    expect(vi.mocked(db.update)).not.toHaveBeenCalled();
+    // The block message must appear in the result
+    expect(result).toContain('[SYSTEM] Action Blocked: Ticket is locked in \'waiting_for_human\'');
+    // Telemetry should have been emitted
+    expect(vi.mocked(logWaitingForHumanBlock)).toHaveBeenCalledWith(
+      expect.objectContaining({ actionId: 'action-1', actionType: 'approve-proposal' }),
+    );
+  });
+
+  it('<mission-item-complete> blocked when item is waiting_for_human', async () => {
+    const { getMissionItem, updateMissionItem } = await import('../missions/service.js');
+    const { logWaitingForHumanBlock } = await import('../telemetry/cross-agent.js');
+
+    vi.mocked(getMissionItem).mockResolvedValue({ status: 'waiting_for_human', missionId: 'mission-1' } as any);
+
+    mockGenerateText.mockResolvedValue(
+      '<mission-item-complete>{"itemId":"item-1","summary":"done"}</mission-item-complete>',
+    );
+
+    const result = await executeAgent({
+      orgId: 'org-1',
+      agentId: 'sre',
+      channelId: 'chan-1',
+      userId: 'user-1',
+      userName: 'Alice',
+      userMessage: 'Complete item-1',
+      needsCodeAccess: false,
+    });
+
+    // updateMissionItem must NOT be called
+    expect(vi.mocked(updateMissionItem)).not.toHaveBeenCalled();
+    // The block message must appear in the result
+    expect(result).toContain('[SYSTEM] Action Blocked: Ticket is locked in \'waiting_for_human\'');
+    // Telemetry should have been emitted
+    expect(vi.mocked(logWaitingForHumanBlock)).toHaveBeenCalledWith(
+      expect.objectContaining({ actionId: 'item-1', actionType: 'mission-item-complete' }),
+    );
   });
 
   it('should exhaust tool loop budget and force a final text response', async () => {
