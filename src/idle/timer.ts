@@ -8,6 +8,7 @@ import { storeMessage } from '../conversation/service.js';
 import { queueSuggestion } from './service.js';
 import { config } from '../config.js';
 import { logger } from '../logger.js';
+import { geminiCircuitBreaker } from '../adapters/providers/gemini-circuit-breaker.js';
 import { isAutonomousMode } from '../settings/service.js';
 import { AGENT_IDS, type AgentId } from '../agents/types.js';
 import { db } from '../db/index.js';
@@ -252,6 +253,11 @@ async function checkIdle(): Promise<void> {
         logger.warn({ err, orgId }, 'Project allocation failed, falling back to unscoped idle');
       }
 
+      if (geminiCircuitBreaker.isOpen()) {
+        logger.info({ event: 'idle_skipped_circuit_open', orgId }, 'Idle prompt skipped: Gemini circuit breaker is open');
+        continue;
+      }
+
       // In autonomous mode, always send to Discord — don't silently queue
       const shouldQueue = !autonomous && elapsedSinceHuman > QUEUE_THRESHOLD_MS;
       const agentId = await runIdlePrompt(orgId, channelId, undefined, shouldQueue, reviewOnly, allocatedProjectId, allocatedProjectName);
@@ -289,6 +295,11 @@ export async function triggerIdleNow(orgId: string, channelId: string, forceAgen
   }
   idleRunning = true;
   try {
+    if (geminiCircuitBreaker.isOpen()) {
+      logger.warn({ event: 'idle_skipped_circuit_open', orgId, forced: true }, 'Forced idle skipped: Gemini circuit breaker is open');
+      return;
+    }
+
     const metrics = await computeThrottleLevel(orgId);
     logger.info({ orgId, ...metrics }, 'Forced idle throttle metrics');
 

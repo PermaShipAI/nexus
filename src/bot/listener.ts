@@ -424,6 +424,12 @@ async function handleIncomingMessage(message: UnifiedMessage, isPublic: boolean,
       continue;
     }
 
+    if (response === '[circuit_open]') {
+      await sendAgentMessage(message.channelId, agent.title,
+        'Our AI provider is currently experiencing degradation. Please try again in a few minutes.', orgId);
+      continue;
+    }
+
     if (isPublic) {
       publicResponses.push({ agentTitle: agent.title, agentId: route.agentId as AgentId, content: response });
     } else {
