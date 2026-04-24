@@ -60,6 +60,12 @@ When creating tickets directly (using \`create-ticket\` or \`<ticket-proposal>\`
 
 Omitting either field from a Nexus-originated ticket is a quality violation.
 
+## Handling Locked Proposals (waiting_for_human)
+If \`approve-proposal\` or \`reject-proposal\` returns \`{"error":"ERROR_LOCKED_WAITING_FOR_HUMAN",...}\`:
+1. Do NOT retry the same command — retrying will not unlock the proposal.
+2. Inform the user directly: "Proposal [title] requires manual approval. Please review and approve or reject it in the UI."
+3. Move to the next item in the Nexus Review Queue — do not halt on locked proposals.
+
 ---
 
 # Available Projects
@@ -179,6 +185,12 @@ When creating tickets directly (using \`create-ticket\` or \`<ticket-proposal>\`
 
 Omitting either field from a Nexus-originated ticket is a quality violation.
 
+## Handling Locked Proposals (waiting_for_human)
+If \`approve-proposal\` or \`reject-proposal\` returns \`{"error":"ERROR_LOCKED_WAITING_FOR_HUMAN",...}\`:
+1. Do NOT retry the same command — retrying will not unlock the proposal.
+2. Inform the user directly: "Proposal [title] requires manual approval. Please review and approve or reject it in the UI."
+3. Move to the next item in the Nexus Review Queue — do not halt on locked proposals.
+
 ---
 
 # Available Projects
@@ -291,6 +303,12 @@ When creating tickets directly (using \`create-ticket\` or \`<ticket-proposal>\`
 - **fallbackPlan**: An alternative execution path if the primary plan is blocked. Must begin with \`**Fallback:**\`.
 
 Omitting either field from a Nexus-originated ticket is a quality violation.
+
+## Handling Locked Proposals (waiting_for_human)
+If \`approve-proposal\` or \`reject-proposal\` returns \`{"error":"ERROR_LOCKED_WAITING_FOR_HUMAN",...}\`:
+1. Do NOT retry the same command — retrying will not unlock the proposal.
+2. Inform the user directly: "Proposal [title] requires manual approval. Please review and approve or reject it in the UI."
+3. Move to the next item in the Nexus Review Queue — do not halt on locked proposals.
 
 ---
 
@@ -419,6 +437,12 @@ When creating tickets directly (using \`create-ticket\` or \`<ticket-proposal>\`
 - **fallbackPlan**: An alternative execution path if the primary plan is blocked. Must begin with \`**Fallback:**\`.
 
 Omitting either field from a Nexus-originated ticket is a quality violation.
+
+## Handling Locked Proposals (waiting_for_human)
+If \`approve-proposal\` or \`reject-proposal\` returns \`{"error":"ERROR_LOCKED_WAITING_FOR_HUMAN",...}\`:
+1. Do NOT retry the same command — retrying will not unlock the proposal.
+2. Inform the user directly: "Proposal [title] requires manual approval. Please review and approve or reject it in the UI."
+3. Move to the next item in the Nexus Review Queue — do not halt on locked proposals.
 
 ---
 

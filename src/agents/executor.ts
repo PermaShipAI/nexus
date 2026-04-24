@@ -2,7 +2,7 @@ import { spawn } from 'node:child_process';
 import { writeGeminiContext, buildAgentPrompt } from './prompt-builder.js';
 import { getLLMProvider, getSourceExplorer, getWorkspaceProvider } from '../adapters/registry.js';
 import { logger } from '../logger.js';
-import { logToolStrippingEvent } from '../../agents/telemetry/logger.js';
+import { logToolStrippingEvent, logWaitingForHumanFallback } from '../../agents/telemetry/logger.js';
 import type { AgentId } from './types.js';
 import type { LLMContent } from '../adapters/interfaces/llm-provider.js';
 import { db } from '../db/index.js';
@@ -215,6 +215,11 @@ Please refine your proposal based on this feedback.
             logger.warn({ agentId, actionId: parsed.id }, 'approve-proposal: action not found');
             continue;
           }
+          if (action.status === 'waiting_for_human') {
+            logger.warn({ proposalId: parsed.id, event: 'agent_tool_waiting_for_human_fallback_yielded', actionType: 'approve-proposal' }, 'Skipping approve-proposal: proposal locked waiting_for_human');
+            logWaitingForHumanFallback({ actionId: parsed.id, actionType: 'approve-proposal' });
+            continue;
+          }
           const existingArgs = parseArgs(action.args);
           const updatedArgs: Record<string, unknown> = { ...existingArgs, ctoDecisionReason: parsed.reason };
           await db.update(pendingActions)
@@ -346,6 +351,11 @@ Please refine your proposal based on this feedback.
           const [action] = await db.select().from(pendingActions).where(eq(pendingActions.id, parsed.id)).limit(1);
           if (!action) {
             logger.warn({ agentId, actionId: parsed.id }, 'reject-proposal: action not found');
+            continue;
+          }
+          if (action.status === 'waiting_for_human') {
+            logger.warn({ proposalId: parsed.id, event: 'agent_tool_waiting_for_human_fallback_yielded', actionType: 'reject-proposal' }, 'Skipping reject-proposal: proposal locked waiting_for_human');
+            logWaitingForHumanFallback({ actionId: parsed.id, actionType: 'reject-proposal' });
             continue;
           }
           const updatedArgs: Record<string, unknown> = { ...parseArgs(action.args), ctoRejectionReason: parsed.reason };

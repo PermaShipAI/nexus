@@ -60,3 +60,10 @@ export const confirmationResolutionLatencyMs = new Histogram({
   buckets: [1000, 5000, 10000, 30000, 60000, 120000, 300000],
   registers: [registry],
 });
+
+export const agentToolWaitingForHumanFallbackTotal = new Counter({
+  name: 'agent_tool_waiting_for_human_fallback_yielded_total',
+  help: 'Number of times an agent tool intercepted a waiting_for_human lock and yielded a fallback instead of mutating',
+  labelNames: ['action_type'] as const,
+  registers: [registry],
+});
