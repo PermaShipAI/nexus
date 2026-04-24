@@ -32,6 +32,7 @@ import {
   isNexusReportsEnabled,
 } from '../settings/service.js';
 import { getTenantResolver } from '../adapters/registry.js';
+import { sendAdminClarificationMessage } from './interactions.js';
 
 export interface UnifiedMessage {
   id: string;
@@ -373,6 +374,12 @@ async function handleIncomingMessage(message: UnifiedMessage, isPublic: boolean,
   // If the router returned a fallback clarification, send it to the user and stop
   const clarificationRoute = routes.find(r => r.isFallback && r.fallbackMessage && !r.isCircuitBroken);
   if (clarificationRoute) {
+    if (clarificationRoute.intent === 'AdministrativeAction') {
+      const settingKey = clarificationRoute.extractedEntities?.['settingKey'] as string | undefined;
+      await sendAdminClarificationMessage(message.channelId, orgId, message.authorId, settingKey);
+      return;
+    }
+
     await getCommunicationAdapter().sendMessage(
       {
         content: `**[System]** ${clarificationRoute.fallbackMessage}`,

@@ -200,6 +200,46 @@ server.post('/v1/webhooks/comms', async (request) => {
         }
 
         const actionId = verification.actionId;
+
+        const isAdminAction = custom_id.startsWith('admin_en:') || custom_id.startsWith('admin_dis:') || custom_id.startsWith('admin_cancel:');
+        if (isAdminAction) {
+          const { getClarification, deleteClarification } = await import('../bot/admin-clarification-store.js');
+          const { setSetting } = await import('../settings/service.js');
+          const clarId = actionId!;
+          const clarification = getClarification(clarId);
+
+          if (!clarification) {
+            logger.info({ event: 'admin_clarify_expired', clarId }, 'Admin clarification expired or already used');
+            return;
+          }
+
+          if (user?.id !== clarification.authorId) {
+            logger.warn({ event: 'admin_clarify_unauthorized_user', clarId, clickerId: user?.id, authorId: clarification.authorId });
+            return;
+          }
+
+          deleteClarification(clarId);
+
+          if (custom_id.startsWith('admin_cancel:')) {
+            logger.info({ event: 'admin_clarify_button_clicked', action: 'cancel', settingKey: clarification.settingKey });
+            return;
+          }
+
+          const isEnable = custom_id.startsWith('admin_en:');
+          const settingKey = clarification.settingKey!;
+          await setSetting(settingKey, isEnable, clarification.orgId, user?.username ?? 'unknown');
+
+          logger.info({ event: 'admin_clarify_button_clicked', action: isEnable ? 'enable' : 'disable', settingKey, orgId: clarification.orgId });
+
+          const label = isEnable ? 'enabled' : 'disabled';
+          const displayName = settingKey === 'autonomous_mode' ? 'Autonomous Mode' : settingKey === 'nexus_reports' ? 'Nexus Reports' : settingKey;
+          await getCommunicationAdapter().sendMessage(
+            { content: `**[System]** **${displayName}** has been **${label}** by ${user?.username ?? 'a user'}.` },
+            { thread_id: clarification.channelId, orgId: clarification.orgId },
+          );
+          return;
+        }
+
         const isApprove = custom_id.startsWith('approve_tool:');
 
         if (!actionId) return;
