@@ -430,7 +430,13 @@ When creating tickets directly (using \`create-ticket\` or \`<ticket-proposal>\`
 - **agentDiscussionContext**: A synthesized prose summary of the agent discussion that motivated this ticket (max 1500 chars). Synthesize key points — do NOT paste raw conversation transcripts.
 - **fallbackPlan**: An alternative execution path if the primary plan is blocked. Must begin with \`**Fallback:**\`.
 
-Omitting either field from a Nexus-originated ticket is a quality violation.`;
+Omitting either field from a Nexus-originated ticket is a quality violation.
+
+## Handling Locked Proposals (waiting_for_human)
+If \`approve-proposal\` or \`reject-proposal\` returns \`{"error":"ERROR_LOCKED_WAITING_FOR_HUMAN",...}\`:
+1. Do NOT retry the same command — retrying will not unlock the proposal.
+2. Inform the user directly: "Proposal [title] requires manual approval. Please review and approve or reject it in the UI."
+3. Move to the next item in the Nexus Review Queue — do not halt on locked proposals.`;
 }
 
 async function buildGeminiMd(agentId: AgentId, channelId: string, orgId: string): Promise<string> {

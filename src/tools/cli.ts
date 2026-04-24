@@ -21,6 +21,7 @@ import { createTicketProposal } from './proposal-service.js';
 import { getTenantResolver } from '../adapters/registry.js';
 import { updateProjectSettings } from './update_project_settings.js';
 import { queryDecisionLog } from './query_decision_log.js';
+import { logWaitingForHumanFallback } from '../../agents/telemetry/logger.js';
 
 const COMMANDS = [
   'create-task',
@@ -334,8 +335,17 @@ async function run(): Promise<void> {
       const [action] = await db.select().from(pendingActions).where(eq(pendingActions.id, actionId)).limit(1);
       if (!action) printError('Action not found');
 
+      if (action.status === 'waiting_for_human') {
+        logWaitingForHumanFallback({ actionId, actionType: 'approve-proposal' });
+        printResult({
+          error: 'ERROR_LOCKED_WAITING_FOR_HUMAN',
+          message: 'This proposal is locked pending manual human approval and cannot be processed automatically. Inform the user they must approve or reject it directly in the UI. Do not retry this action.',
+        });
+        break;
+      }
+
       const args = { ...((action.args as any) || {}), ctoDecisionReason: reason };
-      
+
       await db.update(pendingActions)
         .set({ 
           status: 'pending', // Promoted to human review
@@ -365,6 +375,15 @@ async function run(): Promise<void> {
 
       const [action] = await db.select().from(pendingActions).where(eq(pendingActions.id, actionId)).limit(1);
       if (!action) printError('Action not found');
+
+      if (action.status === 'waiting_for_human') {
+        logWaitingForHumanFallback({ actionId, actionType: 'reject-proposal' });
+        printResult({
+          error: 'ERROR_LOCKED_WAITING_FOR_HUMAN',
+          message: 'This proposal is locked pending manual human approval and cannot be processed automatically. Inform the user they must approve or reject it directly in the UI. Do not retry this action.',
+        });
+        break;
+      }
 
       const args = { ...((action.args as any) || {}), ctoRejectionReason: reason };
 

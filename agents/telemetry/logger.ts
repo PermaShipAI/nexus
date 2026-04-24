@@ -5,6 +5,7 @@ import {
   routingLatencyMs,
   routingConfidenceScore,
   routingInjectionBlockedTotal,
+  agentToolWaitingForHumanFallbackTotal,
 } from '../../src/telemetry/prometheus.js';
 
 export const logger = pino({
@@ -60,6 +61,11 @@ export function logAdrEvent(
   details: Record<string, unknown>,
 ): void {
   logger.info({ event, ...details });
+}
+
+export function logWaitingForHumanFallback(details: { actionId: string; actionType: string }): void {
+  logger.info({ event: 'agent_tool_waiting_for_human_fallback_yielded', ...details });
+  agentToolWaitingForHumanFallbackTotal.inc({ action_type: details.actionType });
 }
 
 export function logEvalMetrics(metrics: {
