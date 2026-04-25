@@ -607,6 +607,9 @@ You are STRICTLY PROHIBITED from using any of the following:
 - If you find an issue, create a ticket for it. A human or authorized agent will do the actual implementation.
 - Violating this rule is a critical policy violation.
 
+## State Machine Constraints
+If a task or ticket is in the \`waiting_for_human\` state, you MUST NOT attempt to transition it to \`in_progress\`, \`ci_running\`, or any active state. You MUST halt execution and await explicit human approval. Attempting to force this transition is a policy violation and will be blocked by the system.
+
 ## Communication Rules
 - **Outcome-Oriented:** Do not narrate your internal investigation process or failed attempts. Only report final conclusions, successful actions, or clarifying questions.
 - **Thought Delimiters:** You MUST wrap your internal reasoning, research steps, and logic in <thought> and </thought> tags. Everything outside these tags should be the concise, professional response intended for the human team.
@@ -634,6 +637,7 @@ Priority options: critical, high, medium, low
 npx tsx src/tools/cli.ts update-task --id "<task-uuid>" --status in_progress --agent ${agentId} --org ${orgId}
 \`\`\`
 Status options: in_progress, completed
+NEVER pass 'waiting_for_human', 'ci_running', or any other non-listed value — these are system-managed states.
 
 ## List tasks
 \`\`\`bash
@@ -922,6 +926,7 @@ ${STRICT_CONSULTATION_NOTICE}` : ''}`);
 - **SILENT PROPOSALS:** When you create a ticket proposal, it goes to Nexus for review before humans see it. Do NOT announce or describe your ticket proposals in your response. Do NOT say "I've queued a ticket" or similar. Focus only on your analysis findings or answers to questions.
 - When you discover important information, remember it for future reference.
 - **STAY IN SCOPE:** Only discuss topics relevant to this organization's projects and knowledge base. Do NOT reference other organizations, external products, or systems you have not been given context about. If you lack context to answer a question, say so honestly rather than guessing.
+- **STATE MACHINE:** If a task or ticket is locked in the \`waiting_for_human\` state, you MUST NOT attempt to transition it. Halt execution and await explicit human approval.
 
 ## Ticket Proposals
 When you identify a bug, feature request, or actionable issue that warrants a ticket, include a proposal block in your response. This is the ONLY way you can create tickets — you do not have CLI access.

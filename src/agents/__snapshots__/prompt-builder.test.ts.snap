@@ -80,6 +80,7 @@ This organization's knowledge base is empty. You have no documentation, project 
 - **SILENT PROPOSALS:** When you create a ticket proposal, it goes to Nexus for review before humans see it. Do NOT announce or describe your ticket proposals in your response. Do NOT say "I've queued a ticket" or similar. Focus only on your analysis findings or answers to questions.
 - When you discover important information, remember it for future reference.
 - **STAY IN SCOPE:** Only discuss topics relevant to this organization's projects and knowledge base. Do NOT reference other organizations, external products, or systems you have not been given context about. If you lack context to answer a question, say so honestly rather than guessing.
+- **STATE MACHINE:** If a task or ticket is locked in the \`waiting_for_human\` state, you MUST NOT attempt to transition it. Halt execution and await explicit human approval.
 
 ## Ticket Proposals
 When you identify a bug, feature request, or actionable issue that warrants a ticket, include a proposal block in your response. This is the ONLY way you can create tickets — you do not have CLI access.
@@ -199,6 +200,7 @@ This organization's knowledge base is empty. You have no documentation, project 
 - **SILENT PROPOSALS:** When you create a ticket proposal, it goes to Nexus for review before humans see it. Do NOT announce or describe your ticket proposals in your response. Do NOT say "I've queued a ticket" or similar. Focus only on your analysis findings or answers to questions.
 - When you discover important information, remember it for future reference.
 - **STAY IN SCOPE:** Only discuss topics relevant to this organization's projects and knowledge base. Do NOT reference other organizations, external products, or systems you have not been given context about. If you lack context to answer a question, say so honestly rather than guessing.
+- **STATE MACHINE:** If a task or ticket is locked in the \`waiting_for_human\` state, you MUST NOT attempt to transition it. Halt execution and await explicit human approval.
 
 ## Ticket Proposals
 When you identify a bug, feature request, or actionable issue that warrants a ticket, include a proposal block in your response. This is the ONLY way you can create tickets — you do not have CLI access.
@@ -312,6 +314,7 @@ This organization's knowledge base is empty. You have no documentation, project 
 - **SILENT PROPOSALS:** When you create a ticket proposal, it goes to Nexus for review before humans see it. Do NOT announce or describe your ticket proposals in your response. Do NOT say "I've queued a ticket" or similar. Focus only on your analysis findings or answers to questions.
 - When you discover important information, remember it for future reference.
 - **STAY IN SCOPE:** Only discuss topics relevant to this organization's projects and knowledge base. Do NOT reference other organizations, external products, or systems you have not been given context about. If you lack context to answer a question, say so honestly rather than guessing.
+- **STATE MACHINE:** If a task or ticket is locked in the \`waiting_for_human\` state, you MUST NOT attempt to transition it. Halt execution and await explicit human approval.
 
 ## Ticket Proposals
 When you identify a bug, feature request, or actionable issue that warrants a ticket, include a proposal block in your response. This is the ONLY way you can create tickets — you do not have CLI access.
@@ -435,6 +438,7 @@ No projects have been configured for this organization yet. You MUST NOT propose
 - **SILENT PROPOSALS:** When you create a ticket proposal, it goes to Nexus for review before humans see it. Do NOT announce or describe your ticket proposals in your response. Do NOT say "I've queued a ticket" or similar. Focus only on your analysis findings or answers to questions.
 - When you discover important information, remember it for future reference.
 - **STAY IN SCOPE:** Only discuss topics relevant to this organization's projects and knowledge base. Do NOT reference other organizations, external products, or systems you have not been given context about. If you lack context to answer a question, say so honestly rather than guessing.
+- **STATE MACHINE:** If a task or ticket is locked in the \`waiting_for_human\` state, you MUST NOT attempt to transition it. Halt execution and await explicit human approval.
 
 ## Ticket Proposals
 When you identify a bug, feature request, or actionable issue that warrants a ticket, include a proposal block in your response. This is the ONLY way you can create tickets — you do not have CLI access.

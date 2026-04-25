@@ -5,6 +5,7 @@ import {
   routingLatencyMs,
   routingConfidenceScore,
   routingInjectionBlockedTotal,
+  agentInvalidStateTransitionBlockedTotal,
 } from '../../src/telemetry/prometheus.js';
 
 export const logger = pino({
@@ -49,6 +50,19 @@ export function logSecurityEvent(
 
 export function logToolStrippingEvent(details: { agentId: string; orgId: string; intent: string }): void {
   logger.info({ event: 'tool_stripping_activated', ...details });
+}
+
+export function logInvalidStateTransitionBlocked(details: {
+  agentId?: string;
+  orgId: string;
+  taskId: string;
+  requestedStatus: string;
+}): void {
+  logger.warn({ event: 'agent_invalid_state_transition_blocked', ...details });
+  agentInvalidStateTransitionBlockedTotal.inc({
+    agent_id: details.agentId ?? 'unknown',
+    requested_status: details.requestedStatus,
+  });
 }
 
 export function logAdministrativeIntentClarificationEvent(details: { confidenceScore: number; channelId: string; userName: string }): void {

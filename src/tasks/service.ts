@@ -2,6 +2,9 @@ import { eq, and, isNull } from 'drizzle-orm';
 import { db } from '../db/index.js';
 import { tasks, type Task, type NewTask } from '../db/schema.js';
 import type { AgentId } from '../agents/types.js';
+import { logInvalidStateTransitionBlocked } from '../../agents/telemetry/logger.js';
+
+const VALID_TASK_UPDATE_STATUSES = ['approved', 'in_progress', 'completed'] as const;
 
 export async function createTask(input: {
   orgId: string;
@@ -30,6 +33,14 @@ export async function updateTaskStatus(
   status: 'approved' | 'in_progress' | 'completed',
   assignedAgentId?: AgentId,
 ): Promise<Task | null> {
+  // Fail-fast: block system-managed states (e.g. waiting_for_human, ci_running)
+  if (!VALID_TASK_UPDATE_STATUSES.includes(status as (typeof VALID_TASK_UPDATE_STATUSES)[number])) {
+    logInvalidStateTransitionBlocked({ orgId, taskId, requestedStatus: status as string, agentId: assignedAgentId });
+    throw new Error(
+      `Blocked: '${status}' is a system-managed state. Tasks in 'waiting_for_human' require explicit human approval. Halt execution and await approval.`,
+    );
+  }
+
   const values: Partial<NewTask> = {
     status,
     updatedAt: new Date(),
