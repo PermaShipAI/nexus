@@ -13,7 +13,8 @@ export interface RouterResult {
   blockReason?: string;
 }
 
-const CONFIRMATION_REQUIRED_INTENTS = ['ManageProject', 'ProposeTask', 'AccessSecrets', 'DestructiveAction'];
+const CONFIRMATION_REQUIRED_INTENTS = ['ManageProject', 'ProposeTask', 'AccessSecrets', 'DestructiveAction', 'AdministrativeAction'];
+export const ADMIN_LOW_CONFIDENCE_REASON = 'AdminLowConfidence' as const;
 const CLARIFICATION_MESSAGE =
   "I'm not sure what you'd like to do. Could you clarify?";
 const TIMEOUT_MESSAGE =
@@ -53,12 +54,13 @@ export async function routeIntent(
 
   // Low confidence — ask for clarification
   if (intent.confidenceScore < 0.6) {
+    const blockReason = intent.kind === 'AdministrativeAction' ? ADMIN_LOW_CONFIDENCE_REASON : 'LowConfidence';
     logRoutingDecision({
       messageId: context.messageId,
       intentKind: intent.kind,
       confidenceScore: intent.confidenceScore,
       allowed: false,
-      blockReason: 'LowConfidence',
+      blockReason,
       channelType: context.channelType,
       platform: context.platform,
       durationMs,
@@ -68,7 +70,7 @@ export async function routeIntent(
       allowed: false,
       intent,
       userMessage: CLARIFICATION_MESSAGE,
-      blockReason: 'LowConfidence',
+      blockReason,
     };
   }
 

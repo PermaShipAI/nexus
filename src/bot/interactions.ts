@@ -126,6 +126,41 @@ export async function sendAutonomousNotification(
   }
 }
 
+export async function sendAdminConfirmationMessage(
+  channelId: string,
+  confirmationId: string,
+  actionDescription: string,
+  orgId?: string,
+): Promise<void> {
+  const unifiedChannelId = channelId.includes(':') ? channelId : `discord:${channelId}`;
+  const content = '**Admin Action Required — Human Confirmation**';
+  const embedTitle = 'Confirm Administrative Action';
+  const embedDescription =
+    `**Action:** ${actionDescription}\n\n` +
+    `**Consequence:** This will modify system settings and affects AI system behaviour immediately.\n\n` +
+    `*This request expires in 15 minutes. After expiry, you must re-issue the command.*`;
+
+  const result = await getCommunicationAdapter().sendMessage({
+    content,
+    embed_title: embedTitle,
+    embed_description: embedDescription,
+    components: [
+      { type: 'button', custom_id: buildSignedCustomId('confirm_admin', confirmationId), label: 'Confirm', style: 'success' },
+      { type: 'button', custom_id: buildSignedCustomId('cancel_admin', confirmationId), label: 'Cancel', style: 'danger' },
+    ],
+  }, { channel_id: unifiedChannelId, orgId });
+
+  if (!result.success) {
+    // Fallback: text-based challenge-response
+    await getCommunicationAdapter().sendMessage({
+      content: `**Admin Action Required** — ${actionDescription}\n\n` +
+        `Interactive buttons are unavailable on this platform.\n` +
+        `Reply with \`CONFIRM ${confirmationId.slice(0, 8)}\` to proceed, or \`CANCEL\` to abort.\n` +
+        `*This request expires in 15 minutes.*`,
+    }, { channel_id: unifiedChannelId, orgId });
+  }
+}
+
 export async function sendPublicChannelAlerts(
   kind: string,
   title: string,
