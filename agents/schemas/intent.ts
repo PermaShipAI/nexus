@@ -40,6 +40,7 @@ export const IntentKindEnum = z.enum([
   'ManageProject',
   'AccessSecrets',
   'DestructiveAction',
+  'AdministrativeAction',
   'Unknown',
   'StrictConsultation',
 ]);
@@ -67,6 +68,7 @@ export const geminiResponseSchema = {
         'ManageProject',
         'AccessSecrets',
         'DestructiveAction',
+        'AdministrativeAction',
         'Unknown',
         'StrictConsultation',
       ],

@@ -22,10 +22,11 @@ export function createPendingConfirmation(params: {
   extractedEntities: Record<string, unknown>;
   targetAgent: string;
   confirmationPrompt: string;
+  ttlMs?: number;
 }): PendingConfirmation {
   const id = randomUUID();
   const createdAt = new Date();
-  const expiresAt = new Date(createdAt.getTime() + 5 * 60 * 1000);
+  const expiresAt = new Date(createdAt.getTime() + (params.ttlMs ?? 5 * 60 * 1000));
   const confirmation: PendingConfirmation = { id, ...params, createdAt, expiresAt };
   store.set(id, confirmation);
   return confirmation;
@@ -46,6 +47,7 @@ export function buildConfirmationPrompt(intent: string, entities: Record<string,
     ManageProject: "modify project configuration",
     AccessSecrets: "access credentials or secrets",
     DestructiveAction: "perform a destructive operation",
+    AdministrativeAction: "modify system administration settings",
   };
   const action = actionMap[intent] ?? intent;
   const details = Object.values(entities).join(": ");

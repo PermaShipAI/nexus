@@ -28,7 +28,7 @@ import { LocalProjectRegistry } from './project-registry.js';
 import { cloneRepo } from './git-clone.js';
 import { config } from '../config.js';
 import { isAutonomousMode, setSetting, getSetting } from '../settings/service.js';
-import { routeIntent } from '../intent/router.js';
+import { routeIntent, ADMIN_LOW_CONFIDENCE_REASON } from '../intent/router.js';
 import {
   createPendingConfirmation,
   getPendingConfirmation,
@@ -213,6 +213,7 @@ export async function createLocalServer(_port = 3000) {
           extractedEntities: routeResult.intent.params as Record<string, unknown>,
           targetAgent: 'nexus',
           confirmationPrompt,
+          ttlMs: routeResult.intent.kind === 'AdministrativeAction' ? 15 * 60 * 1000 : undefined,
         });
         pendingIntentMessages.set(confirmation.id, unified);
 
@@ -231,6 +232,18 @@ export async function createLocalServer(_port = 3000) {
           prompt: confirmationPrompt,
         });
         return { success: true, messageId, requiresConfirmation: true, confirmationId: confirmation.id };
+      } else if (!routeResult.allowed && routeResult.blockReason === ADMIN_LOW_CONFIDENCE_REASON) {
+        const { logGuardrailEvent } = await import('../telemetry/index.js');
+        logGuardrailEvent({
+          event: 'administrative_intent_clarification_triggered',
+          channelId: LOCAL_CHANNEL_ID,
+          userId: 'local-user',
+          intentKind: routeResult.intent?.kind ?? 'AdministrativeAction',
+          confidenceScore: routeResult.intent?.confidenceScore ?? 0,
+          messageId,
+        });
+        broadcast('clarification_required', { prompt: routeResult.userMessage, intent: routeResult.intent?.kind });
+        return { success: true, messageId, requiresClarification: true };
       }
     } catch (err) {
       logger.debug({ err }, 'Intent routing skipped — processing message directly');
@@ -395,6 +408,9 @@ export async function createLocalServer(_port = 3000) {
     const pending = getPendingConfirmation(id);
     if (!pending) {
       return { success: false, error: 'Confirmation expired or not found' };
+    }
+    if (pending.expiresAt <= new Date()) {
+      return { success: false, error: 'Request expired. Please try again.' };
     }
     const unified = pendingIntentMessages.get(id);
     if (!unified) {
