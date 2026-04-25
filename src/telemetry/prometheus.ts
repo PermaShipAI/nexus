@@ -60,3 +60,10 @@ export const confirmationResolutionLatencyMs = new Histogram({
   buckets: [1000, 5000, 10000, 30000, 60000, 120000, 300000],
   registers: [registry],
 });
+
+export const agentInvalidStateTransitionBlockedTotal = new Counter({
+  name: 'agent_invalid_state_transition_blocked_total',
+  help: 'Total number of agent-initiated task state transitions blocked due to forbidden system-managed states',
+  labelNames: ['agent_id', 'requested_status'] as const,
+  registers: [registry],
+});
