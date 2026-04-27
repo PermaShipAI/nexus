@@ -650,6 +650,10 @@ npx tsx src/tools/cli.ts create-ticket --kind bug --title "Ticket title" --descr
 - Kind options: bug, feature, task
 - \`--agent-discussion-context\` (optional): Synthesized prose summary of agent discussion context (max 1500 chars). Do NOT paste raw transcripts.
 - \`--fallback-plan\` (optional): Alternative execution path if the primary plan is blocked. Must begin with \`**Fallback:**\`.
+- \`--measurement-plan\` (required): How success will be measured. Must be specific and observable. Example: "P95 latency drops below 200ms on /api/search as measured by Datadog over a 1h post-deploy window."
+- \`--stop-conditions\` (required): Conditions under which this work should be stopped or rolled back. Example: "Roll back if error rate exceeds 1% or any smoke test fails in staging."
+- \`--knowledge-base-references\` (optional): Links or references to relevant knowledge base articles or documentation.
+- \`--required-reviewers\` (optional): Reviewer handles or agent IDs that must review this ticket before merge.
 
 ## Add shared knowledge (visible to all agents)
 \`\`\`bash
@@ -940,6 +944,10 @@ Fields:
 - **repoKey** (optional): Repository key. Omit to let the system resolve it automatically from the project configuration.
 - **agentDiscussionContext** (optional): Synthesized prose summary of agent discussion relevant to this ticket. Max 1500 characters. Do NOT paste raw transcripts — synthesize key points only.
 - **fallbackPlan** (optional): Alternative execution path if the primary plan is blocked. MUST begin with \`**Fallback:**\`.
+- **measurementPlan** (required): How success will be measured. Must be a specific, observable metric. Example: "P95 latency drops below 200ms on /api/search as measured by Datadog over a 1h post-deploy window."
+- **stopConditions** (required): Conditions under which this work should be stopped or rolled back. Example: "Roll back if error rate exceeds 1% or any smoke test fails in staging."
+- **knowledgeBaseReferences** (optional): Links or references to relevant knowledge base articles or documentation.
+- **requiredReviewers** (optional): Reviewer handles or agent IDs that must review this ticket before merge.
 
 You may include multiple proposal blocks. Do NOT mention the proposals in your conversational response — they are processed silently.${agentId === 'nexus' ? `
 
