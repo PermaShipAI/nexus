@@ -21,6 +21,7 @@ import { createTicketProposal } from './proposal-service.js';
 import { getTenantResolver } from '../adapters/registry.js';
 import { updateProjectSettings } from './update_project_settings.js';
 import { queryDecisionLog } from './query_decision_log.js';
+import { updateTaskStatus as updateTaskStatusGateGuard } from '../../agents/src/tools/update_task_status.js';
 
 const COMMANDS = [
   'create-task',
@@ -46,6 +47,7 @@ const COMMANDS = [
   'request-admin-action',
   'query-decision-log',
   'execute-agent',
+  'update_task_status',
 ] as const;
 
 
@@ -578,6 +580,27 @@ async function run(): Promise<void> {
         value: parsedValue,
         confirmation_token: str(values['confirmation-token']),
         agentId: validateAgentId(requireArg(values, 'agent')),
+      });
+      printResult(result);
+      break;
+    }
+
+    case 'update_task_status': {
+      const { values } = parseArgs({
+        args: rawArgs,
+        options: {
+          'ticket-id': { type: 'string' },
+          'new-status': { type: 'string' },
+          agent: { type: 'string' },
+          channel: { type: 'string' },
+        },
+        strict: false,
+      });
+      const result = await updateTaskStatusGateGuard({
+        ticketId: requireArg(values, 'ticket-id'),
+        newStatus: requireArg(values, 'new-status'),
+        agentId: requireArg(values, 'agent'),
+        channelId: requireArg(values, 'channel'),
       });
       printResult(result);
       break;
