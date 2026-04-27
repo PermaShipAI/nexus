@@ -60,3 +60,10 @@ export const confirmationResolutionLatencyMs = new Histogram({
   buckets: [1000, 5000, 10000, 30000, 60000, 120000, 300000],
   registers: [registry],
 });
+
+export const agentBlockedByHumanGateTotal = new Counter({
+  name: 'nexus_ux_agent_blocked_by_human_gate_total',
+  help: 'Number of agent state mutation attempts blocked by waiting_for_human gate',
+  labelNames: ['agent_id', 'ticket_id'] as const,
+  registers: [registry],
+});

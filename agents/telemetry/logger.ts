@@ -5,7 +5,9 @@ import {
   routingLatencyMs,
   routingConfidenceScore,
   routingInjectionBlockedTotal,
+  agentBlockedByHumanGateTotal,
 } from '../../src/telemetry/prometheus.js';
+import { logGuardrailEvent } from '../../src/telemetry/index.js';
 
 export const logger = pino({
   level: process.env.LOG_LEVEL ?? 'info',
@@ -60,6 +62,11 @@ export function logAdrEvent(
   details: Record<string, unknown>,
 ): void {
   logger.info({ event, ...details });
+}
+
+export function logAgentBlockedByHumanGate(ticketId: string, agentId: string, channelId: string): void {
+  logGuardrailEvent({ event: 'agent_blocked_by_human_gate', ticketId, agentId, channelId });
+  agentBlockedByHumanGateTotal.inc({ agent_id: agentId, ticket_id: ticketId });
 }
 
 export function logEvalMetrics(metrics: {

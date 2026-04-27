@@ -5,6 +5,7 @@ import { logger } from '../logger.js';
 import { parseArgs } from '../utils/parse-args.js';
 import { getPublicChannels } from '../settings/service.js';
 import { getCommunicationAdapter } from '../adapters/registry.js';
+import { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle } from 'discord.js';
 import { buildSignedCustomId } from './interaction-crypto.js';
 
 export async function sendApprovalMessage(
@@ -123,6 +124,70 @@ export async function sendAutonomousNotification(
     await db.update(pendingActions)
       .set({ discordMessageId: result.message_id, channelId: unifiedId })
       .where(eq(pendingActions.id, actionId));
+  }
+}
+
+export async function sendHumanGateBlockedNotification(
+  channelId: string,
+  ticketId: string,
+  approvalUrl: string,
+  agentTitle?: string,
+): Promise<void> {
+  const unifiedChannelId = channelId.includes(':') ? channelId : `discord:${channelId}`;
+  try {
+    const embed = new EmbedBuilder()
+      .setTitle('⏸ Task Paused: Manual Review Required')
+      .setColor(0xFFA500)
+      .setDescription(
+        'This task is paused pending mandatory human review. An agent attempted to advance its state but has been blocked.',
+      );
+
+    if (agentTitle) {
+      embed.addFields({ name: 'Agent', value: agentTitle, inline: true });
+    }
+
+    const row = new ActionRowBuilder<ButtonBuilder>().addComponents(
+      new ButtonBuilder()
+        .setLabel('Review in Conductor')
+        .setStyle(ButtonStyle.Link)
+        .setURL(approvalUrl),
+    );
+
+    const result = await getCommunicationAdapter().sendMessage(
+      {
+        embed_title: '⏸ Task Paused: Manual Review Required',
+        embed_description:
+          'This task is paused pending mandatory human review. An agent attempted to advance its state but has been blocked.',
+        components: [
+          {
+            type: 'button',
+            label: 'Review in Conductor',
+            style: 'link',
+            url: approvalUrl,
+          },
+        ],
+      },
+      { channel_id: unifiedChannelId },
+    );
+
+    // Suppress unused variable warnings for embed/row — kept for documentation of intended discord.js shape
+    void embed;
+    void row;
+
+    if (!result.success) {
+      logger.error({ ticketId, error: result.error }, 'sendHumanGateBlockedNotification: embed send failed, falling back to plain-text');
+      throw new Error(result.error ?? 'send failed');
+    }
+  } catch (err) {
+    try {
+      logger.error({ ticketId, err }, 'sendHumanGateBlockedNotification: falling back to plain-text');
+      await getCommunicationAdapter().sendMessage(
+        { content: `⏸ Task paused pending human review. Approve at: ${approvalUrl} — Ticket: ${ticketId}` },
+        { channel_id: unifiedChannelId },
+      );
+    } catch (fallbackErr) {
+      logger.error({ ticketId, fallbackErr }, 'sendHumanGateBlockedNotification: plain-text fallback also failed');
+    }
   }
 }
 
