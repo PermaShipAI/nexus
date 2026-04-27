@@ -28,6 +28,14 @@ export interface TicketProposalInput {
   agentDiscussionContext?: string;
   /** Fallback plan for non-primary execution paths. Must begin with "**Fallback:**". */
   fallbackPlan?: string;
+  /** How the success of this ticket will be measured. Required for all proposals. */
+  measurementPlan: string;
+  /** Conditions under which this work should be stopped or rolled back. Required for all proposals. */
+  stopConditions: string;
+  /** References to knowledge base articles or documentation relevant to this ticket. */
+  knowledgeBaseReferences?: string;
+  /** Reviewer handles or agent IDs that must review this ticket before merge. */
+  requiredReviewers?: string;
 }
 
 export interface TicketProposalResult {
@@ -191,11 +199,48 @@ Where <index> is the 1-based index number from the EXISTING TICKETS list.`;
 }
 
 /**
+ * Validate that a ticket proposal meets the Nexus Definition of Done (DoD) preflight schema.
+ * Returns an error message string if validation fails, or null if the proposal is valid.
+ * Emits agent_tool_schema_rejection_nexus_dod telemetry on failure.
+ */
+function validateNexusDoD(input: TicketProposalInput): string | null {
+  const missingFields: string[] = [];
+
+  if (!input.measurementPlan || typeof input.measurementPlan !== 'string' || input.measurementPlan.trim().length === 0) {
+    missingFields.push('measurementPlan');
+  }
+  if (!input.stopConditions || typeof input.stopConditions !== 'string' || input.stopConditions.trim().length === 0) {
+    missingFields.push('stopConditions');
+  }
+
+  if (missingFields.length === 0) return null;
+
+  logGuardrailEvent({
+    event: 'agent_tool_schema_rejection_nexus_dod',
+    orgId: input.orgId,
+    agentId: input.agentId,
+    title: input.title,
+    missingFields,
+  });
+
+  const fieldExamples: Record<string, string> = {
+    measurementPlan: 'e.g. "P95 latency drops below 200ms on the /api/search endpoint as measured by Datadog over a 1h window post-deploy"',
+    stopConditions: 'e.g. "Roll back if error rate exceeds 1% or if any smoke test fails in staging"',
+  };
+
+  const fieldDescriptions = missingFields
+    .map(f => `- **${f}**: ${fieldExamples[f] ?? 'a non-empty string is required'}`)
+    .join('\n');
+
+  return `NEXUS DOD SCHEMA REJECTION: The following required fields are missing or empty:\n${fieldDescriptions}\n\nAdd these fields to your ticket proposal and resubmit. Every proposal must include measurable success criteria and explicit stop conditions.`;
+}
+
+/**
  * Create a ticket proposal: resolves project, checks duplicates, inserts into pendingActions.
  * Shared by both CLI path and fast path (structured output).
  */
 export async function createTicketProposal(input: TicketProposalInput): Promise<TicketProposalResult> {
-  const { orgId, kind, title, description, project, priority, agentId, source, channelId, agentDiscussionContext, fallbackPlan } = input;
+  const { orgId, kind, title, description, project, priority, agentId, source, channelId, agentDiscussionContext, fallbackPlan, measurementPlan, stopConditions, knowledgeBaseReferences, requiredReviewers } = input;
   let { repoKey } = input;
 
   // Enforce fallback plan for idle-sourced (agentops/system-initiated) proposals.
@@ -210,6 +255,16 @@ export async function createTicketProposal(input: TicketProposalInput): Promise<
     };
   }
 
+  // Nexus DoD preflight validation — fires before duplicate detection to fail fast
+  const dodError = validateNexusDoD(input);
+  if (dodError) {
+    logger.warn({ agentId, orgId, title }, 'nexus_dod_schema_rejection: proposal rejected — measurementPlan or stopConditions missing');
+    return {
+      success: false,
+      message: dodError,
+    };
+  }
+
   // Compose enriched description from base description + optional sections
   let fullDescription = description;
   if (agentDiscussionContext) {
@@ -218,6 +273,18 @@ export async function createTicketProposal(input: TicketProposalInput): Promise<
   if (fallbackPlan) {
     const normalizedFallback = fallbackPlan.startsWith('**Fallback:**') ? fallbackPlan : `**Fallback:** ${fallbackPlan}`;
     fullDescription += `\n\n## Fallback Plan\n${normalizedFallback}`;
+  }
+  if (measurementPlan) {
+    fullDescription += `\n\n## Measurement Plan\n${measurementPlan}`;
+  }
+  if (stopConditions) {
+    fullDescription += `\n\n## Stop Conditions\n${stopConditions}`;
+  }
+  if (knowledgeBaseReferences) {
+    fullDescription += `\n\n## Knowledge Base References\n${knowledgeBaseReferences}`;
+  }
+  if (requiredReviewers) {
+    fullDescription += `\n\n## Required Reviewers\n${requiredReviewers}`;
   }
 
   if (fullDescription.length > 4000) {
@@ -282,7 +349,7 @@ export async function createTicketProposal(input: TicketProposalInput): Promise<
     };
   }
 
-  logger.info({ agentId, hasDiscussionContext: !!agentDiscussionContext, hasFallbackPlan: !!fallbackPlan }, 'ticket_proposal.enriched');
+  logger.info({ agentId, hasDiscussionContext: !!agentDiscussionContext, hasFallbackPlan: !!fallbackPlan, hasMeasurementPlan: !!measurementPlan, hasStopConditions: !!stopConditions }, 'ticket_proposal.enriched');
 
   // Store resolved project-id and repo-key in args for the approval flow
   const resolvedArgs = {

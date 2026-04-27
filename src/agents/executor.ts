@@ -193,6 +193,10 @@ Please refine your proposal based on this feedback.
             channelId,
             agentDiscussionContext: parsed.agentDiscussionContext,
             fallbackPlan: parsed.fallbackPlan,
+            measurementPlan: parsed.measurementPlan ?? '',
+            stopConditions: parsed.stopConditions ?? '',
+            knowledgeBaseReferences: parsed.knowledgeBaseReferences,
+            requiredReviewers: parsed.requiredReviewers,
           });
           logger.info({ agentId, result }, 'Fast path ticket proposal processed');
         } catch (err) {

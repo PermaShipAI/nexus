@@ -194,6 +194,10 @@ async function run(): Promise<void> {
           agent: { type: 'string' },
           'agent-discussion-context': { type: 'string' },
           'fallback-plan': { type: 'string' },
+          'measurement-plan': { type: 'string' },
+          'stop-conditions': { type: 'string' },
+          'knowledge-base-references': { type: 'string' },
+          'required-reviewers': { type: 'string' },
         },
         strict: false,
       });
@@ -208,6 +212,10 @@ async function run(): Promise<void> {
         agentId: validateAgentId(requireArg(values, 'agent')),
         agentDiscussionContext: str(values['agent-discussion-context']),
         fallbackPlan: str(values['fallback-plan']),
+        measurementPlan: str(values['measurement-plan']) ?? '',
+        stopConditions: str(values['stop-conditions']) ?? '',
+        knowledgeBaseReferences: str(values['knowledge-base-references']),
+        requiredReviewers: str(values['required-reviewers']),
       });
       printResult(result);
       break;
