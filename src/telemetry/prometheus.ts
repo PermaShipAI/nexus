@@ -60,3 +60,10 @@ export const confirmationResolutionLatencyMs = new Histogram({
   buckets: [1000, 5000, 10000, 30000, 60000, 120000, 300000],
   registers: [registry],
 });
+
+export const agentStatusUpdate409Total = new Counter({
+  name: 'telemetry_agent_status_update_409_total',
+  help: 'Total 409 state conflict intercepts from agent update_task_status calls',
+  labelNames: ['agent_id'] as const,
+  registers: [registry],
+});
