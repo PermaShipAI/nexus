@@ -7,7 +7,7 @@ await loadAdapters();
 await initializeAgents();
 
 import { parseArgs } from 'node:util';
-import { createTask, updateTaskStatus, listTasks } from '../tasks/service.js';
+import { createTask, updateTaskStatus, listTasks, StateConflictError } from '../tasks/service.js';
 import { addSharedKnowledge, addAgentMemory, queryKnowledge } from '../knowledge/service.js';
 import { getProjectRegistry, getTicketTracker } from '../adapters/registry.js';
 import { db } from '../db/index.js';
@@ -21,6 +21,7 @@ import { createTicketProposal } from './proposal-service.js';
 import { getTenantResolver } from '../adapters/registry.js';
 import { updateProjectSettings } from './update_project_settings.js';
 import { queryDecisionLog } from './query_decision_log.js';
+import { logStateConflict409 } from '../../agents/telemetry/logger.js';
 
 const COMMANDS = [
   'create-task',
@@ -152,13 +153,31 @@ async function run(): Promise<void> {
         strict: false,
       });
       const orgId = requireArg(values, 'org');
-      const task = await updateTaskStatus(
-        requireArg(values, 'id'),
-        orgId,
-        requireArg(values, 'status') as any,
-        str(values.agent) ? validateAgentId(str(values.agent)!) : undefined,
-      );
-      printResult({ success: !!task, task });
+      try {
+        const task = await updateTaskStatus(
+          requireArg(values, 'id'),
+          orgId,
+          requireArg(values, 'status') as any,
+          str(values.agent) ? validateAgentId(str(values.agent)!) : undefined,
+        );
+        printResult({ success: !!task, task });
+      } catch (err) {
+        if (err instanceof StateConflictError) {
+          logStateConflict409({
+            taskId: requireArg(values, 'id'),
+            agentId: str(values.agent),
+            fromStatus: err.fromStatus,
+            toStatus: err.toStatus,
+          });
+          printResult({
+            success: false,
+            error: 'STATE_LOCKED',
+            message: 'Ticket is locked in waiting_for_human for mandatory review. Stop retrying. Notify the user.',
+          });
+        } else {
+          throw err;
+        }
+      }
       break;
     }
 

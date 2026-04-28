@@ -5,6 +5,7 @@ import {
   routingLatencyMs,
   routingConfidenceScore,
   routingInjectionBlockedTotal,
+  agentStatusUpdate409Total,
 } from '../../src/telemetry/prometheus.js';
 
 export const logger = pino({
@@ -60,6 +61,11 @@ export function logAdrEvent(
   details: Record<string, unknown>,
 ): void {
   logger.info({ event, ...details });
+}
+
+export function logStateConflict409(details: { taskId: string; agentId?: string; fromStatus: string; toStatus: string }): void {
+  logger.warn({ event: 'agent_status_update_409', ...details });
+  agentStatusUpdate409Total.inc({ agent_id: details.agentId ?? 'unknown' });
 }
 
 export function logEvalMetrics(metrics: {

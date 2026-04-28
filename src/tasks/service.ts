@@ -3,6 +3,18 @@ import { db } from '../db/index.js';
 import { tasks, type Task, type NewTask } from '../db/schema.js';
 import type { AgentId } from '../agents/types.js';
 
+export class StateConflictError extends Error {
+  constructor(public fromStatus: string, public toStatus: string) {
+    super(`Invalid transition from '${fromStatus}' to '${toStatus}'`);
+    this.name = 'StateConflictError';
+  }
+}
+
+const VALID_TRANSITIONS: Record<string, string[]> = {
+  approved: ['in_progress'],
+  in_progress: ['completed'],
+};
+
 export async function createTask(input: {
   orgId: string;
   title: string;
@@ -30,6 +42,14 @@ export async function updateTaskStatus(
   status: 'approved' | 'in_progress' | 'completed',
   assignedAgentId?: AgentId,
 ): Promise<Task | null> {
+  const existing = await getTaskById(taskId, orgId);
+  if (existing) {
+    const allowed = VALID_TRANSITIONS[existing.status];
+    if (!allowed || !allowed.includes(status)) {
+      throw new StateConflictError(existing.status, status);
+    }
+  }
+
   const values: Partial<NewTask> = {
     status,
     updatedAt: new Date(),
