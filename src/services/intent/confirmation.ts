@@ -40,6 +40,10 @@ export function removePendingConfirmation(id: string): void {
 }
 
 export function buildConfirmationPrompt(intent: string, entities: Record<string, unknown>): string {
+  if (intent === 'AdministrativeAction') {
+    const action = Object.values(entities).join(' ') || 'change a system setting';
+    return `I understood you want to ${action}. Please confirm.`;
+  }
   const actionMap: Record<string, string> = {
     ProposeTask: "create a new task",
     RequestReview: "request a review",

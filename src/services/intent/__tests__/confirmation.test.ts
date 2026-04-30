@@ -136,4 +136,16 @@ describe("buildConfirmationPrompt", () => {
     const prompt = buildConfirmationPrompt("SomeUnknownIntent", {});
     expect(prompt).toBe("Do you want me to SomeUnknownIntent? [Confirm] [Cancel]");
   });
+
+  it("formats AdministrativeAction with entities matching the required pattern", () => {
+    const prompt = buildConfirmationPrompt("AdministrativeAction", { settingKey: "autonomous_mode" });
+    expect(prompt).toMatch(/^I understood you want to .*\. Please confirm\.$/);
+    expect(prompt).toContain("autonomous_mode");
+  });
+
+  it("formats AdministrativeAction without entities using default action text", () => {
+    const prompt = buildConfirmationPrompt("AdministrativeAction", {});
+    expect(prompt).toMatch(/^I understood you want to .*\. Please confirm\.$/);
+    expect(prompt).toContain("change a system setting");
+  });
 });

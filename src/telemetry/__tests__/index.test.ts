@@ -101,4 +101,34 @@ describe("logGuardrailEvent", () => {
     expect(logger.info).toHaveBeenCalledOnce();
     expect(logger.info).toHaveBeenCalledWith(event);
   });
+
+  it("calls logger.info for ux_admin_intent_confirmation_displayed event", () => {
+    const event = {
+      event: "ux_admin_intent_confirmation_displayed" as const,
+      intent: "AdministrativeAction",
+      channelId: "c5",
+      userId: "u5",
+      confirmationId: "conf-admin-001",
+    };
+
+    logGuardrailEvent(event);
+
+    expect(logger.info).toHaveBeenCalledOnce();
+    expect(logger.info).toHaveBeenCalledWith(event);
+  });
+
+  it("calls logger.info for administrative_intent_clarification_triggered event", () => {
+    const event = {
+      event: "administrative_intent_clarification_triggered" as const,
+      channelId: "c6",
+      userId: "u6",
+      confidenceScore: 0.70,
+      messageId: "msg-admin-001",
+    };
+
+    logGuardrailEvent(event);
+
+    expect(logger.info).toHaveBeenCalledOnce();
+    expect(logger.info).toHaveBeenCalledWith(event);
+  });
 });

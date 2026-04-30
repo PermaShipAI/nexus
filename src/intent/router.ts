@@ -4,6 +4,7 @@ import { classifyIntent } from './classifier.js';
 import { checkPermission } from '../rbac/checker.js';
 import { checkChannelSafety } from '../middleware/channel_safety.js';
 import { logRoutingDecision } from './telemetry.js';
+import { logGuardrailEvent } from '../telemetry/index.js';
 
 export interface RouterResult {
   allowed: boolean;
@@ -13,7 +14,7 @@ export interface RouterResult {
   blockReason?: string;
 }
 
-const CONFIRMATION_REQUIRED_INTENTS = ['ManageProject', 'ProposeTask', 'AccessSecrets', 'DestructiveAction'];
+const CONFIRMATION_REQUIRED_INTENTS = ['ManageProject', 'ProposeTask', 'AccessSecrets', 'DestructiveAction', 'AdministrativeAction'];
 const CLARIFICATION_MESSAGE =
   "I'm not sure what you'd like to do. Could you clarify?";
 const TIMEOUT_MESSAGE =
@@ -69,6 +70,34 @@ export async function routeIntent(
       intent,
       userMessage: CLARIFICATION_MESSAGE,
       blockReason: 'LowConfidence',
+    };
+  }
+
+  // AdministrativeAction with medium confidence — require clarification before proceeding
+  if (intent.kind === 'AdministrativeAction' && intent.confidenceScore >= 0.6 && intent.confidenceScore <= 0.8) {
+    logGuardrailEvent({
+      event: 'administrative_intent_clarification_triggered',
+      channelId: context.channelType,
+      userId: context.platformUserId,
+      confidenceScore: intent.confidenceScore,
+      messageId: context.messageId,
+    });
+    logRoutingDecision({
+      messageId: context.messageId,
+      intentKind: intent.kind,
+      confidenceScore: intent.confidenceScore,
+      allowed: false,
+      blockReason: 'AdminLowConfidence',
+      channelType: context.channelType,
+      platform: context.platform,
+      durationMs,
+      timestamp: new Date().toISOString(),
+    });
+    return {
+      allowed: false,
+      intent,
+      userMessage: CLARIFICATION_MESSAGE,
+      blockReason: 'AdminLowConfidence',
     };
   }
 
