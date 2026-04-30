@@ -210,14 +210,25 @@ export async function createTicketProposal(input: TicketProposalInput): Promise<
     };
   }
 
+  // Enforce explicit fallback label. When a fallbackPlan is supplied it MUST begin
+  // with "**Fallback:**" so downstream subagents can reliably distinguish the fallback
+  // path from the primary plan and avoid executing both simultaneously.
+  if (fallbackPlan && !fallbackPlan.startsWith('**Fallback:**')) {
+    logGuardrailEvent({ event: 'agentops_fallback_malformed', orgId, agentId, title });
+    logger.warn({ agentId, orgId, title }, 'agentops_fallback_malformed: proposal rejected — fallbackPlan must begin with "**Fallback:**"');
+    return {
+      success: false,
+      message: 'fallbackPlan must begin with "**Fallback:**". Rewrite the fallback plan with that explicit label (e.g. "**Fallback:** If X fails, do Y instead.").',
+    };
+  }
+
   // Compose enriched description from base description + optional sections
   let fullDescription = description;
   if (agentDiscussionContext) {
     fullDescription += `\n\n## Agent Discussion Context\n${agentDiscussionContext}`;
   }
   if (fallbackPlan) {
-    const normalizedFallback = fallbackPlan.startsWith('**Fallback:**') ? fallbackPlan : `**Fallback:** ${fallbackPlan}`;
-    fullDescription += `\n\n## Fallback Plan\n${normalizedFallback}`;
+    fullDescription += `\n\n## Fallback Plan\n${fallbackPlan}`;
   }
 
   if (fullDescription.length > 4000) {
