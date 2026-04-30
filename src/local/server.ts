@@ -225,6 +225,16 @@ export async function createLocalServer(_port = 3000) {
           confirmationId: confirmation.id,
         });
 
+        if (routeResult.intent.kind === 'AdministrativeAction') {
+          logGuardrailEvent({
+            event: 'ux_admin_intent_confirmation_displayed',
+            intent: confirmation.intent,
+            channelId: confirmation.channelId,
+            userId: confirmation.userId,
+            confirmationId: confirmation.id,
+          });
+        }
+
         broadcast('confirmation_required', {
           confirmationId: confirmation.id,
           intent: routeResult.intent.kind,
