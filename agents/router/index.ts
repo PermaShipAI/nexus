@@ -92,6 +92,26 @@ const AGENT_IDS = [
   'nexus',
 ];
 
+// Lazily initialised so env vars and mocks are resolved at call time, not at
+// module load.  vi.resetModules() in tests clears this along with the module.
+let _geminiModel: ReturnType<
+  InstanceType<typeof GoogleGenerativeAI>['getGenerativeModel']
+> | null = null;
+
+function getGeminiModel() {
+  if (!_geminiModel) {
+    const ai = new GoogleGenerativeAI(process.env.GEMINI_API_KEY ?? '');
+    _geminiModel = ai.getGenerativeModel({
+      model: 'gemini-2.0-flash',
+      generationConfig: {
+        responseMimeType: 'application/json',
+        responseSchema: INTENT_RESPONSE_JSON_SCHEMA as any,
+      },
+    });
+  }
+  return _geminiModel;
+}
+
 const PARSE_ERROR_FALLBACK = (content: string): RouteResult => ({
   agentId: 'none',
   intent: 'GeneralInquiry',
@@ -141,14 +161,7 @@ export async function routeMessage(
 
     try {
       const prompt = buildIntentPrompt(content, AGENT_IDS);
-      const ai = new GoogleGenerativeAI(process.env.GEMINI_API_KEY ?? '');
-      const model = ai.getGenerativeModel({
-        model: 'gemini-3-flash-preview',
-        generationConfig: {
-          responseMimeType: 'application/json',
-          responseSchema: INTENT_RESPONSE_JSON_SCHEMA as any,
-        },
-      });
+      const model = getGeminiModel();
 
       const response = await model.generateContent(prompt);
       const text = response.response.text();
