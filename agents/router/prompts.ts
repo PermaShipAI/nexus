@@ -103,11 +103,6 @@ Input: "give me your opinion on this approach but please don't take any actions 
 Input: "I only want advice here — do not approve anything, reject anything, or create any proposals"
 {"intent":"StrictConsultation","confidenceScore":0.96,"targetAgent":"nexus","extractedEntities":{},"reasoning":"User explicitly forbids approval, rejection, and proposal creation, requesting purely advisory output.","needsCodeAccess":false,"isStrategySession":false,"requiresConfirmation":false}
 
-User message:
-"""
-${content}
-"""
-
 Return ONLY valid JSON. Do not include markdown fences or any other text.`;
 }
 
