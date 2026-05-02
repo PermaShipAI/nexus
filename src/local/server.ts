@@ -207,6 +207,7 @@ export async function createLocalServer(_port = 3000) {
           routeResult.intent.params as Record<string, unknown>,
         );
         const confirmation = createPendingConfirmation({
+          orgId: 'local',
           channelId: LOCAL_CHANNEL_ID,
           userId: 'local-user',
           intent: routeResult.intent.kind,

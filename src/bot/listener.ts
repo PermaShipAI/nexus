@@ -1,5 +1,7 @@
 import { sendAgentMessage } from './formatter.js';
 export { sendAgentMessage };
+import { createPendingConfirmation } from '../services/intent/confirmation.js';
+import { sendAdminConfirmationMessage } from './interactions.js';
 import { checkDestructiveAction } from '../core/guardrails/DestructiveActionGuard.js';
 import { checkForInjection } from '../core/guardrails/prompt_injection.js';
 import { validateImageAttachments, type ImageAttachment } from '../core/guardrails/image_guard.js';
@@ -392,6 +394,42 @@ async function handleIncomingMessage(message: UnifiedMessage, isPublic: boolean,
     : [{ agentId: 'nexus' as const, intent: 'fallback', subMessage: message.content, confidenceScore: 0.5, reasoning: 'No agent matched, falling back to nexus', extractedEntities: {}, needsCodeAccess: false, isStrategySession: false, isFallback: true }];
 
   for (const route of effectiveRoutes) {
+    if (
+      route.intent === 'AdministrativeAction' &&
+      route.requiresConfirmation === true &&
+      route.confidenceScore > 0.8
+    ) {
+      const settingKey = route.extractedEntities?.settingKey as string | undefined;
+      const settingValue = route.extractedEntities?.settingValue;
+      if (settingKey && settingValue !== undefined) {
+        const confirmation = createPendingConfirmation({
+          orgId,
+          channelId: message.channelId,
+          userId: message.authorId,
+          intent: route.intent,
+          extractedEntities: route.extractedEntities,
+          targetAgent: route.agentId,
+          confirmationPrompt: `Set ${settingKey} to ${settingValue}`,
+        });
+        await sendAdminConfirmationMessage({
+          channelId: message.channelId,
+          confirmationId: confirmation.id,
+          settingKey,
+          settingValue: String(settingValue),
+          orgId,
+        });
+        logGuardrailEvent({
+          event: 'administrative_intent_confirmation_displayed',
+          channelId: message.channelId,
+          userId: message.authorId,
+          confirmationId: confirmation.id,
+          settingKey,
+          settingValue: String(settingValue),
+        });
+        continue; // skip executeAgent for this route
+      }
+    }
+
     const agent = getAgent(route.agentId as AgentId);
     if (!agent) continue;
 
