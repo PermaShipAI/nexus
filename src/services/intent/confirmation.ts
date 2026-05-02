@@ -3,6 +3,7 @@ import { logGuardrailEvent } from "../../telemetry/index.js";
 
 export interface PendingConfirmation {
   id: string;
+  orgId: string;
   channelId: string;
   userId: string;
   intent: string;
@@ -16,6 +17,7 @@ export interface PendingConfirmation {
 const store = new Map<string, PendingConfirmation>();
 
 export function createPendingConfirmation(params: {
+  orgId: string;
   channelId: string;
   userId: string;
   intent: string;

@@ -126,6 +126,43 @@ export async function sendAutonomousNotification(
   }
 }
 
+export async function sendAdminConfirmationMessage({
+  channelId,
+  confirmationId,
+  settingKey,
+  settingValue,
+  orgId,
+}: {
+  channelId: string;
+  confirmationId: string;
+  settingKey: string;
+  settingValue: string;
+  orgId: string;
+}): Promise<void> {
+  const unifiedChannelId = channelId.includes(':') ? channelId : `discord:${channelId}`;
+
+  await getCommunicationAdapter().sendMessage({
+    content: `⚠️ **Administrative Action Requested**\nSetting \`${settingKey}\` → \`${settingValue}\``,
+    components: [
+      {
+        type: 'button',
+        custom_id: buildSignedCustomId('admin_confirm', confirmationId),
+        label: `Confirm: ${settingKey} = ${settingValue}`,
+        style: 'success',
+      },
+      {
+        type: 'button',
+        custom_id: buildSignedCustomId('admin_cancel', confirmationId),
+        label: 'Cancel',
+        style: 'danger',
+      },
+    ],
+  }, {
+    channel_id: unifiedChannelId,
+    orgId,
+  });
+}
+
 export async function sendPublicChannelAlerts(
   kind: string,
   title: string,

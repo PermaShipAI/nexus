@@ -15,6 +15,10 @@ import { getTicketTracker, getCommunicationAdapter } from '../adapters/registry.
 import { parseArgs } from '../utils/parse-args.js';
 import { internalChatRoutes } from './internal-chat-routes.js';
 import { verifySignedCustomId } from '../bot/interaction-crypto.js';
+import { getPendingConfirmation, removePendingConfirmation } from '../services/intent/confirmation.js';
+import { handleCancel } from '../services/intent/confirmation-handler.js';
+import { setSetting } from '../settings/service.js';
+import { logGuardrailEvent } from '../telemetry/index.js';
 
 export const server = Fastify({
   logger: false, // We use our own pino logger
@@ -200,9 +204,63 @@ server.post('/v1/webhooks/comms', async (request) => {
         }
 
         const actionId = verification.actionId;
-        const isApprove = custom_id.startsWith('approve_tool:');
 
         if (!actionId) return;
+
+        const isAdminConfirm = custom_id.startsWith('admin_confirm:');
+        const isAdminCancel = custom_id.startsWith('admin_cancel:');
+
+        if (isAdminConfirm || isAdminCancel) {
+          const confirmation = getPendingConfirmation(actionId);
+          if (!confirmation) {
+            await getCommunicationAdapter().sendMessage(
+              { content: '⏱️ Confirmation has expired. Please re-issue the command.' },
+              { thread_id: body.thread_id || body.channel_id, orgId: undefined },
+            );
+            return;
+          }
+          const interactingUserId = user?.id;
+          if (interactingUserId && confirmation.userId !== interactingUserId) {
+            logGuardrailEvent({
+              event: 'confirmation_identity_mismatch',
+              confirmationId: actionId,
+              expectedUserId: confirmation.userId,
+              actualUserId: interactingUserId,
+              channelId: confirmation.channelId,
+              intent: confirmation.intent,
+            });
+            return;
+          }
+          if (isAdminConfirm) {
+            const settingKey = confirmation.extractedEntities.settingKey as string;
+            const settingValue = confirmation.extractedEntities.settingValue;
+            const elapsedMs = Date.now() - confirmation.createdAt.getTime();
+            removePendingConfirmation(actionId);
+            await setSetting(settingKey, settingValue, confirmation.orgId, confirmation.userId);
+            logGuardrailEvent({
+              event: 'administrative_intent_executed',
+              channelId: confirmation.channelId,
+              userId: confirmation.userId,
+              confirmationId: actionId,
+              settingKey,
+              settingValue: String(settingValue),
+              elapsedMs,
+            });
+            await getCommunicationAdapter().sendMessage(
+              { content: `✅ Setting \`${settingKey}\` updated to \`${settingValue}\`.` },
+              { thread_id: body.thread_id || body.channel_id, orgId: confirmation.orgId },
+            );
+          } else {
+            await handleCancel(actionId);
+            await getCommunicationAdapter().sendMessage(
+              { content: '❌ Administrative action cancelled.' },
+              { thread_id: body.thread_id || body.channel_id, orgId: confirmation.orgId },
+            );
+          }
+          return;
+        }
+
+        const isApprove = custom_id.startsWith('approve_tool:');
 
         const [action] = await db
           .select()
