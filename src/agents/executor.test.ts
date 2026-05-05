@@ -3,6 +3,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { executeAgent } from './executor.js';
 import { logger } from '../logger.js';
 import { createTicketProposal } from '../tools/proposal-service.js';
+import { getMissionItem, updateMissionItem } from '../missions/service.js';
 
 const mockGenerateText = vi.fn();
 const mockGenerateWithTools = vi.fn();
@@ -58,6 +59,9 @@ vi.mock('../db/index.js', () => {
 });
 vi.mock('../../agents/telemetry/logger.js', () => ({
   logToolStrippingEvent: vi.fn(),
+}));
+vi.mock('../telemetry/cross-agent.js', () => ({
+  logWaitingForHumanBlock: vi.fn(),
 }));
 vi.mock('../tools/proposal-service.js', () => ({
   createTicketProposal: vi.fn().mockResolvedValue({ success: true }),
@@ -185,6 +189,76 @@ describe('executor', () => {
 
     // Idle-initiated failures should return null (no user-facing error needed)
     expect(result).toBeNull();
+  });
+
+  it('should block approve-proposal when action is in waiting_for_human state', async () => {
+    const actionId = 'action-locked-001';
+    const { db } = await import('../db/index.js');
+    const mockedDb = vi.mocked(db);
+
+    // Override the mock so the action select returns a waiting_for_human record
+    const lockedAction = { id: actionId, status: 'waiting_for_human', agentId: 'sre', channelId: 'chan-1', args: {}, description: 'Locked proposal' };
+    const selectChain = {
+      from: vi.fn().mockReturnThis(),
+      where: vi.fn().mockReturnThis(),
+      limit: vi.fn().mockResolvedValue([lockedAction]),
+    };
+    mockedDb.select.mockReturnValueOnce(selectChain as any);
+    // Second call (checkPendingActions) returns empty
+    mockedDb.select.mockReturnValue({ from: vi.fn().mockReturnThis(), where: vi.fn().mockReturnThis(), limit: vi.fn().mockResolvedValue([]), orderBy: vi.fn().mockReturnThis(), then: (r: any) => Promise.resolve([]).then(r) } as any);
+
+    const { logWaitingForHumanBlock } = await import('../telemetry/cross-agent.js');
+
+    mockGenerateText.mockResolvedValue(`<approve-proposal>{"id":"${actionId}","reason":"Looks good"}</approve-proposal>Some response`);
+
+    const result = await executeAgent({
+      orgId: 'org-1',
+      agentId: 'nexus',
+      channelId: 'chan-1',
+      userId: 'user-1',
+      userName: 'Alice',
+      userMessage: 'Approve this',
+      needsCodeAccess: false,
+    });
+
+    // logWaitingForHumanBlock must have been called
+    expect(vi.mocked(logWaitingForHumanBlock)).toHaveBeenCalledWith(
+      expect.objectContaining({ actionId, actionType: 'approve-proposal' }),
+    );
+    // The block message should be appended to the response
+    expect(result).toContain('[SYSTEM] Action Blocked');
+    expect(result).toContain(actionId);
+    // updateMissionItem and ticket creation should NOT have been called
+    expect(vi.mocked(updateMissionItem)).not.toHaveBeenCalled();
+  });
+
+  it('should block mission-item-complete when item is in waiting_for_human state', async () => {
+    const itemId = 'item-locked-002';
+    const lockedMissionItem = { id: itemId, status: 'waiting_for_human', missionId: 'mission-1', title: 'Locked step' };
+
+    vi.mocked(getMissionItem).mockResolvedValueOnce(lockedMissionItem as any);
+
+    const { logWaitingForHumanBlock } = await import('../telemetry/cross-agent.js');
+
+    mockGenerateText.mockResolvedValue(`<mission-item-complete>{"itemId":"${itemId}","summary":"Done"}</mission-item-complete>All done`);
+
+    const result = await executeAgent({
+      orgId: 'org-1',
+      agentId: 'nexus',
+      channelId: 'chan-1',
+      userId: 'user-1',
+      userName: 'Alice',
+      userMessage: 'Complete this item',
+      needsCodeAccess: false,
+    });
+
+    expect(vi.mocked(logWaitingForHumanBlock)).toHaveBeenCalledWith(
+      expect.objectContaining({ actionId: itemId, actionType: 'mission-item-complete' }),
+    );
+    expect(result).toContain('[SYSTEM] Action Blocked');
+    expect(result).toContain(itemId);
+    // updateMissionItem must NOT be called for a locked item
+    expect(vi.mocked(updateMissionItem)).not.toHaveBeenCalled();
   });
 
   it('should exhaust tool loop budget and force a final text response', async () => {
