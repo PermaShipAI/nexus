@@ -759,7 +759,13 @@ async function executeToolLoop(opts: {
     for (let i = 0; i < result.functionCalls.length; i++) {
       const fc = result.functionCalls[i];
       const callId = (modelParts.find(p => p.functionCall?.name === fc.name) as any)?.functionCall?.id ?? fc.id;
-      const toolResult = await executeCodeTool(fc.name, fc.args, { orgId, explorer });
+      let toolResult: string;
+      try {
+        toolResult = await executeCodeTool(fc.name, fc.args, { orgId, explorer });
+      } catch (err) {
+        logger.error({ err, tool: fc.name, orgId, round }, 'Unhandled tool execution error in executeToolLoop');
+        toolResult = `Tool execution error: ${(err as Error).message}`;
+      }
       responseParts.push({
         functionResponse: { name: fc.name, response: { result: toolResult }, id: callId },
       });
@@ -878,7 +884,13 @@ async function executeDeepResearch(input: ExecuteAgentInput): Promise<string | n
       for (let i = 0; i < result.functionCalls.length; i++) {
         const fc = result.functionCalls[i];
         const callId = (modelParts.find(p => p.functionCall?.name === fc.name) as any)?.functionCall?.id ?? fc.id;
-        const toolResult = await executeDeepTool(fc.name, fc.args, workspace.repoPath);
+        let toolResult: string;
+        try {
+          toolResult = await executeDeepTool(fc.name, fc.args, workspace.repoPath);
+        } catch (err) {
+          logger.error({ err, tool: fc.name, agentId, round }, 'Unhandled tool execution error in deep research');
+          toolResult = `Tool execution error: ${(err as Error).message}`;
+        }
         responseParts.push({
           functionResponse: { name: fc.name, response: { result: toolResult }, id: callId },
         });
