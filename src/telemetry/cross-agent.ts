@@ -51,3 +51,20 @@ export function logCircuitBreakerTripped(details: {
     ...details,
   });
 }
+
+/**
+ * Emitted when an agent attempts to approve or complete an item that is
+ * locked in 'waiting_for_human' state. The action is blocked and this
+ * event is logged for observability.
+ */
+export function logWaitingForHumanBlock(details: {
+  orgId: string;
+  agentId: string;
+  actionId: string;
+  actionType: string;
+}): void {
+  logger.warn({
+    event: 'preflight_waiting_for_human_blocked',
+    ...details,
+  });
+}
