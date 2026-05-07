@@ -201,6 +201,22 @@ export async function createLocalServer(_port = 3000) {
       };
       const routeResult = await routeIntent(content.trim(), requestContext);
 
+      if (!routeResult.allowed) {
+        // Surface the clarification or block message directly; do not process further.
+        localBus.emit('message', {
+          id: `sys-${Date.now()}`,
+          content: `**[System]** ${routeResult.userMessage}`,
+          embed_title: null,
+          embed_description: null,
+          embed_color: null,
+          components: null,
+          actionable_suggestions: null,
+          channel_id: LOCAL_CHANNEL_ID,
+          timestamp: new Date().toISOString(),
+        });
+        return { success: true, messageId };
+      }
+
       if (routeResult.allowed && routeResult.requiresConfirmation && routeResult.intent) {
         const confirmationPrompt = buildConfirmationPrompt(
           routeResult.intent.kind,
