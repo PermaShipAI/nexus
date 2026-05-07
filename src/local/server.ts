@@ -1536,8 +1536,14 @@ You can modify the checklist using these blocks:
   });
 
 
-  /** Health check */
-  server.get('/api/health', async () => ({ status: 'ok' }));
+  /** Health check — includes circuit breaker state for all dependencies */
+  server.get('/api/health', async () => {
+    const { getCircuitBreakerHealth, getDegradedDependencies } = await import('../adapters/circuit-breaker.js');
+    const circuitBreakers = getCircuitBreakerHealth();
+    const degraded = getDegradedDependencies();
+    const status = degraded.length > 0 ? 'degraded' : 'ok';
+    return { status, circuitBreakers };
+  });
 
   /** Prometheus metrics scrape endpoint (unauthenticated, localhost-only by convention) */
   server.get('/metrics', async (_request, reply) => {

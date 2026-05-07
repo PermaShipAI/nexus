@@ -16,9 +16,13 @@ vi.mock('prom-client', () => {
     observe = vi.fn();
   }
 
+  class Gauge {
+    set = vi.fn();
+  }
+
   const collectDefaultMetrics = vi.fn();
 
-  return { Registry, Counter, Histogram, collectDefaultMetrics };
+  return { Registry, Counter, Histogram, Gauge, collectDefaultMetrics };
 });
 
 // Must import AFTER the mock is registered

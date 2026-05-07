@@ -1,4 +1,4 @@
-import { Registry, Counter, Histogram, collectDefaultMetrics } from 'prom-client';
+import { Registry, Counter, Histogram, Gauge, collectDefaultMetrics } from 'prom-client';
 
 /**
  * Singleton Prometheus registry for Nexus Command routing metrics.
@@ -58,5 +58,28 @@ export const confirmationResolutionLatencyMs = new Histogram({
   help: 'Time between confirmation gate shown and user resolution (confirm/cancel) in milliseconds',
   labelNames: ['intent', 'outcome'] as const,
   buckets: [1000, 5000, 10000, 30000, 60000, 120000, 300000],
+  registers: [registry],
+});
+
+// ── Circuit Breaker metrics (Phase 2) ─────────────────────────────────────────
+
+export const circuitBreakerStateGauge = new Gauge({
+  name: 'nexus_circuit_breaker_state',
+  help: 'Current state of each dependency circuit breaker (1 = active state, 0 = inactive)',
+  labelNames: ['dependency', 'state'] as const,
+  registers: [registry],
+});
+
+export const circuitBreakerTripTotal = new Counter({
+  name: 'nexus_circuit_breaker_trip_total',
+  help: 'Total number of times each dependency circuit breaker has tripped to OPEN',
+  labelNames: ['dependency'] as const,
+  registers: [registry],
+});
+
+export const circuitBreakerRejectTotal = new Counter({
+  name: 'nexus_circuit_breaker_reject_total',
+  help: 'Total number of requests rejected because a dependency circuit breaker was OPEN',
+  labelNames: ['dependency'] as const,
   registers: [registry],
 });
