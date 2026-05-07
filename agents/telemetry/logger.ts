@@ -55,6 +55,44 @@ export function logAdministrativeIntentClarificationEvent(details: { confidenceS
   logger.info({ event: 'administrative_intent_clarification_triggered', ...details });
 }
 
+// ── Circuit Breaker telemetry (Phase 2) ──────────────────────────────────────
+
+export function logCircuitBreakerTripped(details: {
+  dependency: string;
+  reason: string;
+  trip_count: number;
+  timestamp: string;
+}): void {
+  logger.warn({ event: 'circuit_breaker_tripped', ...details });
+}
+
+export function logCircuitBreakerReset(details: {
+  dependency: string;
+  downtime_seconds: number;
+  timestamp: string;
+}): void {
+  logger.info({ event: 'circuit_breaker_reset', ...details });
+}
+
+export function logDegradedModeActive(details: {
+  affected_dependencies: string[];
+  timestamp: string;
+}): void {
+  logger.warn({ event: 'degraded_mode_active', ...details });
+}
+
+export function logDegradedModeCleared(details: { timestamp: string }): void {
+  logger.info({ event: 'degraded_mode_cleared', ...details });
+}
+
+export function logRequestRejectedDegraded(details: {
+  dependency: string;
+  endpoint: string;
+  timestamp: string;
+}): void {
+  logger.warn({ event: 'request_rejected_degraded', ...details });
+}
+
 export function logAdrEvent(
   event: 'adr_auto_drafted' | 'adr_human_approved' | 'duplicate_proposal_prevented',
   details: Record<string, unknown>,
