@@ -398,18 +398,45 @@ function appendConfirmationMessage(data) {
   const el = document.createElement('div');
   el.className = 'message system';
   el.dataset.confirmationId = data.confirmationId;
-  el.innerHTML = `
-    <div class="meta"><span class="author">System</span></div>
-    <div class="body">${escapeHtml(data.prompt || 'This action requires your confirmation.')}</div>
-    <div class="proposal-buttons" data-confirmation-id="${escapeHtml(data.confirmationId)}">
-      <button class="btn-approve" onclick="handleIntentConfirm('${escapeHtml(data.confirmationId)}', this)">
-        <span class="btn-main-label">Confirm</span>
-      </button>
-      <button class="btn-reject" onclick="handleIntentCancel('${escapeHtml(data.confirmationId)}', this)">
-        <span class="btn-main-label">Cancel</span>
-      </button>
-    </div>
-  `;
+
+  const meta = document.createElement('div');
+  meta.className = 'meta';
+  const author = document.createElement('span');
+  author.className = 'author';
+  author.textContent = 'System';
+  meta.appendChild(author);
+
+  const body = document.createElement('div');
+  body.className = 'body';
+  body.textContent = data.prompt || 'This action requires your confirmation.';
+
+  const buttons = document.createElement('div');
+  buttons.className = 'proposal-buttons';
+  buttons.dataset.confirmationId = data.confirmationId;
+
+  const confirmBtn = document.createElement('button');
+  confirmBtn.className = 'btn-approve';
+  confirmBtn.onclick = function() { handleIntentConfirm(data.confirmationId, this); };
+  const confirmLabel = document.createElement('span');
+  confirmLabel.className = 'btn-main-label';
+  confirmLabel.textContent = 'Confirm';
+  confirmBtn.appendChild(confirmLabel);
+
+  const cancelBtn = document.createElement('button');
+  cancelBtn.className = 'btn-reject';
+  cancelBtn.onclick = function() { handleIntentCancel(data.confirmationId, this); };
+  const cancelLabel = document.createElement('span');
+  cancelLabel.className = 'btn-main-label';
+  cancelLabel.textContent = 'Cancel';
+  cancelBtn.appendChild(cancelLabel);
+
+  buttons.appendChild(confirmBtn);
+  buttons.appendChild(cancelBtn);
+
+  el.appendChild(meta);
+  el.appendChild(body);
+  el.appendChild(buttons);
+
   messagesEl.appendChild(el);
   scrollToBottom();
 }

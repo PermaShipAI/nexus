@@ -46,7 +46,12 @@ export function buildConfirmationPrompt(intent: string, entities: Record<string,
     ManageProject: "modify project configuration",
     AccessSecrets: "access credentials or secrets",
     DestructiveAction: "perform a destructive operation",
+    AdministrativeAction: "change system setting",
   };
+  if (intent === 'AdministrativeAction' && entities.settingKey) {
+    const val = entities.settingValue ?? 'unknown';
+    return `Do you want me to set ${entities.settingKey} to ${val}? [Confirm] [Cancel]`;
+  }
   const action = actionMap[intent] ?? intent;
   const details = Object.values(entities).join(": ");
   const actionWithDetails = details ? `${action}: '${details}'` : action;
