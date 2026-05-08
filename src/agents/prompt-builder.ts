@@ -209,7 +209,7 @@ async function buildNexusContext(orgId: string): Promise<string[]> {
   if (ctoReviewQueue.length > 0) {
     const lines = ctoReviewQueue.map((a) => {
       const argsJson = JSON.stringify(a.args, null, 2);
-      return `- **[${a.agentId}]** (ID: \`${a.id}\`) ${a.command}: ${a.description}\n  Args: \`\`\`json\n${argsJson}\n\`\`\``;
+      return `- **[${a.agentId}]** (ID: \`${a.id}\`) ${a.command}: ${sanitizeIndirectInput(a.description ?? '')}\n  Args: \`\`\`json\n${argsJson}\n\`\`\``;
     });
     sections.push(`# Nexus Review Queue (Awaiting Your Decision)\nUse \`<approve-proposal>{"id":"<ID>","reason":"..."}</approve-proposal>\` or \`<reject-proposal>{"id":"<ID>","reason":"..."}</reject-proposal>\` for each.\n${lines.join('\n')}`);
   } else {
@@ -234,7 +234,7 @@ async function buildNexusContext(orgId: string): Promise<string[]> {
   if (recentlyPromoted.length > 0) {
     const lines = recentlyPromoted.map((a) => {
       const args = a.args as Record<string, unknown>;
-      return `- **[${a.agentId}]** "${args.title}" — awaiting human approval in Discord`;
+      return `- **[${a.agentId}]** "${sanitizeIndirectInput(String(args.title ?? ''))}" — awaiting human approval in Discord`;
     });
     sections.push(`# Recently Approved by Nexus (Now in Human Review)\n${lines.join('\n')}`);
   }
@@ -249,7 +249,7 @@ async function buildNexusContext(orgId: string): Promise<string[]> {
 
   if (activeTasks.length > 0) {
     const lines = activeTasks.map((t) => {
-      const parts = [`[${t.status}] [${t.priority}] ${t.title} → ${t.assignedAgentId ?? 'unassigned'}`];
+      const parts = [`[${t.status}] [${t.priority}] ${sanitizeIndirectInput(t.title)} → ${t.assignedAgentId ?? 'unassigned'}`];
       if (t.strategyId) parts.push(`strategy: ${t.strategyId}`);
       if (t.parentTaskId) parts.push(`parent: ${t.parentTaskId}`);
       return `- ${parts.join(' | ')}`;
@@ -275,7 +275,7 @@ async function buildNexusContext(orgId: string): Promise<string[]> {
   if (recentDecisions.length > 0) {
     const lines = recentDecisions.map((a) => {
       const resolved = a.resolvedAt ? ` — resolved ${a.resolvedAt.toISOString().slice(0, 10)}` : '';
-      return `- [${a.status.toUpperCase()}] [${a.agentId}] ${a.description}${resolved}`;
+      return `- [${a.status.toUpperCase()}] [${a.agentId}] ${sanitizeIndirectInput(a.description ?? '')}${resolved}`;
     });
     sections.push(`# Recent Decisions (Last 7 Days)\n${lines.join('\n')}`);
   }
@@ -484,7 +484,7 @@ async function buildGeminiMd(agentId: AgentId, channelId: string, orgId: string)
   // Conversation history
   if (conversation.length > 0) {
     const convText = conversation
-      .map((m) => `${sanitizeIndirectInput(m.authorName)}: ${m.content}`)
+      .map((m) => `${sanitizeIndirectInput(m.authorName)}: ${sanitizeIndirectInput(truncateMessageContent(m.content))}`)
       .join('\n');
     sections.push(`# Recent Conversation\n${convText}`);
   }
@@ -805,10 +805,10 @@ export async function buildAgentPrompt(
     sections.push(`# Team Task Board\n${teamText}`);
   }
 
-  // Conversation history — each message is truncated to prevent context-stuffing attacks
+  // Conversation history — each message is truncated and sanitized to prevent injection attacks
   if (conversation.length > 0) {
     const convText = conversation
-      .map((m) => `${sanitizeIndirectInput(m.authorName)}: ${truncateMessageContent(m.content)}`)
+      .map((m) => `${sanitizeIndirectInput(m.authorName)}: ${sanitizeIndirectInput(truncateMessageContent(m.content))}`)
       .join('\n');
     sections.push(`# Recent Conversation\n${convText}`);
   }
