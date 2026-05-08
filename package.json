@@ -111,7 +111,7 @@
     "test:unit": "vitest run --exclude '**/security-integration.test.ts' --exclude '**/integration/**'",
     "test:integration": "vitest run src/local/security-integration.test.ts src/tests/integration/",
     "test:security": "vitest run src/tests/security/",
-    "test:coverage": "vitest run --coverage",
+    "test:coverage": "vitest run --coverage --exclude '**/security-integration.test.ts' --exclude '**/integration/**'",
     "test:eval:security": "tsx agents/tests/evals/run-evals.ts",
     "prepare": "husky"
   },
@@ -139,6 +139,7 @@
   "devDependencies": {
     "@semantic-release/changelog": "^6.0.3",
     "@semantic-release/git": "^10.0.1",
+    "@semantic-release/npm": "^12.0.2",
     "@types/node": "^22.10.0",
     "@typescript-eslint/eslint-plugin": "^8.56.1",
     "@typescript-eslint/parser": "^8.56.1",
