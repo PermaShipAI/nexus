@@ -225,6 +225,18 @@ export async function createLocalServer(_port = 3000) {
           confirmationId: confirmation.id,
         });
 
+        if (routeResult.intent.kind === 'AdministrativeAction') {
+          logGuardrailEvent({
+            event: 'administrative_intent_clarification_triggered',
+            intent: confirmation.intent,
+            channelId: confirmation.channelId,
+            userId: confirmation.userId,
+            confirmationId: confirmation.id,
+            settingKey: routeResult.intent.params?.settingKey,
+            settingValue: routeResult.intent.params?.settingValue,
+          });
+        }
+
         broadcast('confirmation_required', {
           confirmationId: confirmation.id,
           intent: routeResult.intent.kind,
@@ -390,38 +402,49 @@ export async function createLocalServer(_port = 3000) {
   // ── REST: intent confirmation gate ────────────────────────────────────
 
   /** Confirm a pending intent and process the deferred message */
-  server.post('/api/intent/confirm/:id', async (request) => {
-    const { id } = request.params as { id: string };
-    const pending = getPendingConfirmation(id);
-    if (!pending) {
-      return { success: false, error: 'Confirmation expired or not found' };
+  server.post('/api/intent/confirm/:id', async (request, reply) => {
+    try {
+      const { id } = request.params as { id: string };
+      const pending = getPendingConfirmation(id);
+      if (!pending) {
+        reply.status(404);
+        return { error: 'Confirmation not found or expired' };
+      }
+      const unified = pendingIntentMessages.get(id);
+      if (!unified) {
+        reply.status(404);
+        return { error: 'Confirmation not found or expired' };
+      }
+
+      removePendingConfirmation(id);
+      pendingIntentMessages.delete(id);
+
+      const { logGuardrailEvent } = await import('../telemetry/index.js');
+      logGuardrailEvent({
+        event: 'confirmation_gate_confirmed',
+        intent: pending.intent,
+        channelId: pending.channelId,
+        userId: pending.userId,
+        confirmationId: id,
+        elapsedMs: Date.now() - pending.createdAt.getTime(),
+      });
+
+      broadcast('confirmation_resolved', { confirmationId: id, status: 'confirmed' });
+
+      processWebhookMessage(unified).catch(err => {
+        logger.error({ err }, 'Confirmed intent message processing failed');
+        broadcast('error', { message: 'Message processing failed after confirmation' });
+      });
+
+      return { success: true };
+    } catch (err) {
+      if (err instanceof Error && err.message.includes('User identity mismatch')) {
+        reply.status(403);
+        return { error: 'Forbidden: user identity mismatch' };
+      }
+      reply.status(404);
+      return { error: 'Confirmation not found or expired' };
     }
-    const unified = pendingIntentMessages.get(id);
-    if (!unified) {
-      return { success: false, error: 'Pending message not found' };
-    }
-
-    removePendingConfirmation(id);
-    pendingIntentMessages.delete(id);
-
-    const { logGuardrailEvent } = await import('../telemetry/index.js');
-    logGuardrailEvent({
-      event: 'confirmation_gate_confirmed',
-      intent: pending.intent,
-      channelId: pending.channelId,
-      userId: pending.userId,
-      confirmationId: id,
-      elapsedMs: Date.now() - pending.createdAt.getTime(),
-    });
-
-    broadcast('confirmation_resolved', { confirmationId: id, status: 'confirmed' });
-
-    processWebhookMessage(unified).catch(err => {
-      logger.error({ err }, 'Confirmed intent message processing failed');
-      broadcast('error', { message: 'Message processing failed after confirmation' });
-    });
-
-    return { success: true };
   });
 
   /** Cancel a pending intent confirmation */
