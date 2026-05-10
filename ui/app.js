@@ -203,6 +203,9 @@ function connect() {
       case 'confirmation_resolved':
         handleConfirmationResolved(data);
         break;
+      case 'admin_confirmation_resolved':
+        handleAdminConfirmationResolved(data);
+        break;
       case 'error':
         appendSystemMessage(data.message || 'An error occurred');
         break;
@@ -340,7 +343,7 @@ function appendAgentMessage(data) {
   }
 
   // Render approve/reject buttons if components present
-  if (data.components && data.components.length > 0) {
+  if (data.components && data.components.length > 0 && !data.adminConfirmation) {
     let actionId = '';
     // Extract action ID from signed custom_id (format: approve_tool:<actionId>:<sig>)
     for (const comp of data.components) {
@@ -355,7 +358,7 @@ function appendAgentMessage(data) {
       if (comp.type === 'button') {
         const cls = comp.style === 'success' ? 'btn-approve' : comp.style === 'danger' ? 'btn-reject' : '';
         const action = comp.custom_id?.startsWith('approve') ? 'approve' : 'reject';
-        
+
         let subLabelHtml = '';
         let ariaLabel = '';
         if (action === 'approve') {
@@ -364,7 +367,7 @@ function appendAgentMessage(data) {
           subLabelHtml = `<span class="btn-sublabel" aria-hidden="true">${consequenceText}</span>`;
           ariaLabel = ` aria-label="${escapeHtml(comp.label)}. Consequence: ${consequenceText}"`;
         }
-        
+
         html += `<button class="${cls}"${ariaLabel} onclick="handleProposal('${action}', '${escapeHtml(actionId)}', this)">
           <span class="btn-main-label">${escapeHtml(comp.label)}</span>
           ${subLabelHtml}
@@ -374,6 +377,20 @@ function appendAgentMessage(data) {
     html += `</div>`;
   }
 
+  // Render admin confirmation buttons if adminConfirmation payload is present
+  if (data.adminConfirmation) {
+    const ac = data.adminConfirmation;
+    const confirmId = escapeHtml(ac.confirmCustomId);
+    const cancelId = escapeHtml(ac.cancelCustomId);
+    html += `<div class="proposal-buttons" data-admin-confirm-id="${escapeHtml(data.id)}">
+      <button class="btn-approve" onclick="handleAdminConfirm('${confirmId}', this)">
+        <span class="btn-main-label">Confirm</span>
+      </button>
+      <button class="btn-reject" onclick="handleAdminCancel('${cancelId}', this)">
+        <span class="btn-main-label">Cancel</span>
+      </button>
+    </div>`;
+  }
 
   el.innerHTML = html;
   messagesEl.appendChild(el);
@@ -461,6 +478,64 @@ async function handleIntentCancel(confirmationId, btn) {
   } catch {
     appendSystemMessage('Failed to cancel action.');
     if (container) container.querySelectorAll('button').forEach(b => b.disabled = false);
+  }
+}
+
+async function handleAdminConfirm(customId, btn) {
+  if (!customId) return;
+  const container = btn?.closest('.proposal-buttons');
+  if (container) container.querySelectorAll('button').forEach(b => b.disabled = true);
+  if (btn) {
+    const label = btn.querySelector('.btn-main-label');
+    if (label) label.textContent = 'Applying...';
+  }
+  try {
+    const resp = await apiFetch('/api/interactions/admin-confirm', {
+      method: 'POST',
+      body: JSON.stringify({ customId }),
+    });
+    const resData = await resp.json();
+    if (!resp.ok || !resData.success) {
+      appendSystemMessage(`Failed to confirm admin action: ${resData.error || 'Unknown error'}`);
+      if (container) container.querySelectorAll('button').forEach(b => b.disabled = false);
+    }
+    // UI update handled via 'admin_confirmation_resolved' WebSocket event
+  } catch {
+    appendSystemMessage('Failed to confirm admin action.');
+    if (container) container.querySelectorAll('button').forEach(b => b.disabled = false);
+  }
+}
+
+async function handleAdminCancel(customId, btn) {
+  if (!customId) return;
+  const container = btn?.closest('.proposal-buttons');
+  if (container) container.querySelectorAll('button').forEach(b => b.disabled = true);
+  try {
+    const resp = await apiFetch('/api/interactions/admin-cancel', {
+      method: 'POST',
+      body: JSON.stringify({ customId }),
+    });
+    const resData = await resp.json();
+    if (!resp.ok || !resData.success) {
+      appendSystemMessage(`Failed to cancel admin action: ${resData.error || 'Unknown error'}`);
+      if (container) container.querySelectorAll('button').forEach(b => b.disabled = false);
+    }
+    // UI update handled via 'admin_confirmation_resolved' WebSocket event
+  } catch {
+    appendSystemMessage('Failed to cancel admin action.');
+    if (container) container.querySelectorAll('button').forEach(b => b.disabled = false);
+  }
+}
+
+function handleAdminConfirmationResolved(data) {
+  // Hide all pending admin confirmation button groups
+  document.querySelectorAll('.proposal-buttons[data-admin-confirm-id]').forEach(el => {
+    el.style.display = 'none';
+  });
+  if (data.outcome === 'confirmed' && data.settingKey) {
+    appendSystemMessage(`Setting \`${data.settingKey}\` updated to \`${data.settingValue}\`.`);
+  } else if (data.outcome === 'cancelled') {
+    appendSystemMessage('Admin action cancelled.');
   }
 }
 

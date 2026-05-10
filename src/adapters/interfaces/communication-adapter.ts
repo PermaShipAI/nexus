@@ -1,3 +1,10 @@
+export interface AdminConfirmationPayload {
+  confirmCustomId: string;
+  cancelCustomId: string;
+  settingKey: string;
+  settingValue: string;
+}
+
 export interface OutboundMessage {
   content?: string;
   embed_title?: string;
@@ -5,6 +12,7 @@ export interface OutboundMessage {
   embed_color?: number;
   components?: any[];
   actionable_suggestions?: string[];
+  adminConfirmation?: AdminConfirmationPayload;
 }
 
 export interface SendMessageOptions {

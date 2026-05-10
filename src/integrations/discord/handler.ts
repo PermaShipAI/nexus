@@ -133,6 +133,49 @@ export async function handleDiscordMessage(message: Message): Promise<void> {
   );
 }
 
+/**
+ * Handle admin_confirm and admin_cancel button interactions.
+ * Returns true if the interaction was handled, false otherwise.
+ */
+export async function handleAdminButtonInteraction(
+  customId: string,
+  userId: string,
+  replyFn: (content: string) => Promise<void>,
+): Promise<boolean> {
+  const { verifySignedCustomId } = await import('../../bot/interaction-crypto.js');
+  const { setSetting } = await import('../../settings/service.js');
+
+  if (customId.startsWith('admin_confirm:') || customId.startsWith('admin_cancel:')) {
+    const verification = verifySignedCustomId(customId);
+    if (!verification.valid) {
+      await replyFn(`Action failed: invalid or expired confirmation token (${verification.reason}).`);
+      return true;
+    }
+
+    if (customId.startsWith('admin_confirm:')) {
+      const actionId = verification.actionId ?? '';
+      const colonIdx = actionId.indexOf(':');
+      if (colonIdx === -1) {
+        await replyFn('Action failed: malformed action payload.');
+        return true;
+      }
+      const settingKey = actionId.slice(0, colonIdx);
+      const settingValue = actionId.slice(colonIdx + 1);
+      if (!settingKey) {
+        await replyFn('Action failed: empty setting key.');
+        return true;
+      }
+      await setSetting(settingKey, settingValue, 'unknown', `discord:${userId}`);
+      await replyFn(`Setting \`${settingKey}\` updated to \`${settingValue}\`.`);
+    } else {
+      await replyFn('Admin action cancelled.');
+    }
+    return true;
+  }
+
+  return false;
+}
+
 export function createDiscordClient(): Client {
   const client = new Client({
     intents: [

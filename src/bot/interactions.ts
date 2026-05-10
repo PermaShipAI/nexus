@@ -7,6 +7,15 @@ import { getPublicChannels } from '../settings/service.js';
 import { getCommunicationAdapter } from '../adapters/registry.js';
 import { buildSignedCustomId } from './interaction-crypto.js';
 
+export interface AdminConfirmationOptions {
+  channelId: string;
+  settingKey: string;
+  settingValue: string;
+  confidenceScore: number;
+  agentLabel: string;
+  orgId?: string;
+}
+
 export async function sendApprovalMessage(
   channelId: string,
   agentTitle: string,
@@ -140,4 +149,68 @@ export async function sendPublicChannelAlerts(
     const unifiedId = entry.channelId.includes(':') ? entry.channelId : `discord:${entry.channelId}`;
     await getCommunicationAdapter().sendMessage({ content: alertMessage }, { channel_id: unifiedId, orgId });
   }
+}
+
+export async function sendAdminConfirmationMessage(
+  options: AdminConfirmationOptions,
+): Promise<void> {
+  const { channelId, settingKey, settingValue, confidenceScore, agentLabel, orgId } = options;
+
+  // Truncate to 40 chars BEFORE signing
+  const truncatedKey = settingKey.slice(0, 40);
+  const truncatedValue = settingValue.slice(0, 40);
+  const actionPayload = `${truncatedKey}:${truncatedValue}`;
+
+  const confirmId = buildSignedCustomId('admin_confirm', actionPayload);
+  const cancelId = buildSignedCustomId('admin_cancel', actionPayload);
+
+  // Discord custom_id limit is 100 chars; fail-safe if exceeded
+  if (confirmId.length > 100 || cancelId.length > 100) {
+    logger.warn(
+      { settingKey, confirmIdLen: confirmId.length, cancelIdLen: cancelId.length },
+      'admin_confirmation custom_id exceeds 100 chars — skipping confirmation message',
+    );
+    return;
+  }
+
+  logger.info({
+    event: 'admin_confirmation_triggered',
+    settingKey,
+    confidenceScore,
+    channelId,
+    orgId,
+  });
+
+  const unifiedChannelId = channelId.includes(':') ? channelId : `discord:${channelId}`;
+  const content = `**[Admin Confirmation Required]** — Agent **${agentLabel}** wants to update \`${settingKey}\` → \`${settingValue}\` (confidence: ${Math.round(confidenceScore * 100)}%)`;
+
+  await getCommunicationAdapter().sendMessage(
+    {
+      content,
+      components: [
+        {
+          type: 'button',
+          custom_id: confirmId,
+          label: 'Confirm',
+          style: 'success',
+        },
+        {
+          type: 'button',
+          custom_id: cancelId,
+          label: 'Cancel',
+          style: 'danger',
+        },
+      ],
+      adminConfirmation: {
+        confirmCustomId: confirmId,
+        cancelCustomId: cancelId,
+        settingKey,
+        settingValue,
+      },
+    },
+    {
+      channel_id: unifiedChannelId,
+      orgId,
+    },
+  );
 }

@@ -153,5 +153,57 @@ export function createSlackApp(signingSecret: string, botToken: string): App {
     }
   });
 
+  app.action(/^admin_confirm:/, async ({ ack, body, client }: any) => {
+    await ack();
+    const channelId = (body as any).channel?.id;
+    const userId = body.user?.id;
+    const customId = (body as any).actions?.[0]?.action_id ?? '';
+
+    const { verifySignedCustomId } = await import('../../bot/interaction-crypto.js');
+    const { setSetting } = await import('../../settings/service.js');
+
+    const verification = verifySignedCustomId(customId);
+    if (!verification.valid) {
+      if (channelId) {
+        await client.chat.postMessage({ channel: channelId, text: `Action failed: invalid or expired confirmation token (${verification.reason}).` });
+      }
+      return;
+    }
+
+    const actionId = verification.actionId ?? '';
+    const colonIdx = actionId.indexOf(':');
+    if (colonIdx === -1 || !actionId.slice(0, colonIdx)) {
+      if (channelId) await client.chat.postMessage({ channel: channelId, text: 'Action failed: malformed action payload.' });
+      return;
+    }
+
+    const settingKey = actionId.slice(0, colonIdx);
+    const settingValue = actionId.slice(colonIdx + 1);
+    await setSetting(settingKey, settingValue, 'unknown', `slack:${userId}`);
+
+    if (channelId) {
+      await client.chat.postMessage({ channel: channelId, text: `Setting \`${settingKey}\` updated to \`${settingValue}\`.` });
+    }
+  });
+
+  app.action(/^admin_cancel:/, async ({ ack, body, client }: any) => {
+    await ack();
+    const customId = (body as any).actions?.[0]?.action_id ?? '';
+    const channelId = (body as any).channel?.id;
+
+    const { verifySignedCustomId } = await import('../../bot/interaction-crypto.js');
+    const verification = verifySignedCustomId(customId);
+    if (!verification.valid) {
+      if (channelId) {
+        await client.chat.postMessage({ channel: channelId, text: `Action failed: invalid or expired token (${verification.reason}).` });
+      }
+      return;
+    }
+
+    if (channelId) {
+      await client.chat.postMessage({ channel: channelId, text: 'Admin action cancelled.' });
+    }
+  });
+
   return app;
 }

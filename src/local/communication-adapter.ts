@@ -30,6 +30,7 @@ export class LocalCommunicationAdapter implements CommunicationAdapter {
       embed_color: message.embed_color ?? null,
       components: message.components ?? null,
       actionable_suggestions: message.actionable_suggestions ?? null,
+      adminConfirmation: message.adminConfirmation ?? null,
       channel_id: options.thread_id ?? options.channel_id ?? null,
       timestamp: new Date().toISOString(),
     });
