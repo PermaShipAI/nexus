@@ -13,6 +13,8 @@ import { executeAgent } from '../agents/executor.js';
 import { getAgent } from '../agents/registry.js';
 import { logger } from '../logger.js';
 import { config } from '../config.js';
+import { logAdministrativeIntentClarificationEvent } from '../../agents/telemetry/logger.js';
+import { sendAdminConfirmationMessage } from './interactions.js';
 import { synthesizePublicReply } from './sanitizer.js';
 import type { AgentResponse } from './sanitizer.js';
 
@@ -353,10 +355,55 @@ async function handleIncomingMessage(message: UnifiedMessage, isPublic: boolean,
     }
   }
 
-  const routes: RouteResult[] = steeringContext && targetAgentId
+  let routes: RouteResult[] = steeringContext && targetAgentId
     ? [{ agentId: targetAgentId, intent: 'steering', subMessage: message.content, confidenceScore: 1.0, reasoning: 'steering', extractedEntities: {}, needsCodeAccess: true, isStrategySession: false, isFallback: false }]
     : await routeMessage(message.content, message.channelId, userName, orgId);
-  
+
+  // ── AdministrativeAction gate ─────────────────────────────────────────────
+  // For any route classified as AdministrativeAction, either clarify (low
+  // confidence) or show a manual confirmation message (high confidence).
+  {
+    const adminRoutes = routes.filter((r) => r.intent === 'AdministrativeAction');
+    for (const adminRoute of adminRoutes) {
+      if (adminRoute.confidenceScore < 0.6) {
+        // Low-confidence: log clarification event and skip — let router handle fallback
+        logAdministrativeIntentClarificationEvent({
+          confidenceScore: adminRoute.confidenceScore,
+          channelId: message.channelId,
+          userName,
+        });
+      } else {
+        // High-confidence: extract setting key/value from extracted entities
+        const entities = adminRoute.extractedEntities as Record<string, unknown>;
+        const settingKey = typeof entities.settingKey === 'string' ? entities.settingKey : '';
+        const settingValue = typeof entities.settingValue === 'string'
+          ? entities.settingValue
+          : (entities.settingValue !== undefined ? String(entities.settingValue) : '');
+
+        if (settingKey && settingValue) {
+          const agent = getAgent(adminRoute.agentId as AgentId);
+          await sendAdminConfirmationMessage({
+            channelId: message.channelId,
+            settingKey,
+            settingValue,
+            confidenceScore: adminRoute.confidenceScore,
+            agentLabel: agent?.title ?? adminRoute.agentId,
+            orgId,
+          });
+        } else {
+          // Missing entities — fall through to clarification path
+          logAdministrativeIntentClarificationEvent({
+            confidenceScore: adminRoute.confidenceScore,
+            channelId: message.channelId,
+            userName,
+          });
+        }
+      }
+    }
+    // Remove all admin routes — either handled above or deferred to clarification
+    routes = routes.filter((r) => r.intent !== 'AdministrativeAction');
+  }
+
   const strategyRoute = routes.find((r) => r.isStrategySession);
   if (strategyRoute) {
     const strategyResponse = await orchestrateStrategy({

@@ -387,6 +387,79 @@ export async function createLocalServer(_port = 3000) {
   });
 
 
+  // ── REST: admin confirmation gate ────────────────────────────────────────
+
+  /** Confirm an AI-inferred administrative action */
+  server.post('/api/interactions/admin-confirm', async (request, reply) => {
+    const { customId, orgId: bodyOrgId } = request.body as { customId: string; orgId?: string };
+    if (!customId) {
+      reply.status(400);
+      return { success: false, error: 'customId is required' };
+    }
+
+    const { verifySignedCustomId } = await import('../bot/interaction-crypto.js');
+    const verification = verifySignedCustomId(customId);
+    if (!verification.valid) {
+      reply.status(400);
+      return { success: false, error: `Invalid customId: ${verification.reason}` };
+    }
+
+    // actionId format: "<settingKey>:<settingValue>" (both truncated to 40 chars)
+    const actionId = verification.actionId ?? '';
+    const colonIdx = actionId.indexOf(':');
+    if (colonIdx === -1) {
+      reply.status(400);
+      return { success: false, error: 'Malformed actionId: missing colon separator' };
+    }
+    const settingKey = actionId.slice(0, colonIdx);
+    const settingValue = actionId.slice(colonIdx + 1);
+
+    if (!settingKey) {
+      reply.status(400);
+      return { success: false, error: 'Malformed actionId: empty settingKey' };
+    }
+
+    const resolvedOrgId = bodyOrgId ?? LOCAL_ORG_ID;
+    await setSetting(settingKey, settingValue, resolvedOrgId, 'admin-confirm-ui');
+
+    logger.info({
+      event: 'admin_confirmation_resolved',
+      outcome: 'confirmed',
+      settingKey,
+      settingValue,
+      orgId: resolvedOrgId,
+    });
+
+    broadcast('admin_confirmation_resolved', { outcome: 'confirmed', settingKey, settingValue });
+    return { success: true, settingKey, settingValue };
+  });
+
+  /** Cancel an AI-inferred administrative action */
+  server.post('/api/interactions/admin-cancel', async (request, reply) => {
+    const { customId, orgId: bodyOrgId } = request.body as { customId: string; orgId?: string };
+    if (!customId) {
+      reply.status(400);
+      return { success: false, error: 'customId is required' };
+    }
+
+    const { verifySignedCustomId } = await import('../bot/interaction-crypto.js');
+    const verification = verifySignedCustomId(customId);
+    if (!verification.valid) {
+      reply.status(400);
+      return { success: false, error: `Invalid customId: ${verification.reason}` };
+    }
+
+    const resolvedOrgId = bodyOrgId ?? LOCAL_ORG_ID;
+    logger.info({
+      event: 'admin_confirmation_resolved',
+      outcome: 'cancelled',
+      orgId: resolvedOrgId,
+    });
+
+    broadcast('admin_confirmation_resolved', { outcome: 'cancelled' });
+    return { success: true, cancelled: true };
+  });
+
   // ── REST: intent confirmation gate ────────────────────────────────────
 
   /** Confirm a pending intent and process the deferred message */
