@@ -16,7 +16,9 @@ export type GuardrailEvent =
   | { event: "autonomous_mode_gate_shown"; channelId: string; userId: string; settingKey: string }
   | { event: "autonomous_mode_gate_approved"; channelId: string; userId: string; approverId: string; settingKey: string }
   | { event: "autonomous_mode_gate_denied"; channelId: string; userId: string; approverId: string; settingKey: string }
-  | { event: "autonomous_mode_gate_expired"; channelId: string; userId: string; settingKey: string };
+  | { event: "autonomous_mode_gate_expired"; channelId: string; userId: string; settingKey: string }
+  | { event: "ticket_proposal_transcript_rejected_total"; orgId: string; agentId: string; title: string; detectedPatterns: string[] }
+  | { event: "ticket_iteration_budget_applied_total"; orgId: string; agentId: string; title: string; confidenceScore: number };
 
 export function logGuardrailEvent(event: GuardrailEvent): void {
   logger.info(event);

@@ -30,6 +30,77 @@ export interface TicketProposalInput {
   fallbackPlan?: string;
 }
 
+/**
+ * Patterns that indicate raw chat/Discord transcript dumps rather than synthesized context.
+ * These are intentionally narrow to catch the most common transcript formats without
+ * producing false positives on legitimate technical prose.
+ */
+const TRANSCRIPT_PATTERNS: Array<{ pattern: RegExp; name: string }> = [
+  // Discord/Slack agent prefix format: [AgentName]: message
+  { pattern: /(\[[\w\s]+\]:\s*.+\n){2,}/m, name: 'repeated_agent_prefix_lines' },
+  // Timestamp-prefixed chat lines: 12:34 AgentName: message or HH:MM:SS AgentName:
+  { pattern: /(\d{1,2}:\d{2}(?::\d{2})?\s+[\w\s]+:\s*.+\n){2,}/m, name: 'timestamp_chat_lines' },
+  // Username prefix lines: @username: or Username: repeated 3+ times
+  { pattern: /(@[\w.-]+:\s*.+\n){3,}/m, name: 'mention_prefix_lines' },
+  // Raw "Agent said:" log lines repeated
+  { pattern: /(\w+\s+said:\s*.+\n){3,}/m, name: 'said_log_lines' },
+];
+
+/** Hard character limit for agentDiscussionContext to force LLM summarisation. */
+const MAX_DISCUSSION_CONTEXT_CHARS = 1500;
+
+/** Hard character limit for description to prevent runaway token bloat. */
+const MAX_DESCRIPTION_CHARS = 2000;
+
+/** Threshold below which iteration_budget is injected (0–1 scale). */
+const LOW_CONFIDENCE_THRESHOLD = 0.4;
+
+/**
+ * Detect whether a string appears to be a raw chat/Discord transcript.
+ * Returns the list of matched pattern names (empty array = clean).
+ */
+export function detectTranscriptPatterns(text: string): string[] {
+  const matched: string[] = [];
+  for (const { pattern, name } of TRANSCRIPT_PATTERNS) {
+    if (pattern.test(text)) {
+      matched.push(name);
+    }
+  }
+  return matched;
+}
+
+/**
+ * Heuristically score structural confidence of a proposal (0–1).
+ * Lower scores indicate ambiguous or underspecified context that benefits
+ * from a capped iteration budget to prevent runaway orchestrator loops.
+ *
+ * Scoring factors (each deducts from 1.0):
+ *   -0.25 if agentDiscussionContext is absent or very short (<100 chars)
+ *   -0.25 if description is very short (<80 chars)
+ *   -0.25 if title is generic (no file path, ticket ID, or technical noun)
+ *   -0.25 if fallbackPlan is absent
+ */
+export function scoreProposalConfidence(input: Pick<TicketProposalInput, 'title' | 'description' | 'agentDiscussionContext' | 'fallbackPlan'>): number {
+  let score = 1.0;
+
+  if (!input.agentDiscussionContext || input.agentDiscussionContext.trim().length < 100) {
+    score -= 0.25;
+  }
+  if (input.description.trim().length < 80) {
+    score -= 0.25;
+  }
+  // Check for at least one technical signal: file path, version, ID, acronym, code reference
+  const technicalSignalPattern = /(?:src\/|\.ts|\.js|\.py|v\d+\.\d+|\bAPI\b|\bCVE-|\bID:\s*\w|\b[A-Z]{2,}-\d+\b|`[^`]+`)/;
+  if (!technicalSignalPattern.test(input.title) && !technicalSignalPattern.test(input.description)) {
+    score -= 0.25;
+  }
+  if (!input.fallbackPlan) {
+    score -= 0.25;
+  }
+
+  return Math.max(0, score);
+}
+
 export interface TicketProposalResult {
   success: boolean;
   actionId?: string;
@@ -198,6 +269,49 @@ export async function createTicketProposal(input: TicketProposalInput): Promise<
   const { orgId, kind, title, description, project, priority, agentId, source, channelId, agentDiscussionContext, fallbackPlan } = input;
   let { repoKey } = input;
 
+  // --- Transcript detection: reject raw chat/Discord transcript dumps ---
+  // Raw transcripts cause massive token bloat for downstream planning subagents.
+  // The LLM must synthesize a concise technical summary instead.
+  const contextsToCheck = [
+    { field: 'agentDiscussionContext', value: agentDiscussionContext },
+    { field: 'description', value: description },
+  ];
+  for (const { field, value } of contextsToCheck) {
+    if (!value) continue;
+    const matched = detectTranscriptPatterns(value);
+    if (matched.length > 0) {
+      logGuardrailEvent({ event: 'ticket_proposal_transcript_rejected_total', orgId, agentId, title, detectedPatterns: matched });
+      logger.warn({ agentId, orgId, title, field, detectedPatterns: matched }, 'ticket_proposal.transcript_rejected: raw chat transcript detected in proposal field');
+      return {
+        success: false,
+        message: `TRANSCRIPT DUMP REJECTED in field "${field}": Raw chat/Discord transcript detected (patterns: ${matched.join(', ')}). ` +
+          'Do NOT paste raw conversation logs. Synthesize a concise technical summary (≤1500 chars) describing: ' +
+          '(1) the problem statement, (2) agreed technical approach, (3) key constraints. ' +
+          'Resubmit with synthesized prose only.',
+      };
+    }
+  }
+
+  // --- Hard length enforcement on agentDiscussionContext ---
+  if (agentDiscussionContext && agentDiscussionContext.length > MAX_DISCUSSION_CONTEXT_CHARS) {
+    logger.warn({ agentId, orgId, title, length: agentDiscussionContext.length }, 'ticket_proposal.context_too_long: agentDiscussionContext exceeds limit');
+    return {
+      success: false,
+      message: `agentDiscussionContext exceeds the ${MAX_DISCUSSION_CONTEXT_CHARS}-character limit (got ${agentDiscussionContext.length} chars). ` +
+        'Summarize the discussion into a tight technical synthesis and resubmit.',
+    };
+  }
+
+  // --- Hard length enforcement on description ---
+  if (description.length > MAX_DESCRIPTION_CHARS) {
+    logger.warn({ agentId, orgId, title, length: description.length }, 'ticket_proposal.description_too_long: description exceeds hard limit');
+    return {
+      success: false,
+      message: `description exceeds the ${MAX_DESCRIPTION_CHARS}-character limit (got ${description.length} chars). ` +
+        'Condense the description to focus on the core problem and acceptance criteria.',
+    };
+  }
+
   // Enforce fallback plan for idle-sourced (agentops/system-initiated) proposals.
   // Human-facing guardrail: downstream subagents must not attempt primary and fallback
   // paths simultaneously. Reject idle proposals that omit a fallbackPlan entirely.
@@ -210,6 +324,17 @@ export async function createTicketProposal(input: TicketProposalInput): Promise<
     };
   }
 
+  // --- Iteration budget injection for low-confidence proposals ---
+  // Ambiguous or underspecified proposals risk runaway orchestrator loops.
+  // Inject a strict turn cap to bound downstream cost exposure.
+  const confidenceScore = scoreProposalConfidence({ title, description, agentDiscussionContext, fallbackPlan });
+  let iterationBudget: { max_turns: number } | undefined;
+  if (confidenceScore < LOW_CONFIDENCE_THRESHOLD) {
+    iterationBudget = { max_turns: 3 };
+    logGuardrailEvent({ event: 'ticket_iteration_budget_applied_total', orgId, agentId, title, confidenceScore });
+    logger.info({ agentId, orgId, title, confidenceScore }, 'ticket_proposal.iteration_budget_applied: low-confidence proposal capped at 3 turns');
+  }
+
   // Compose enriched description from base description + optional sections
   let fullDescription = description;
   if (agentDiscussionContext) {
@@ -218,10 +343,6 @@ export async function createTicketProposal(input: TicketProposalInput): Promise<
   if (fallbackPlan) {
     const normalizedFallback = fallbackPlan.startsWith('**Fallback:**') ? fallbackPlan : `**Fallback:** ${fallbackPlan}`;
     fullDescription += `\n\n## Fallback Plan\n${normalizedFallback}`;
-  }
-
-  if (fullDescription.length > 4000) {
-    logger.warn({ agentId, descriptionLength: fullDescription.length }, 'ticket_proposal.description_too_long: fullDescription exceeds 4000 chars');
   }
 
   // Resolve project name to UUID
@@ -293,6 +414,7 @@ export async function createTicketProposal(input: TicketProposalInput): Promise<
     'repo-key': repoKey,
     project,
     ...(priority !== undefined ? { priority: String(priority) } : {}),
+    ...(iterationBudget !== undefined ? { iteration_budget: iterationBudget } : {}),
   };
 
   // CTO proposals go directly to human review; all others need CTO gate first
