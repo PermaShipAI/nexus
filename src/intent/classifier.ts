@@ -12,6 +12,7 @@ Classify the user's message into one of these intents:
 - QueryKnowledge: User wants to know something about the project, codebase, or team
 - SystemStatus: User wants to know the status of systems, deployments, or CI/CD
 - ManageProject: User wants to create, update, delete, or configure a project
+- AdministrativeAction: User wants to change a system setting, toggle autonomous mode, or modify agent behavior configuration
 - AccessSecrets: User wants to retrieve, rotate, or manage secrets/credentials
 - DestructiveAction: User wants to delete, drop, wipe, destroy, or irreversibly remove data or resources
 - Unknown: The intent is unclear or doesn't match any category
