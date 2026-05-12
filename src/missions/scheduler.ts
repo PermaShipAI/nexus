@@ -457,7 +457,9 @@ To add new items to the mission (mission ID: \`${mission.id}\`):
     );
 
     const route = routes[0];
-    const agentId = (route?.agentId ?? 'sre') as AgentId;
+    // Fall back to the first roster member rather than blindly defaulting to
+    // 'sre', which may not be on this mission's roster (state-aware fallback).
+    const agentId = (route?.agentId ?? roster[0] ?? 'sre') as AgentId;
     const agent = getAgent(agentId);
 
     // Update assignment
