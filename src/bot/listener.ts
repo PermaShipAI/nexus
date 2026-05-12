@@ -3,7 +3,7 @@ export { sendAgentMessage };
 import { checkDestructiveAction } from '../core/guardrails/DestructiveActionGuard.js';
 import { checkForInjection } from '../core/guardrails/prompt_injection.js';
 import { validateImageAttachments, type ImageAttachment } from '../core/guardrails/image_guard.js';
-import { logGuardrailEvent } from '../telemetry/index.js';
+import { logGuardrailEvent, logAdministrativeIntentClarificationEvent } from '../telemetry/index.js';
 import { getCommunicationAdapter } from '../adapters/registry.js';
 import { storeMessage } from '../conversation/service.js';
 import { logActivity } from '../idle/activity.js';
@@ -390,6 +390,18 @@ async function handleIncomingMessage(message: UnifiedMessage, isPublic: boolean,
   const effectiveRoutes: RouteResult[] = hasValidAgent
     ? routes
     : [{ agentId: 'nexus' as const, intent: 'fallback', subMessage: message.content, confidenceScore: 0.5, reasoning: 'No agent matched, falling back to nexus', extractedEntities: {}, needsCodeAccess: false, isStrategySession: false, isFallback: true }];
+
+  // Log telemetry for ambiguous administrative routes
+  const ambiguousAdminRoute = effectiveRoutes.find(
+    (r) => r.requiresConfirmation && r.intent === 'AdministrativeAction' && (r.confidenceScore ?? 1) < 0.8
+  );
+  if (ambiguousAdminRoute) {
+    logAdministrativeIntentClarificationEvent({
+      confidenceScore: ambiguousAdminRoute.confidenceScore ?? 0,
+      channelId: message.channelId,
+      userName,
+    });
+  }
 
   for (const route of effectiveRoutes) {
     const agent = getAgent(route.agentId as AgentId);

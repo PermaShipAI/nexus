@@ -236,6 +236,48 @@ export async function createLocalServer(_port = 3000) {
       logger.debug({ err }, 'Intent routing skipped — processing message directly');
     }
 
+    // Admin action confirmation gate: intercept AdministrativeAction routes before execution
+    // TODO: cache pre-computed routes to avoid re-routing on confirm
+    try {
+      const { routeMessage } = await import('../router/index.js');
+      const agentRoutes = await routeMessage(content.trim(), LOCAL_CHANNEL_ID, unified.authorName, LOCAL_ORG_ID);
+      const adminRoute = agentRoutes.find(
+        (r: { requiresConfirmation?: boolean; intent?: string }) =>
+          r.requiresConfirmation === true && r.intent === 'AdministrativeAction'
+      );
+
+      if (adminRoute) {
+        const confirmationPrompt = `Administrative action requested: "${adminRoute.subMessage || content}". Click Confirm to execute or Cancel to abort.`;
+        const confirmation = createPendingConfirmation({
+          channelId: LOCAL_CHANNEL_ID,
+          userId: 'local-user',
+          intent: 'AdministrativeAction',
+          extractedEntities: adminRoute.extractedEntities ?? {},
+          targetAgent: adminRoute.agentId,
+          confirmationPrompt,
+        });
+        pendingIntentMessages.set(confirmation.id, unified);
+
+        const { logGuardrailEvent: lg, logAdministrativeIntentClarificationEvent: lac } = await import('../telemetry/index.js');
+        lg({ event: 'confirmation_gate_shown', intent: 'AdministrativeAction', channelId: LOCAL_CHANNEL_ID, userId: 'local-user', confirmationId: confirmation.id });
+
+        if (adminRoute.confidenceScore !== undefined && adminRoute.confidenceScore < 0.8) {
+          lac({ confidenceScore: adminRoute.confidenceScore, channelId: LOCAL_CHANNEL_ID, userName: unified.authorName });
+        }
+
+        broadcast('confirmation_required', {
+          confirmationId: confirmation.id,
+          intent: 'AdministrativeAction',
+          prompt: confirmationPrompt,
+          targetAgent: adminRoute.agentId,
+        });
+
+        return reply.send({ success: true, messageId, requiresConfirmation: true, confirmationId: confirmation.id });
+      }
+    } catch (err) {
+      logger.debug({ err }, 'Admin action pre-check skipped — processing message directly');
+    }
+
     // Process async (same pattern as the webhook handler)
     processWebhookMessage(unified).catch(err => {
       logger.error({ err }, 'Local message processing failed');
