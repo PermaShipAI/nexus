@@ -210,14 +210,49 @@ export async function createTicketProposal(input: TicketProposalInput): Promise<
     };
   }
 
+  // Enforce fallback plan label — reject proposals with malformed fallback content.
+  // Downstream subagents must not have to infer intent from unlabeled fallback text.
+  if (fallbackPlan && !fallbackPlan.startsWith('**Fallback:**')) {
+    logGuardrailEvent({ event: 'agentops_fallback_malformed', orgId, agentId, title });
+    logger.warn({ agentId, orgId, title }, 'agentops_fallback_malformed: proposal rejected — fallbackPlan must begin with "**Fallback:**"');
+    return {
+      success: false,
+      message: 'fallbackPlan must begin with "**Fallback:**". Rewrite the fallback section with an explicit label.',
+    };
+  }
+
+  // Enforce agentDiscussionContext length limit to contain LLM token costs.
+  const DISCUSSION_CONTEXT_MAX_CHARS = 1500;
+  if (agentDiscussionContext && agentDiscussionContext.length > DISCUSSION_CONTEXT_MAX_CHARS) {
+    logGuardrailEvent({ event: 'discussion_context_too_long', orgId, agentId, title, length: agentDiscussionContext.length });
+    logger.warn({ agentId, orgId, title, length: agentDiscussionContext.length }, 'discussion_context_too_long: proposal rejected — agentDiscussionContext exceeds 1500 chars');
+    return {
+      success: false,
+      message: `agentDiscussionContext must not exceed ${DISCUSSION_CONTEXT_MAX_CHARS} characters (got ${agentDiscussionContext.length}). Summarize the discussion into a shorter prose summary.`,
+    };
+  }
+
+  // Detect raw transcript patterns in agentDiscussionContext (e.g. Discord/chat dumps).
+  // Raw transcripts bloat context and make downstream intent extraction unreliable.
+  if (agentDiscussionContext) {
+    const transcriptPattern = /^(?:\[[\d:TZ .+-]+\]\s+)?[\w\s.-]+:\s+\S/m;
+    if (transcriptPattern.test(agentDiscussionContext)) {
+      logGuardrailEvent({ event: 'ticket_proposal_transcript_rejected_total', orgId, agentId, title });
+      logger.warn({ agentId, orgId, title }, 'ticket_proposal_transcript_rejected_total: proposal rejected — agentDiscussionContext appears to contain a raw chat transcript');
+      return {
+        success: false,
+        message: 'agentDiscussionContext must be a synthesized prose summary, not a raw chat transcript. Rewrite it as a concise summary of the discussion.',
+      };
+    }
+  }
+
   // Compose enriched description from base description + optional sections
   let fullDescription = description;
   if (agentDiscussionContext) {
     fullDescription += `\n\n## Agent Discussion Context\n${agentDiscussionContext}`;
   }
   if (fallbackPlan) {
-    const normalizedFallback = fallbackPlan.startsWith('**Fallback:**') ? fallbackPlan : `**Fallback:** ${fallbackPlan}`;
-    fullDescription += `\n\n## Fallback Plan\n${normalizedFallback}`;
+    fullDescription += `\n\n## Fallback Plan\n${fallbackPlan}`;
   }
 
   if (fullDescription.length > 4000) {
