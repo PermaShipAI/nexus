@@ -594,4 +594,74 @@ describe('routeMessage', () => {
     expect(results[0].confidenceScore).toBeGreaterThanOrEqual(0.6);
     expect(results[0].confidenceScore).toBeLessThan(0.8);
   });
+
+  // ---------------------------------------------------------------------------
+  // Test 23: Ambiguous InvestigateBug below 0.6 → clarification with actionableOptions
+  // ---------------------------------------------------------------------------
+  it('returns actionableOptions for ambiguous InvestigateBug clarification fallback', async () => {
+    const geminiPayload = {
+      intent: 'InvestigateBug',
+      confidenceScore: 0.4,
+      targetAgent: 'sre',
+      extractedEntities: {},
+      reasoning: 'Vague — no specific bug or component mentioned.',
+      needsCodeAccess: false,
+      isStrategySession: false,
+      requiresConfirmation: false,
+    };
+    mockGenerateContent.mockResolvedValue({ response: { text: () => JSON.stringify(geminiPayload) } });
+
+    const results = await routeMessage('something is broken', 'channel-23', 'user23');
+
+    expect(results[0].isFallback).toBe(true);
+    expect(results[0].fallbackMessage).toBeTruthy();
+    expect(results[0].actionableOptions).toBeDefined();
+    expect(results[0].actionableOptions!.length).toBeGreaterThan(0);
+  });
+
+  // ---------------------------------------------------------------------------
+  // Test 24: Ambiguous ProposeTask below 0.6 → clarification with actionableOptions
+  // ---------------------------------------------------------------------------
+  it('returns actionableOptions for ambiguous ProposeTask clarification fallback', async () => {
+    const geminiPayload = {
+      intent: 'ProposeTask',
+      confidenceScore: 0.35,
+      targetAgent: 'nexus',
+      extractedEntities: {},
+      reasoning: 'Vague — no specific task or area mentioned.',
+      needsCodeAccess: false,
+      isStrategySession: false,
+      requiresConfirmation: false,
+    };
+    mockGenerateContent.mockResolvedValue({ response: { text: () => JSON.stringify(geminiPayload) } });
+
+    const results = await routeMessage('we should do something about it', 'channel-24', 'user24');
+
+    expect(results[0].isFallback).toBe(true);
+    expect(results[0].actionableOptions).toBeDefined();
+    expect(results[0].actionableOptions!.length).toBeGreaterThan(0);
+  });
+
+  // ---------------------------------------------------------------------------
+  // Test 25: Ambiguous DestructiveAction below 0.6 → clarification with actionableOptions
+  // ---------------------------------------------------------------------------
+  it('returns actionableOptions for ambiguous DestructiveAction clarification fallback', async () => {
+    const geminiPayload = {
+      intent: 'DestructiveAction',
+      confidenceScore: 0.3,
+      targetAgent: 'nexus',
+      extractedEntities: {},
+      reasoning: 'Vague — no specific target for deletion mentioned.',
+      needsCodeAccess: false,
+      isStrategySession: false,
+      requiresConfirmation: false,
+    };
+    mockGenerateContent.mockResolvedValue({ response: { text: () => JSON.stringify(geminiPayload) } });
+
+    const results = await routeMessage('delete that stuff', 'channel-25', 'user25');
+
+    expect(results[0].isFallback).toBe(true);
+    expect(results[0].actionableOptions).toBeDefined();
+    expect(results[0].actionableOptions!.length).toBeGreaterThan(0);
+  });
 });

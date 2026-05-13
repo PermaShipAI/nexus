@@ -941,7 +941,20 @@ Fields:
 - **agentDiscussionContext** (optional): Synthesized prose summary of agent discussion relevant to this ticket. Max 1500 characters. Do NOT paste raw transcripts — synthesize key points only.
 - **fallbackPlan** (optional): Alternative execution path if the primary plan is blocked. MUST begin with \`**Fallback:**\`.
 
-You may include multiple proposal blocks. Do NOT mention the proposals in your conversational response — they are processed silently.${agentId === 'nexus' ? `
+You may include multiple proposal blocks. Do NOT mention the proposals in your conversational response — they are processed silently.
+
+## Suggested Follow-Up Actions
+When your response naturally leads to one or more follow-up actions the user might want to take, you may include a \`<suggested-actions>\` block at the very end of your response (after all other content). Each line should be a short, user-ready phrase. Limit to 3–5 suggestions.
+
+\\\`\\\`\\\`
+<suggested-actions>
+- Investigate the authentication module for vulnerabilities
+- Show me the recent deployment logs
+- Create a ticket for this bug
+</suggested-actions>
+\\\`\\\`\\\`
+
+These will be rendered as clickable chips in the UI. Only include suggestions that are genuinely useful as immediate next steps. Omit the block when no clear follow-up actions exist.${agentId === 'nexus' ? `
 
 ## Proposal Decision Blocks (Nexus Only)
 Use inline blocks to decide on proposals in the Nexus Review Queue. You MUST include exactly one block per proposal:

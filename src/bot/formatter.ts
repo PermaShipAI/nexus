@@ -1,6 +1,28 @@
 import { logger } from '../logger.js';
 import { getCommunicationAdapter } from '../adapters/registry.js';
 
+const MAX_SUGGESTIONS = 5;
+const SUGGESTED_ACTIONS_RE = /<suggested-actions>([\s\S]*?)<\/suggested-actions>/i;
+
+/**
+ * Extract a <suggested-actions> block from agent response text.
+ * Returns the cleaned body (block removed) and array of suggestion strings.
+ * Caps suggestions at MAX_SUGGESTIONS to avoid cluttering the UI.
+ */
+export function parseSuggestedActions(text: string): { body: string; suggestions: string[] } {
+  const match = text.match(SUGGESTED_ACTIONS_RE);
+  if (!match) return { body: text, suggestions: [] };
+
+  const suggestions = match[1]
+    .split('\n')
+    .map((line) => line.replace(/^[-*•]\s*/, '').trim())
+    .filter((line) => line.length > 0)
+    .slice(0, MAX_SUGGESTIONS);
+
+  const body = text.replace(SUGGESTED_ACTIONS_RE, '').trim();
+  return { body, suggestions };
+}
+
 /** Prefix agent name and send via Comms Gateway */
 export async function sendAgentMessage(
   targetId: string,
@@ -22,10 +44,15 @@ export async function sendAgentMessage(
     ? { channel_id: unifiedId, orgId }
     : { thread_id: unifiedId, orgId };
 
-  const result = await getCommunicationAdapter().sendMessage(
-    { content: prefix + content },
-    options,
-  );
+  const { body, suggestions } = parseSuggestedActions(content);
+  const outbound: Parameters<ReturnType<typeof getCommunicationAdapter>['sendMessage']>[0] = {
+    content: prefix + body,
+  };
+  if (suggestions.length > 0) {
+    outbound.actionable_suggestions = suggestions;
+  }
+
+  const result = await getCommunicationAdapter().sendMessage(outbound, options);
 
   if (!result.success) {
     logger.error({ targetId, agentTitle, error: result.error }, 'Failed to send agent message via gateway');
