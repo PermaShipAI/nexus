@@ -55,6 +55,18 @@ export function logAdministrativeIntentClarificationEvent(details: { confidenceS
   logger.info({ event: 'administrative_intent_clarification_triggered', ...details });
 }
 
+export function logCircuitBreakerEvent(
+  event:
+    | 'circuit_breaker_tripped'
+    | 'circuit_breaker_reset'
+    | 'degraded_mode_active'
+    | 'degraded_mode_cleared'
+    | 'request_rejected_degraded',
+  details: Record<string, unknown>,
+): void {
+  logger.warn({ event, ...details });
+}
+
 export function logAdrEvent(
   event: 'adr_auto_drafted' | 'adr_human_approved' | 'duplicate_proposal_prevented',
   details: Record<string, unknown>,

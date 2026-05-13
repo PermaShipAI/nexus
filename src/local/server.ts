@@ -60,6 +60,11 @@ import {
   writeFileSecure,
 } from './security.js';
 import { validateImageAttachments } from '../core/guardrails/image_guard.js';
+import {
+  isAnyOpen,
+  getOpenDependencies,
+  retryAfterSeconds,
+} from '../adapters/dependency-circuit-breaker.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const UI_DIR = join(__dirname, '..', '..', 'ui');
@@ -102,6 +107,55 @@ export async function createLocalServer(_port = 3000) {
     const token = extractToken(request);
     if (!validateSession(token)) {
       return reply.status(401).send({ error: 'Unauthorized' });
+    }
+  });
+
+  // ── Circuit breaker: reject API requests when dependencies are degraded ──
+  //
+  // Supports two enforcement modes (PRD § 3.2 and § 6):
+  //   1. Manual kill switch: DEGRADED_MODE=true env var — immediate 503 on all /api/ routes
+  //   2. Automatic: checked via the in-process DependencyCircuitBreaker singletons
+  //
+  // Read-only endpoints (GET /api/health, /api/auth/token) are always exempt.
+
+  server.addHook('preHandler', async (request, reply) => {
+    if (!request.url.startsWith('/api/')) return;
+    // Exempt read-only and auth endpoints from degraded-mode rejection
+    if (
+      request.url === '/api/health' ||
+      request.url === '/api/auth/token' ||
+      request.method === 'GET'
+    ) return;
+
+    // Manual kill-switch mode
+    const manualDegraded = process.env.DEGRADED_MODE === 'true';
+
+    if (manualDegraded || isAnyOpen()) {
+      const openDeps = manualDegraded ? ['manual_kill_switch'] : getOpenDependencies();
+      const retryAfter = manualDegraded
+        ? 300
+        : Math.max(...openDeps.map(d => retryAfterSeconds(d as Parameters<typeof retryAfterSeconds>[0])));
+
+      const requestId = (request.headers['x-request-id'] as string | undefined) ?? `req-${Date.now()}`;
+
+      logger.warn({
+        event: 'request_rejected_degraded',
+        dependency: openDeps[0] ?? 'unknown',
+        endpoint: request.url,
+        timestamp: new Date().toISOString(),
+      });
+
+      reply
+        .status(503)
+        .header('Retry-After', String(retryAfter))
+        .header('Content-Type', 'application/json')
+        .send({
+          error: 'service_degraded',
+          message: 'Nexus Command is temporarily unable to process requests due to an upstream dependency outage.',
+          degraded_dependencies: openDeps,
+          retry_after_seconds: retryAfter,
+          support_reference: requestId,
+        });
     }
   });
 
