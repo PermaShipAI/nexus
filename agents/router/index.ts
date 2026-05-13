@@ -56,6 +56,12 @@ function buildClarificationMessage(
     return {
       fallbackMessage:
         "Which bug or error would you like investigated? Please describe the issue or provide an error message.",
+      actionableOptions: [
+        'investigate the latest deployment error',
+        'check for memory leaks in the worker service',
+        'trace the authentication failure logs',
+        'analyze recent 500 errors in production',
+      ],
     };
   }
 
@@ -63,6 +69,12 @@ function buildClarificationMessage(
     return {
       fallbackMessage:
         "What task would you like to propose? Please describe what needs to be done and which area it affects.",
+      actionableOptions: [
+        'propose a task to improve error handling',
+        'create a ticket for the login performance issue',
+        'propose adding unit tests for the payment module',
+        'suggest a security audit for the API endpoints',
+      ],
     };
   }
 
@@ -70,6 +82,11 @@ function buildClarificationMessage(
     return {
       fallbackMessage:
         "What would you like to delete or remove? Please be specific so I can confirm the action safely.",
+      actionableOptions: [
+        'delete all failed tickets from last week',
+        'remove the deprecated API endpoint',
+        'clear the test data from staging',
+      ],
     };
   }
 
