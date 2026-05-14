@@ -5,7 +5,7 @@ import { logRoutingDecision, logSecurityEvent } from '../../agents/telemetry/log
 import type { RouteResult } from '../../agents/types/routing.js';
 import { getTenantResolver } from '../adapters/registry.js';
 import { getAllAgents } from '../agents/registry.js';
-import { checkForInjection } from '../core/guardrails/prompt_injection.js';
+import { checkForInjection, sanitizeIndirectInput } from '../core/guardrails/prompt_injection.js';
 
 const INJECTION_REFUSAL: RouteResult = {
   agentId: 'none',
@@ -46,7 +46,7 @@ export async function routeMessage(
     // Fetch relevant context from knowledge base
     const knowledge = await queryKnowledge(orgId, content, undefined, 5);
     const knowledgeText = knowledge.length > 0
-      ? `RELEVANT KNOWLEDGE:\n${knowledge.map(k => `- ${k.topic}: ${k.content}`).join('\n')}`
+      ? `RELEVANT KNOWLEDGE:\n${knowledge.map(k => `- ${sanitizeIndirectInput(k.topic)}: ${sanitizeIndirectInput(k.content)}`).join('\n')}`
       : 'No specific relevant knowledge found.';
 
     // Build team members list — constrained to allowed agents if specified
@@ -55,6 +55,7 @@ export async function routeMessage(
       const allowed = new Set(allowedAgentIds);
       agents = agents.filter(a => allowed.has(a.id));
     }
+    const knownAgentIds = new Set(agents.map(a => a.id));
     const teamList = agents.map(a => `- ${a.id}: ${a.title}`).join('\n');
 
     const prompt = `
@@ -84,16 +85,32 @@ Example: [{"agentId": "sre", "intent": "investigation", "subMessage": "Investiga
       const cleaned = response.trim().replace(/^```(?:json)?\s*\n?/i, '').replace(/\n?```\s*$/i, '');
       const results = JSON.parse(cleaned) as RouteResult[];
 
+      // Pre-flight: discard routes whose agentId is not in the known registry.
+      // This prevents hallucinated or injected agentIds from reaching the executor.
+      const agentIdPattern = /^[a-z][a-z0-9-]*$/;
+      const validResults = results.filter(r => {
+        if (!r.agentId || typeof r.agentId !== 'string') return false;
+        if (!agentIdPattern.test(r.agentId)) {
+          logger.warn({ agentId: r.agentId }, 'Router returned agentId with invalid format, dropping route');
+          return false;
+        }
+        if (!knownAgentIds.has(r.agentId as import('../agents/types.js').AgentId)) {
+          logger.warn({ agentId: r.agentId }, 'Router returned unknown agentId, dropping route');
+          return false;
+        }
+        return true;
+      });
+
       // Detect deep research requests based on investigation keywords
       const deepResearchKeywords = /\b(investigate|trace through|audit thoroughly|analyze security of|deep dive|root cause analysis)\b/i;
-      for (const res of results) {
+      for (const res of validResults) {
         if (res.needsCodeAccess && deepResearchKeywords.test(content)) {
           res.needsDeepResearch = true;
         }
         logRoutingDecision(res, 0);
       }
 
-      return results;
+      return validResults;
     } catch (err) {
       logger.error({ err, response }, 'Failed to parse router response');
       return [{
