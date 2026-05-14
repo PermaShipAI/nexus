@@ -1,7 +1,7 @@
 import { sendAgentMessage } from './formatter.js';
 export { sendAgentMessage };
 import { checkDestructiveAction } from '../core/guardrails/DestructiveActionGuard.js';
-import { checkForInjection } from '../core/guardrails/prompt_injection.js';
+import { checkForInjection, sanitizeIndirectInput } from '../core/guardrails/prompt_injection.js';
 import { validateImageAttachments, type ImageAttachment } from '../core/guardrails/image_guard.js';
 import { logGuardrailEvent } from '../telemetry/index.js';
 import { getCommunicationAdapter } from '../adapters/registry.js';
@@ -332,7 +332,7 @@ async function handleIncomingMessage(message: UnifiedMessage, isPublic: boolean,
     if (action && action.status === 'pending') {
       steeringContext = {
         originalActionId: action.id,
-        previousProposal: action.description,
+        previousProposal: sanitizeIndirectInput(action.description ?? ''),
         userFeedback: message.content,
       };
       targetAgentId = action.agentId;
@@ -345,12 +345,20 @@ async function handleIncomingMessage(message: UnifiedMessage, isPublic: boolean,
     if (action && action.status === 'pending') {
       steeringContext = {
         originalActionId: action.id,
-        previousProposal: action.description,
+        previousProposal: sanitizeIndirectInput(action.description ?? ''),
         userFeedback: message.content,
       };
       targetAgentId = action.agentId;
       await db.update(pendingActions).set({ status: 'superseded', resolvedAt: new Date() }).where(eq(pendingActions.id, action.id));
     }
+  }
+
+  // Pre-flight: ensure the steering target agent exists in the registry before
+  // bypassing the router. An agent may have been removed since the proposal was stored.
+  if (steeringContext && targetAgentId && !getAgent(targetAgentId as AgentId)) {
+    logger.warn({ agentId: targetAgentId }, 'Steering target agent not found in registry, falling back to router');
+    steeringContext = undefined;
+    targetAgentId = undefined;
   }
 
   const routes: RouteResult[] = steeringContext && targetAgentId
