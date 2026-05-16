@@ -24,6 +24,10 @@ export interface GenerateTextOptions {
   systemInstruction?: string;
   contents: LLMContent[];
   orgId?: string;
+  /** When set to 0, disables sampling and forces the most likely token at each step,
+   *  producing fully deterministic outputs. Useful for routing, QA verification, and
+   *  any call where reproducibility matters more than creative variety. */
+  temperature?: number;
 }
 
 export interface GenerateWithToolsOptions extends GenerateTextOptions {

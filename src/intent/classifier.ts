@@ -39,6 +39,7 @@ export async function classifyIntent(message: string): Promise<ClassifiedIntent>
       model: 'ROUTER',
       systemInstruction: SYSTEM_PROMPT,
       contents: [{ role: 'user', parts: [{ text: message }] }],
+      temperature: 0,
     });
 
     const parsed = JSON.parse(text);

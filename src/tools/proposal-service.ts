@@ -157,6 +157,7 @@ Where <index> is the 1-based index number from the EXISTING TICKETS list.`;
     const response = await getLLMProvider().generateText({
       model: 'ROUTER',
       contents: [{ role: 'user', parts: [{ text: prompt }] }],
+      temperature: 0,
     });
 
     const trimmed = response.trim();

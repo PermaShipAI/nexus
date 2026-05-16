@@ -43,7 +43,11 @@ export class OpenAIProvider implements LLMProvider {
     logger.debug({ model, tier: options.model }, 'Calling OpenAI');
 
     const response = await withRetry(
-      () => this.client.chat.completions.create({ model, messages }),
+      () => this.client.chat.completions.create({
+        model,
+        messages,
+        ...(options.temperature !== undefined ? { temperature: options.temperature } : {}),
+      }),
       undefined,
       `openai.generateText[${model}]`,
     );
@@ -116,7 +120,12 @@ export class OpenAIProvider implements LLMProvider {
     }));
 
     const response = await withRetry(
-      () => this.client.chat.completions.create({ model, messages, tools }),
+      () => this.client.chat.completions.create({
+        model,
+        messages,
+        tools,
+        ...(options.temperature !== undefined ? { temperature: options.temperature } : {}),
+      }),
       undefined,
       `openai.generateWithTools[${model}]`,
     );
