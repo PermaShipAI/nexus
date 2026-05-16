@@ -595,3 +595,139 @@ describe('routeMessage', () => {
     expect(results[0].confidenceScore).toBeLessThan(0.8);
   });
 });
+
+// ---------------------------------------------------------------------------
+// Classification cache tests
+// These tests share a single module import (no vi.resetModules between them)
+// so the in-process cache persists across calls within the same describe block.
+// ---------------------------------------------------------------------------
+describe('routeMessage classification cache', () => {
+  let routeMessage: (
+    content: string,
+    channelId: string,
+    userName: string,
+  ) => Promise<RouteResult[]>;
+  let _resetClassificationCache: () => void;
+  let mockGenerateContent: ReturnType<typeof vi.fn>;
+
+  beforeAll(async () => {
+    vi.resetModules();
+
+    const fsModule = await import('fs');
+    vi.mocked(fsModule.readFileSync).mockReturnValue(
+      JSON.stringify({ ENABLE_STRUCTURED_INTENT: true }),
+    );
+
+    const genaiModule = await import('@google/generative-ai');
+    mockGenerateContent = vi.fn();
+    vi.mocked(genaiModule.GoogleGenerativeAI).mockImplementation(
+      function () {
+        return { getGenerativeModel: () => ({ generateContent: mockGenerateContent }) } as any;
+      },
+    );
+
+    const router = await import('../index');
+    routeMessage = router.routeMessage;
+    _resetClassificationCache = router._resetClassificationCache;
+  });
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    _resetClassificationCache();
+  });
+
+  it('calls generateContent only once for two identical messages', async () => {
+    const geminiPayload = {
+      intent: 'InvestigateBug',
+      confidenceScore: 0.88,
+      targetAgent: 'sre',
+      extractedEntities: {},
+      reasoning: 'Bug report',
+      needsCodeAccess: true,
+      isStrategySession: false,
+      requiresConfirmation: false,
+    };
+    mockGenerateContent.mockResolvedValue({
+      response: { text: () => JSON.stringify(geminiPayload) },
+    });
+
+    const msg = 'The service is crashing with a 500 error';
+    await routeMessage(msg, 'ch-cache-1', 'alice');
+    await routeMessage(msg, 'ch-cache-2', 'bob');
+
+    // LLM must only be called once; second call should use the cache
+    expect(mockGenerateContent).toHaveBeenCalledTimes(1);
+  });
+
+  it('returns the same classification result for both cache miss and cache hit', async () => {
+    const geminiPayload = {
+      intent: 'ProposeTask',
+      confidenceScore: 0.91,
+      targetAgent: 'product-manager',
+      extractedEntities: { task: 'add dark mode' },
+      reasoning: 'Task proposal',
+      needsCodeAccess: false,
+      isStrategySession: false,
+      requiresConfirmation: false,
+    };
+    mockGenerateContent.mockResolvedValue({
+      response: { text: () => JSON.stringify(geminiPayload) },
+    });
+
+    const msg = 'Please add dark mode support';
+    const [first] = await routeMessage(msg, 'ch-a', 'user1');
+    const [second] = await routeMessage(msg, 'ch-b', 'user2');
+
+    expect(first.intent).toBe('ProposeTask');
+    expect(second.intent).toBe('ProposeTask');
+    expect(first.agentId).toBe(second.agentId);
+    expect(first.confidenceScore).toBe(second.confidenceScore);
+  });
+
+  it('calls generateContent again after _resetClassificationCache', async () => {
+    const geminiPayload = {
+      intent: 'SystemStatus',
+      confidenceScore: 0.85,
+      targetAgent: 'sre',
+      extractedEntities: {},
+      reasoning: 'Status query',
+      needsCodeAccess: false,
+      isStrategySession: false,
+      requiresConfirmation: false,
+    };
+    mockGenerateContent.mockResolvedValue({
+      response: { text: () => JSON.stringify(geminiPayload) },
+    });
+
+    const msg = 'What is the deployment status?';
+    await routeMessage(msg, 'ch-1', 'alice');
+    expect(mockGenerateContent).toHaveBeenCalledTimes(1);
+
+    _resetClassificationCache();
+
+    await routeMessage(msg, 'ch-1', 'alice');
+    expect(mockGenerateContent).toHaveBeenCalledTimes(2);
+  });
+
+  it('different messages each trigger their own LLM call', async () => {
+    const makePayload = (intent: string, agent: string) => ({
+      intent,
+      confidenceScore: 0.9,
+      targetAgent: agent,
+      extractedEntities: {},
+      reasoning: 'test',
+      needsCodeAccess: false,
+      isStrategySession: false,
+      requiresConfirmation: false,
+    });
+
+    mockGenerateContent
+      .mockResolvedValueOnce({ response: { text: () => JSON.stringify(makePayload('InvestigateBug', 'sre')) } })
+      .mockResolvedValueOnce({ response: { text: () => JSON.stringify(makePayload('ProposeTask', 'product-manager')) } });
+
+    await routeMessage('The auth service is down', 'ch-1', 'alice');
+    await routeMessage('Add a new onboarding flow', 'ch-1', 'alice');
+
+    expect(mockGenerateContent).toHaveBeenCalledTimes(2);
+  });
+});
