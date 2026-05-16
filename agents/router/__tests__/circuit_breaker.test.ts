@@ -90,6 +90,43 @@ describe('circuit_breaker module', () => {
     expect(isIntentLocked('s1', 'ProposeTask')).toBe(false);
     expect(isIntentLocked('s2', 'QueryKnowledge')).toBe(false);
   });
+
+  // ---------------------------------------------------------------------------
+  // TTL expiry tests
+  // ---------------------------------------------------------------------------
+  it('isIntentLocked returns false for a lock that has exceeded INTENT_LOCK_TTL_MS', () => {
+    // Lock an intent, then backdate its timestamp to simulate expiry
+    lockIntent('s1', 'ProposeTask', 'rbac_rejection');
+
+    // Manually expire the lock by manipulating the internal store via reset + re-add
+    // We do this by setting a very short TTL via environment variable in a fresh module.
+    // For this test, we verify the expiry logic by setting lockedAt far in the past.
+    // Access the lockStore indirectly: lock, then advance the clock using vi.setSystemTime.
+    const TWO_HOURS_AGO = new Date(Date.now() - 2 * 60 * 60 * 1000);
+    vi.setSystemTime(TWO_HOURS_AGO);
+    lockIntent('s2', 'QueryKnowledge', 'security_refusal');
+    vi.useRealTimers();
+
+    // s2's lock was recorded 2 hours ago (simulated); default TTL is 1 hour → should be expired
+    expect(isIntentLocked('s2', 'QueryKnowledge')).toBe(false);
+
+    // s1's lock was recorded at real "now" time; should still be active
+    expect(isIntentLocked('s1', 'ProposeTask')).toBe(true);
+  });
+
+  it('expired lock is evicted from the store (subsequent call also returns false)', () => {
+    vi.useFakeTimers();
+    lockIntent('s1', 'ProposeTask', 'rbac_rejection');
+
+    // Advance time past the 1-hour default TTL
+    vi.advanceTimersByTime(3600001);
+
+    expect(isIntentLocked('s1', 'ProposeTask')).toBe(false);
+    // Calling again should still be false (entry was cleaned up)
+    expect(isIntentLocked('s1', 'ProposeTask')).toBe(false);
+
+    vi.useRealTimers();
+  });
 });
 
 // ─────────────────────────────────────────────────────────────────────────────

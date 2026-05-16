@@ -2,6 +2,9 @@ import { logger } from '../telemetry/logger.js';
 
 export type LockReason = 'rbac_rejection' | 'security_refusal';
 
+// Default TTL: 1 hour. Override via INTENT_LOCK_TTL_MS env var.
+const LOCK_TTL_MS = parseInt(process.env.INTENT_LOCK_TTL_MS ?? '3600000', 10);
+
 interface LockEntry {
   lockedAt: Date;
   reason: LockReason;
@@ -18,7 +21,14 @@ export function lockIntent(sessionId: string, intent: string, reason: LockReason
 }
 
 export function isIntentLocked(sessionId: string, intent: string): boolean {
-  return lockStore.has(`${sessionId}:${intent}`);
+  const key = `${sessionId}:${intent}`;
+  const entry = lockStore.get(key);
+  if (!entry) return false;
+  if (Date.now() - entry.lockedAt.getTime() > LOCK_TTL_MS) {
+    lockStore.delete(key);
+    return false;
+  }
+  return true;
 }
 
 export function clearSessionLocks(sessionId: string): void {

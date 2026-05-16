@@ -2,6 +2,7 @@ import { readFileSync } from 'fs';
 import { join } from 'path';
 import { GoogleGenerativeAI } from '@google/generative-ai';
 import { IntentResponseSchema, INTENT_RESPONSE_JSON_SCHEMA } from '../schemas/intent.js';
+import type { IntentResponse } from '../schemas/intent.js';
 import type { RouteResult, FeatureFlags } from '../types/routing.js';
 import { logRoutingDecision, logger, logSecurityEvent, logAdministrativeIntentClarificationEvent } from '../telemetry/logger.js';
 import { buildIntentPrompt } from './prompts.js';
@@ -10,6 +11,39 @@ import { isIntentLocked, CIRCUIT_BREAKER_MESSAGE } from './circuit_breaker.js';
 
 // Read feature flags at module load time, once
 let featureFlags: FeatureFlags = { ENABLE_STRUCTURED_INTENT: false };
+
+// ---------------------------------------------------------------------------
+// Intent classification cache — skips the Gemini LLM call for identical
+// messages that were recently classified (FinOps: reduces API spend).
+// Default TTL: 5 minutes. Override via INTENT_CACHE_TTL_MS env var.
+// ---------------------------------------------------------------------------
+const CACHE_TTL_MS = parseInt(process.env.INTENT_CACHE_TTL_MS ?? '300000', 10);
+
+interface CacheEntry {
+  data: IntentResponse;
+  expiresAt: number;
+}
+
+const classificationCache = new Map<string, CacheEntry>();
+
+function getCachedClassification(content: string): IntentResponse | null {
+  const entry = classificationCache.get(content);
+  if (!entry) return null;
+  if (Date.now() > entry.expiresAt) {
+    classificationCache.delete(content);
+    return null;
+  }
+  return entry.data;
+}
+
+function setCachedClassification(content: string, data: IntentResponse): void {
+  classificationCache.set(content, { data, expiresAt: Date.now() + CACHE_TTL_MS });
+}
+
+/** Exposed for tests only — clears the in-process classification cache. */
+export function _resetClassificationCache(): void {
+  classificationCache.clear();
+}
 
 try {
   const flagsRaw = readFileSync(
@@ -140,40 +174,49 @@ export async function routeMessage(
     const startTime = Date.now();
 
     try {
-      const prompt = buildIntentPrompt(content, AGENT_IDS);
-      const ai = new GoogleGenerativeAI(process.env.GEMINI_API_KEY ?? '');
-      const model = ai.getGenerativeModel({
-        model: 'gemini-3-flash-preview',
-        generationConfig: {
-          responseMimeType: 'application/json',
-          responseSchema: INTENT_RESPONSE_JSON_SCHEMA as any,
-        },
-      });
+      // Check the classification cache before making an LLM call.
+      let intentData = getCachedClassification(content);
+      let elapsedMs = 0;
 
-      const response = await model.generateContent(prompt);
-      const text = response.response.text();
-      const elapsedMs = Date.now() - startTime;
+      if (!intentData) {
+        const prompt = buildIntentPrompt(content, AGENT_IDS);
+        const ai = new GoogleGenerativeAI(process.env.GEMINI_API_KEY ?? '');
+        const model = ai.getGenerativeModel({
+          model: 'gemini-3-flash-preview',
+          generationConfig: {
+            responseMimeType: 'application/json',
+            responseSchema: INTENT_RESPONSE_JSON_SCHEMA as any,
+          },
+        });
 
-      let parsed: any;
-      try {
-        parsed = JSON.parse(text ?? '');
-      } catch {
-        logger.warn({ channelId, userName }, 'Failed to JSON.parse Gemini response');
-        logRoutingDecision(PARSE_ERROR_FALLBACK(content), elapsedMs);
-        return [PARSE_ERROR_FALLBACK(content)];
+        const response = await model.generateContent(prompt);
+        const text = response.response.text();
+        elapsedMs = Date.now() - startTime;
+
+        let parsed: any;
+        try {
+          parsed = JSON.parse(text ?? '');
+        } catch {
+          logger.warn({ channelId, userName }, 'Failed to JSON.parse Gemini response');
+          logRoutingDecision(PARSE_ERROR_FALLBACK(content), elapsedMs);
+          return [PARSE_ERROR_FALLBACK(content)];
+        }
+
+        const validation = IntentResponseSchema.safeParse(parsed);
+        if (!validation.success) {
+          logger.warn(
+            { channelId, userName, issues: validation.error.issues },
+            'Gemini response failed Zod validation',
+          );
+          logRoutingDecision(PARSE_ERROR_FALLBACK(content), elapsedMs);
+          return [PARSE_ERROR_FALLBACK(content)];
+        }
+
+        intentData = validation.data;
+        setCachedClassification(content, intentData);
+      } else {
+        logger.info({ channelId, userName }, 'Intent classification cache hit — skipping LLM call');
       }
-
-      const validation = IntentResponseSchema.safeParse(parsed);
-      if (!validation.success) {
-        logger.warn(
-          { channelId, userName, issues: validation.error.issues },
-          'Gemini response failed Zod validation',
-        );
-        logRoutingDecision(PARSE_ERROR_FALLBACK(content), elapsedMs);
-        return [PARSE_ERROR_FALLBACK(content)];
-      }
-
-      const intentData = validation.data;
 
       if (intentData.confidenceScore < 0.6) {
         const { fallbackMessage, actionableOptions } = buildClarificationMessage(
