@@ -78,6 +78,7 @@ Example: [{"agentId": "sre", "intent": "investigation", "subMessage": "Investiga
       model: 'ROUTER',
       systemInstruction: prompt,
       contents: [{ role: 'user', parts: [{ text: `${userName}: ${content}` }] }],
+      temperature: 0,
     });
 
     try {
