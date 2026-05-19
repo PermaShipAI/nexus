@@ -5,6 +5,7 @@ import {
   routingLatencyMs,
   routingConfidenceScore,
   routingInjectionBlockedTotal,
+  agentToolLoopAbortedTotal,
 } from '../../src/telemetry/prometheus.js';
 
 export const logger = pino({
@@ -60,6 +61,11 @@ export function logAdrEvent(
   details: Record<string, unknown>,
 ): void {
   logger.info({ event, ...details });
+}
+
+export function logToolLoopAbortedEvent(details: { toolName: string; orgId: string }): void {
+  logger.info({ event: 'agent_tool_loop_aborted', failureCount: 2, ...details });
+  agentToolLoopAbortedTotal.inc({ tool_name: details.toolName });
 }
 
 export function logEvalMetrics(metrics: {

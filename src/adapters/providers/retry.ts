@@ -1,4 +1,5 @@
 import { logger } from '../../logger.js';
+import { recordSuccess, recordFailure, checkCircuit } from './circuit-breaker.js';
 
 export interface RetryConfig {
   maxRetries?: number;
@@ -57,8 +58,12 @@ function computeDelay(attempt: number, config: Required<RetryConfig>): number {
 }
 
 /**
- * Wraps an async operation with exponential backoff and jitter.
- * Only retries on transient errors (429, 5xx, network failures).
+ * Wraps an async operation with exponential backoff, jitter, and circuit
+ * breaker integration for the LLM provider dependency.
+ *
+ * - Checks the `llm_provider` circuit breaker before each attempt.
+ * - Records 5xx/network failures against the circuit breaker.
+ * - Records success to allow HALF_OPEN → CLOSED transitions.
  */
 export async function withRetry<T>(
   operation: () => Promise<T>,
@@ -69,19 +74,40 @@ export async function withRetry<T>(
   let lastError: unknown;
 
   for (let attempt = 0; attempt <= cfg.maxRetries; attempt++) {
+    // Check circuit breaker before attempting the call.
+    const circuit = checkCircuit('llm_provider', context ?? 'llm_call');
+    if (!circuit.allowed) {
+      const err = new Error(
+        `LLM provider circuit breaker is OPEN. Retry after ${circuit.retryAfter}s.`,
+      );
+      (err as unknown as { status: number }).status = 503;
+      throw err;
+    }
+
     try {
-      return await operation();
+      const result = await operation();
+      recordSuccess('llm_provider');
+      return result;
     } catch (err) {
       lastError = err;
+
+      const status = (err instanceof Error)
+        ? (err as unknown as { status?: number }).status
+        : undefined;
+
+      // Record server-side failures against the circuit breaker.
+      if (typeof status === 'number' && status >= 500 && status < 600) {
+        recordFailure('llm_provider', `HTTP ${status}`);
+      } else if (err instanceof Error && isRetriable(err) && typeof status !== 'number') {
+        // Network-level error (no HTTP status) — also counts as a server-side fault.
+        recordFailure('llm_provider', err.message.slice(0, 80));
+      }
 
       if (attempt === cfg.maxRetries || !isRetriable(err)) {
         throw err;
       }
 
       const delayMs = computeDelay(attempt, cfg);
-      const status = (err instanceof Error)
-        ? (err as unknown as { status?: number }).status
-        : undefined;
 
       logger.warn(
         { attempt: attempt + 1, maxRetries: cfg.maxRetries, delayMs, status, context },

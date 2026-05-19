@@ -2,7 +2,7 @@ import { spawn } from 'node:child_process';
 import { writeGeminiContext, buildAgentPrompt } from './prompt-builder.js';
 import { getLLMProvider, getSourceExplorer, getWorkspaceProvider } from '../adapters/registry.js';
 import { logger } from '../logger.js';
-import { logToolStrippingEvent } from '../../agents/telemetry/logger.js';
+import { logToolStrippingEvent, logToolLoopAbortedEvent } from '../../agents/telemetry/logger.js';
 import type { AgentId } from './types.js';
 import type { LLMContent } from '../adapters/interfaces/llm-provider.js';
 import { db } from '../db/index.js';
@@ -712,6 +712,28 @@ Please refine your proposal based on this feedback.
   }
 }
 
+/** Recursively sort object keys for deterministic JSON serialization. */
+function stableStringify(val: unknown): string {
+  if (val === null || typeof val !== 'object' || Array.isArray(val)) {
+    return JSON.stringify(val);
+  }
+  const sorted = Object.fromEntries(
+    Object.entries(val as Record<string, unknown>)
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([k, v]) => [k, JSON.parse(stableStringify(v))])
+  );
+  return JSON.stringify(sorted);
+}
+
+function toolCallKey(name: string, args: Record<string, unknown>): string {
+  return `${name}::${stableStringify(args)}`;
+}
+
+/** Returns true if a tool result string represents a deterministic failure. */
+function isToolError(result: string): boolean {
+  return result.startsWith('Error:') || result.startsWith('Tool error:');
+}
+
 /**
  * Multi-turn tool-use loop: calls the LLM with code tools, executes tool calls,
  * and feeds results back until the LLM produces a final text response.
@@ -726,6 +748,7 @@ async function executeToolLoop(opts: {
 }): Promise<string> {
   const { orgId, systemPrompt, userMessage, explorer, maxRounds, modelTier } = opts;
   const contents: LLMContent[] = [{ role: 'user', parts: [{ text: userMessage }] }];
+  const failedCalls = new Map<string, number>();
 
   for (let round = 0; round < maxRounds; round++) {
     const result = await getLLMProvider().generateWithTools({
@@ -756,14 +779,34 @@ async function executeToolLoop(opts: {
 
     // Execute each tool call and build functionResponse parts
     const responseParts: LLMContent['parts'] = [];
+    let circuitBroken = false;
+    let circuitBrokenToolName = '';
     for (let i = 0; i < result.functionCalls.length; i++) {
       const fc = result.functionCalls[i];
       const callId = (modelParts.find(p => p.functionCall?.name === fc.name) as any)?.functionCall?.id ?? fc.id;
       const toolResult = await executeCodeTool(fc.name, fc.args, { orgId, explorer });
+
+      if (isToolError(toolResult)) {
+        const key = toolCallKey(fc.name, fc.args);
+        const count = (failedCalls.get(key) ?? 0) + 1;
+        failedCalls.set(key, count);
+        if (count >= 2) {
+          circuitBroken = true;
+          circuitBrokenToolName = fc.name;
+          break;
+        }
+      }
+
       responseParts.push({
         functionResponse: { name: fc.name, response: { result: toolResult }, id: callId },
       });
     }
+
+    if (circuitBroken) {
+      logToolLoopAbortedEvent({ toolName: circuitBrokenToolName, orgId });
+      return 'Tool execution failed after repeated errors, halting further attempts.';
+    }
+
     contents.push({ role: 'user', parts: responseParts });
   }
 

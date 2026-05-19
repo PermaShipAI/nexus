@@ -60,3 +60,10 @@ export const confirmationResolutionLatencyMs = new Histogram({
   buckets: [1000, 5000, 10000, 30000, 60000, 120000, 300000],
   registers: [registry],
 });
+
+export const agentToolLoopAbortedTotal = new Counter({
+  name: 'nexus_agent_tool_loop_aborted_total',
+  help: 'Total number of multi-turn tool loops aborted by the circuit breaker due to repeated identical failures',
+  labelNames: ['tool_name'] as const,
+  registers: [registry],
+});
