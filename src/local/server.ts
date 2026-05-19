@@ -60,6 +60,7 @@ import {
   writeFileSecure,
 } from './security.js';
 import { validateImageAttachments } from '../core/guardrails/image_guard.js';
+import { getDegradedDependencies } from '../adapters/providers/circuit-breaker.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const UI_DIR = join(__dirname, '..', '..', 'ui');
@@ -103,6 +104,36 @@ export async function createLocalServer(_port = 3000) {
     if (!validateSession(token)) {
       return reply.status(401).send({ error: 'Unauthorized' });
     }
+  });
+
+  // ── Degraded-mode: reject requests when critical circuit breakers are OPEN ──
+
+  server.addHook('preHandler', async (request, reply) => {
+    // Only guard state-changing API calls that would consume downstream resources.
+    if (!['POST', 'PUT', 'DELETE'].includes(request.method)) return;
+    if (!request.url.startsWith('/api/')) return;
+    // Allow auth endpoints regardless of degraded state.
+    if (request.url === '/api/auth/token') return;
+
+    const { dependencies, maxRetryAfter } = getDegradedDependencies();
+    if (dependencies.length === 0) return;
+
+    const requestId =
+      (request.headers['x-request-id'] as string | undefined) ??
+      (request.headers['x-correlation-id'] as string | undefined) ??
+      `req-${Date.now()}`;
+
+    reply
+      .status(503)
+      .header('Retry-After', String(maxRetryAfter > 0 ? maxRetryAfter : 30))
+      .send({
+        error: 'service_degraded',
+        message:
+          'Nexus Command is temporarily unable to process requests due to an upstream dependency outage.',
+        degraded_dependencies: dependencies,
+        retry_after_seconds: maxRetryAfter > 0 ? maxRetryAfter : 30,
+        support_reference: requestId,
+      });
   });
 
   /** Get the session token (for UI to store and attach to requests) */
@@ -1536,8 +1567,17 @@ You can modify the checklist using these blocks:
   });
 
 
-  /** Health check */
-  server.get('/api/health', async () => ({ status: 'ok' }));
+  /** Health check — reflects degraded state when any circuit breaker is OPEN */
+  server.get('/api/health', async (_request, reply) => {
+    const { dependencies } = getDegradedDependencies();
+    if (dependencies.length > 0) {
+      return reply.status(503).send({
+        status: 'degraded',
+        degraded_dependencies: dependencies,
+      });
+    }
+    return { status: 'ok' };
+  });
 
   /** Prometheus metrics scrape endpoint (unauthenticated, localhost-only by convention) */
   server.get('/metrics', async (_request, reply) => {
