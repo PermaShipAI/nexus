@@ -3,6 +3,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { executeAgent } from './executor.js';
 import { logger } from '../logger.js';
 import { createTicketProposal } from '../tools/proposal-service.js';
+import { executeCodeTool } from './code-tools.js';
 
 const mockGenerateText = vi.fn();
 const mockGenerateWithTools = vi.fn();
@@ -58,6 +59,7 @@ vi.mock('../db/index.js', () => {
 });
 vi.mock('../../agents/telemetry/logger.js', () => ({
   logToolStrippingEvent: vi.fn(),
+  logToolLoopAbortedEvent: vi.fn(),
 }));
 vi.mock('../tools/proposal-service.js', () => ({
   createTicketProposal: vi.fn().mockResolvedValue({ success: true }),
@@ -222,6 +224,92 @@ describe('executor', () => {
       // After exhausting the budget, the executor must call generateText to get a final answer
       expect(mockGenerateText).toHaveBeenCalledTimes(1);
       expect(result).toBe('Final answer after tool budget exhausted');
+    } finally {
+      process.env.DATABASE_URL = savedDatabaseUrl;
+    }
+  });
+
+  it('circuit breaker fires after two identical tool failures', async () => {
+    const savedDatabaseUrl = process.env.DATABASE_URL;
+    delete process.env.DATABASE_URL;
+
+    try {
+      mockSourceExplorer = { readFile: vi.fn(), listFiles: vi.fn() };
+
+      // Always return the same tool call
+      mockGenerateWithTools.mockResolvedValue({
+        text: '',
+        functionCalls: [{ name: 'mock_tool', args: { id: 'x' }, id: 'call_1' }],
+        raw: null,
+      });
+
+      // Always return an error
+      vi.mocked(executeCodeTool).mockResolvedValue('Error: validation failed');
+
+      const result = await executeAgent({
+        orgId: 'org-1',
+        agentId: 'sre',
+        channelId: 'chan-1',
+        userId: 'user-1',
+        userName: 'Alice',
+        userMessage: 'Do something',
+      });
+
+      expect(result).toBe('Tool execution failed after repeated errors, halting further attempts.');
+      expect(mockGenerateWithTools).toHaveBeenCalledTimes(2);
+    } finally {
+      process.env.DATABASE_URL = savedDatabaseUrl;
+    }
+  });
+
+  it('distinct tool args are not circuit-broken', async () => {
+    const savedDatabaseUrl = process.env.DATABASE_URL;
+    delete process.env.DATABASE_URL;
+
+    try {
+      mockSourceExplorer = { readFile: vi.fn(), listFiles: vi.fn() };
+
+      // Return four distinct read_file calls with different file_path, then done
+      mockGenerateWithTools
+        .mockResolvedValueOnce({
+          text: '',
+          functionCalls: [{ name: 'read_file', args: { file_path: 'a.ts' }, id: 'call_1' }],
+          raw: null,
+        })
+        .mockResolvedValueOnce({
+          text: '',
+          functionCalls: [{ name: 'read_file', args: { file_path: 'b.ts' }, id: 'call_2' }],
+          raw: null,
+        })
+        .mockResolvedValueOnce({
+          text: '',
+          functionCalls: [{ name: 'read_file', args: { file_path: 'c.ts' }, id: 'call_3' }],
+          raw: null,
+        })
+        .mockResolvedValueOnce({
+          text: '',
+          functionCalls: [{ name: 'read_file', args: { file_path: 'd.ts' }, id: 'call_4' }],
+          raw: null,
+        })
+        .mockResolvedValueOnce({
+          text: 'All done',
+          functionCalls: [],
+          raw: null,
+        });
+
+      // All tool calls succeed
+      vi.mocked(executeCodeTool).mockResolvedValue('file content');
+
+      const result = await executeAgent({
+        orgId: 'org-1',
+        agentId: 'sre',
+        channelId: 'chan-1',
+        userId: 'user-1',
+        userName: 'Alice',
+        userMessage: 'Read files',
+      });
+
+      expect(result).toBe('All done');
     } finally {
       process.env.DATABASE_URL = savedDatabaseUrl;
     }
