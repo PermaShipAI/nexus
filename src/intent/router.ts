@@ -4,6 +4,7 @@ import { classifyIntent } from './classifier.js';
 import { checkPermission } from '../rbac/checker.js';
 import { checkChannelSafety } from '../middleware/channel_safety.js';
 import { logRoutingDecision } from './telemetry.js';
+import { logAdministrativeIntentClarificationEvent } from '../../agents/telemetry/logger.js';
 
 export interface RouterResult {
   allowed: boolean;
@@ -13,7 +14,8 @@ export interface RouterResult {
   blockReason?: string;
 }
 
-const CONFIRMATION_REQUIRED_INTENTS = ['ManageProject', 'ProposeTask', 'AccessSecrets', 'DestructiveAction'];
+const CONFIRMATION_REQUIRED_INTENTS = ['ManageProject', 'ProposeTask', 'AccessSecrets', 'DestructiveAction', 'AdministrativeAction'];
+const ADMIN_INTENT_CONFIDENCE_THRESHOLD = 0.8;
 const CLARIFICATION_MESSAGE =
   "I'm not sure what you'd like to do. Could you clarify?";
 const TIMEOUT_MESSAGE =
@@ -51,8 +53,19 @@ export async function routeIntent(
 
   const durationMs = Date.now() - startTime;
 
+  // AdministrativeAction intents require higher confidence to prevent accidental state mutations
+  const confidenceThreshold =
+    intent.kind === 'AdministrativeAction' ? ADMIN_INTENT_CONFIDENCE_THRESHOLD : 0.6;
+
   // Low confidence — ask for clarification
-  if (intent.confidenceScore < 0.6) {
+  if (intent.confidenceScore < confidenceThreshold) {
+    if (intent.kind === 'AdministrativeAction') {
+      logAdministrativeIntentClarificationEvent({
+        confidenceScore: intent.confidenceScore,
+        channelId: context.messageId,
+        userName: context.platformUserId,
+      });
+    }
     logRoutingDecision({
       messageId: context.messageId,
       intentKind: intent.kind,
