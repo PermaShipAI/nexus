@@ -389,7 +389,7 @@ async function handleIncomingMessage(message: UnifiedMessage, isPublic: boolean,
   const hasValidAgent = routes.some(r => getAgent(r.agentId as AgentId));
   const effectiveRoutes: RouteResult[] = hasValidAgent
     ? routes
-    : [{ agentId: 'nexus' as const, intent: 'fallback', subMessage: message.content, confidenceScore: 0.5, reasoning: 'No agent matched, falling back to nexus', extractedEntities: {}, needsCodeAccess: false, isStrategySession: false, isFallback: true }];
+    : [{ agentId: 'nexus' as const, intent: 'GeneralInquiry', subMessage: message.content, confidenceScore: 0.5, reasoning: 'No agent matched, falling back to nexus', extractedEntities: {}, needsCodeAccess: false, isStrategySession: false, isFallback: true }];
 
   for (const route of effectiveRoutes) {
     const agent = getAgent(route.agentId as AgentId);

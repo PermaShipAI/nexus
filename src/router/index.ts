@@ -98,7 +98,7 @@ Example: [{"agentId": "sre", "intent": "investigation", "subMessage": "Investiga
       logger.error({ err, response }, 'Failed to parse router response');
       return [{
         agentId: 'nexus',
-        intent: 'fallback',
+        intent: 'GeneralInquiry',
         subMessage: content,
         confidenceScore: 0.5,
         reasoning: 'failed to parse router response',
@@ -112,7 +112,7 @@ Example: [{"agentId": "sre", "intent": "investigation", "subMessage": "Investiga
     logger.error({ err }, 'Message routing failed');
     return [{
       agentId: 'nexus',
-      intent: 'fallback',
+      intent: 'GeneralInquiry',
       subMessage: content,
       confidenceScore: 0.5,
       reasoning: 'router execution failed',
