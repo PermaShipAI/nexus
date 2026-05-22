@@ -498,3 +498,28 @@ export const adrDrafts = pgTable(
 
 export type AdrDraft = typeof adrDrafts.$inferSelect;
 export type NewAdrDraft = typeof adrDrafts.$inferInsert;
+
+// --- Notifications ---
+
+export const notifications = pgTable(
+  'notifications',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    orgId: uuid('org_id').notNull(),
+    type: text('type').notNull(), // 'mission_stall' | 'mission_complete' | 'execution_complete' | 'execution_failed' | 'agent_alert'
+    title: text('title').notNull(),
+    body: text('body').notNull(),
+    severity: text('severity').notNull().default('info'), // 'info' | 'warning' | 'error'
+    read: boolean('read').notNull().default(false),
+    metadata: jsonb('metadata').$type<Record<string, unknown>>(),
+    createdAt: timestamp('created_at').notNull().defaultNow(),
+  },
+  (table) => ({
+    orgIdx: index('notification_org_idx').on(table.orgId),
+    readIdx: index('notification_read_idx').on(table.orgId, table.read),
+    createdAtIdx: index('notification_created_at_idx').on(table.createdAt),
+  }),
+);
+
+export type Notification = typeof notifications.$inferSelect;
+export type NewNotification = typeof notifications.$inferInsert;

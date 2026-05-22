@@ -138,6 +138,7 @@ export async function createLocalServer(_port = 3000) {
   localBus.on('message', (msg) => broadcast('message', msg));
   localBus.on('reaction', (data) => broadcast('reaction', data));
   localBus.on('thread_rename', (data) => broadcast('thread_rename', data));
+  localBus.on('notification', (data) => broadcast('notification', data));
 
   // ── REST: chat API ────────────────────────────────────────────────────
 
@@ -1535,6 +1536,42 @@ You can modify the checklist using these blocks:
     return result;
   });
 
+
+  // ── REST: notifications ──────────────────────────────────────────────────
+
+  /** List recent notifications (default: all, optionally unread only) */
+  server.get('/api/notifications', async (request) => {
+    const { unread, limit } = request.query as { unread?: string; limit?: string };
+    const { listNotifications } = await import('../notifications/service.js');
+    const items = await listNotifications(LOCAL_ORG_ID, {
+      unreadOnly: unread === 'true',
+      limit: limit ? parseInt(limit, 10) : 50,
+    });
+    return { notifications: items };
+  });
+
+  /** Get unread notification count */
+  server.get('/api/notifications/unread-count', async () => {
+    const { getUnreadCount } = await import('../notifications/service.js');
+    const count = await getUnreadCount(LOCAL_ORG_ID);
+    return { count };
+  });
+
+  /** Mark a single notification as read */
+  server.post('/api/notifications/:id/read', async (request) => {
+    const { id } = request.params as { id: string };
+    const { markNotificationRead } = await import('../notifications/service.js');
+    await markNotificationRead(id, LOCAL_ORG_ID);
+    return { success: true };
+  });
+
+  /** Mark all notifications as read */
+  server.post('/api/notifications/read-all', async () => {
+    const { markAllNotificationsRead } = await import('../notifications/service.js');
+    await markAllNotificationsRead(LOCAL_ORG_ID);
+    broadcast('notifications_read_all', {});
+    return { success: true };
+  });
 
   /** Health check */
   server.get('/api/health', async () => ({ status: 'ok' }));

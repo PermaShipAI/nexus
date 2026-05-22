@@ -6,6 +6,7 @@ import { routeMessage } from '../router/index.js';
 import { getAgent } from '../agents/registry.js';
 import { logger } from '../logger.js';
 import type { AgentId } from '../agents/types.js';
+import { createNotification } from '../notifications/service.js';
 import {
   getActiveMissionsDueForHeartbeat,
   getMissionItems,
@@ -188,6 +189,16 @@ async function runMissionHeartbeat(mission: Mission): Promise<void> {
   if (allStalled && activeItems.length > 0) {
     logger.info({ missionId: mission.id, stalledCount: activeItems.length }, 'All active items stalled — asking Nexus to re-plan');
 
+    // Notify the user that this mission has stalled and is being re-planned
+    createNotification({
+      orgId: mission.orgId,
+      type: 'mission_stall',
+      title: `Mission stalled: ${mission.title}`,
+      body: `${activeItems.length} item${activeItems.length !== 1 ? 's' : ''} stalled after multiple attempts. Nexus is re-planning.`,
+      severity: 'warning',
+      metadata: { missionId: mission.id, stalledCount: activeItems.length },
+    }).catch((err) => logger.warn({ err }, 'Failed to create mission_stall notification'));
+
     // Ask Nexus to break stalled items into smaller sub-tasks
     const stalledList = activeItems.map(i => `- "${i.title}" (${i.heartbeatCount ?? 0} attempts, item ID: ${i.id})`).join('\n');
     const replanPrompt = `The following mission items have stalled after multiple attempts with no progress:
@@ -308,6 +319,15 @@ If NO — explain what's still missing and what additional work is needed. Do NO
       `Mission **${mission.title}** is complete! All checklist items have been verified.`,
       mission.orgId,
     );
+
+    createNotification({
+      orgId: mission.orgId,
+      type: 'mission_complete',
+      title: `Mission complete: ${mission.title}`,
+      body: 'All checklist items have been verified.',
+      severity: 'info',
+      metadata: { missionId: mission.id },
+    }).catch((err) => logger.warn({ err }, 'Failed to create mission_complete notification'));
 
     // Handle recurring missions
     if (mission.cronExpression) {
