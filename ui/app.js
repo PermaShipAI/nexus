@@ -203,6 +203,12 @@ function connect() {
       case 'confirmation_resolved':
         handleConfirmationResolved(data);
         break;
+      case 'notification':
+        handleIncomingNotification(data);
+        break;
+      case 'notifications_read_all':
+        updateNotificationsCount(0);
+        break;
       case 'error':
         appendSystemMessage(data.message || 'An error occurred');
         break;
@@ -2379,6 +2385,133 @@ if (missionModal) {
   });
 }
 
+// ── Notifications ──────────────────────────────────────────────────────────────
+
+const notificationsBtn = document.getElementById('notifications-btn');
+const notificationsPanel = document.getElementById('notifications-panel');
+const notificationsCloseBtn = document.getElementById('notifications-close');
+const notificationsMarkAllReadBtn = document.getElementById('notifications-mark-all-read');
+const notificationsListEl = document.getElementById('notifications-list');
+const notificationsEmptyEl = document.getElementById('notifications-empty');
+const notificationsCountEl = document.getElementById('notifications-count');
+
+function updateNotificationsCount(count) {
+  if (!notificationsCountEl) return;
+  if (count > 0) {
+    notificationsCountEl.textContent = count;
+    notificationsCountEl.classList.remove('hidden');
+  } else {
+    notificationsCountEl.classList.add('hidden');
+  }
+}
+
+function severityIcon(severity) {
+  if (severity === 'error') return '🔴';
+  if (severity === 'warning') return '🟡';
+  return '🔵';
+}
+
+function renderNotification(n) {
+  const el = document.createElement('div');
+  el.className = 'proposal-card' + (n.read ? '' : ' unread-notification');
+  el.dataset.notificationId = n.id;
+  el.style.cssText = 'position:relative;';
+  const ts = new Date(n.createdAt).toLocaleString();
+  el.innerHTML = `
+    <div class="proposal-header" style="display:flex;align-items:center;gap:6px">
+      <span>${severityIcon(n.severity)}</span>
+      <strong style="flex:1;font-size:13px">${escHtml(n.title)}</strong>
+      ${!n.read ? '<span class="proposal-badge" style="background:var(--accent)">New</span>' : ''}
+    </div>
+    <div class="proposal-desc" style="margin-top:4px;font-size:12px;color:var(--text-secondary)">${escHtml(n.body)}</div>
+    <div class="proposal-meta" style="font-size:11px;color:var(--text-muted);margin-top:4px">${ts}</div>
+  `;
+  if (!n.read) {
+    el.addEventListener('click', async () => {
+      await apiFetch(`/api/notifications/${n.id}/read`, { method: 'POST' });
+      el.classList.remove('unread-notification');
+      el.querySelector('.proposal-badge')?.remove();
+      // Recompute count from DOM
+      const unread = notificationsListEl.querySelectorAll('.unread-notification').length;
+      updateNotificationsCount(unread);
+    });
+  }
+  return el;
+}
+
+function escHtml(str) {
+  return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
+
+async function loadNotifications() {
+  if (!notificationsListEl) return;
+  try {
+    const resp = await apiFetch('/api/notifications?limit=30');
+    const data = await resp.json();
+    const items = data.notifications || [];
+    notificationsListEl.innerHTML = '';
+    if (items.length === 0) {
+      notificationsEmptyEl.style.display = '';
+    } else {
+      notificationsEmptyEl.style.display = 'none';
+      items.forEach(n => notificationsListEl.appendChild(renderNotification(n)));
+    }
+    const unread = items.filter(n => !n.read).length;
+    updateNotificationsCount(unread);
+  } catch { /* silently ignore — non-critical */ }
+}
+
+async function loadNotificationsUnreadCount() {
+  try {
+    const resp = await apiFetch('/api/notifications/unread-count');
+    const data = await resp.json();
+    updateNotificationsCount(data.count || 0);
+  } catch { /* silently ignore */ }
+}
+
+function handleIncomingNotification(notification) {
+  // Update badge
+  const current = parseInt(notificationsCountEl?.textContent || '0', 10) || 0;
+  updateNotificationsCount(current + 1);
+
+  // If panel is open, prepend it
+  if (notificationsPanel && !notificationsPanel.classList.contains('hidden')) {
+    notificationsEmptyEl.style.display = 'none';
+    notificationsListEl.prepend(renderNotification(notification));
+  }
+
+  // Play notification sound for warnings and errors
+  if (notification.severity === 'warning' || notification.severity === 'error') {
+    playNotifSound();
+  }
+}
+
+if (notificationsBtn) {
+  notificationsBtn.addEventListener('click', () => {
+    // Close other panels
+    document.querySelectorAll('.settings-panel').forEach(p => p.classList.add('hidden'));
+    notificationsPanel.classList.remove('hidden');
+    loadNotifications();
+  });
+}
+
+if (notificationsCloseBtn) {
+  notificationsCloseBtn.addEventListener('click', () => {
+    notificationsPanel.classList.add('hidden');
+  });
+}
+
+if (notificationsMarkAllReadBtn) {
+  notificationsMarkAllReadBtn.addEventListener('click', async () => {
+    await apiFetch('/api/notifications/read-all', { method: 'POST' });
+    notificationsListEl.querySelectorAll('.unread-notification').forEach(el => {
+      el.classList.remove('unread-notification');
+      el.querySelector('.proposal-badge')?.remove();
+    });
+    updateNotificationsCount(0);
+  });
+}
+
 // Boot
 const loadingOverlay = document.getElementById('loading-overlay');
 
@@ -2389,6 +2522,7 @@ initAuth().then(() => {
   loadFocusOverview();
   loadMissions();
   loadConfig();
+  loadNotificationsUnreadCount();
   return loadHistory();
 }).then(() => {
   if (loadingOverlay) loadingOverlay.classList.add('hidden');

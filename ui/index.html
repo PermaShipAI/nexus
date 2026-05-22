@@ -76,12 +76,28 @@
       </div>
 
       <div class="sidebar-bottom">
+        <button id="notifications-btn" class="sidebar-btn notifications-trigger" aria-label="View notifications">Notifications <span id="notifications-count" class="proposals-count hidden">0</span></button>
         <button id="proposals-btn" class="sidebar-btn proposals-trigger" aria-label="View proposals">Proposals <span id="proposals-count" class="proposals-count hidden">0</span></button>
         <button id="branches-btn" class="sidebar-btn" aria-label="View branches">Branches <span id="branches-count" class="proposals-count hidden">0</span></button>
         <button id="settings-btn" class="sidebar-btn settings-trigger" aria-label="Open settings (Ctrl+Comma)">Settings</button>
         <div id="connection-status" class="status connected">Connected</div>
       </div>
     </aside>
+
+    <!-- Notifications Panel -->
+    <div id="notifications-panel" class="settings-panel hidden">
+      <div class="settings-header">
+        <span style="font-weight:600;font-size:14px">Notifications</span>
+        <div style="display:flex;gap:8px;align-items:center">
+          <button id="notifications-mark-all-read" class="sidebar-btn" style="font-size:11px;padding:3px 8px">Mark all read</button>
+          <button id="notifications-close" aria-label="Close notifications">&times;</button>
+        </div>
+      </div>
+      <div class="settings-body">
+        <div id="notifications-list" style="max-width:672px;margin:0 auto;width:100%"></div>
+        <div id="notifications-empty" class="setting-desc" style="padding:16px 0;text-align:center;display:none">No notifications yet.</div>
+      </div>
+    </div>
 
     <!-- Branches Panel -->
     <div id="branches-panel" class="settings-panel hidden">
