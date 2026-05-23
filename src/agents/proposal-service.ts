@@ -1,4 +1,5 @@
 import { GoogleGenerativeAI } from '@google/generative-ai';
+import { config } from '../config.js';
 import { logger } from '../logger.js';
 
 export interface ExistingProposal {
@@ -108,7 +109,7 @@ Respond with raw JSON only, no markdown fences:
 { "classification": "DUPLICATE" | "ROOT_CAUSE_OVERLAP" | "VALID_SUBTASK" | "UNIQUE", "matchedIndex": <1-based index of the matching existing proposal, or null if UNIQUE>, "reason": "<brief explanation>" }`;
 
     const genAI = new GoogleGenerativeAI(geminiApiKey);
-    const model = genAI.getGenerativeModel({ model: 'gemini-2.0-flash' });
+    const model = genAI.getGenerativeModel({ model: config.PROPOSAL_CHECK_MODEL });
 
     const result = await model.generateContent(prompt);
     const text = result.response.text();

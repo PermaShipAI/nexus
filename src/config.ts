@@ -66,6 +66,12 @@ const envSchema = z.object({
   GEMINI_API_KEY: z.string().optional(),
   OLLAMA_BASE_URL: z.string().default('http://127.0.0.1:11434'),
 
+  // LLM output token budget — explicit cap per request (FinOps guardrail)
+  LLM_MAX_TOKENS: z.coerce.number().int().positive().default(8192),
+
+  // Model used by the proposal duplicate-check service
+  PROPOSAL_CHECK_MODEL: z.string().default('gemini-2.0-flash'),
+
   // Local execution backends
   EXECUTION_BACKEND: z.string().default('noop'),
   EXECUTION_TIMEOUT_MS: z.coerce.number().default(3_600_000),

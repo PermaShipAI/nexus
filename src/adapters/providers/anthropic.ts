@@ -1,4 +1,5 @@
 import Anthropic from '@anthropic-ai/sdk';
+import { config } from '../../config.js';
 import { logger } from '../../logger.js';
 import { usageReporter } from '../../telemetry/usage-reporter.js';
 import { withRetry } from './retry.js';
@@ -40,7 +41,7 @@ export class AnthropicProvider implements LLMProvider {
     const response = await withRetry(
       () => this.client.messages.create({
         model,
-        max_tokens: 8192,
+        max_tokens: config.LLM_MAX_TOKENS,
         system: options.systemInstruction || undefined,
         messages,
       }),
@@ -124,7 +125,7 @@ export class AnthropicProvider implements LLMProvider {
     const response = await withRetry(
       () => this.client.messages.create({
         model,
-        max_tokens: 8192,
+        max_tokens: config.LLM_MAX_TOKENS,
         system: options.systemInstruction || undefined,
         messages,
         tools,
