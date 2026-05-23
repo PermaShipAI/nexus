@@ -7,13 +7,24 @@ import { OllamaProvider } from './ollama.js';
 import { MultiProvider } from './multi.js';
 import { SecretRedactionProvider } from './secret-redaction.js';
 
+function buildAnthropicModelOverrides(): Partial<Record<ModelTier, string>> {
+  const overrides: Partial<Record<ModelTier, string>> = {};
+  const tiers: ModelTier[] = ['ROUTER', 'AGENT', 'WORK'];
+  for (const tier of tiers) {
+    const envKey = `LLM_ANTHROPIC_${tier}_MODEL`;
+    const val = process.env[envKey];
+    if (val) overrides[tier] = val;
+  }
+  return overrides;
+}
+
 function buildSingleProvider(name: string, apiKey: string): LLMProvider {
   switch (name) {
     case 'gemini':
       return new DefaultLLMProvider(apiKey || config.GEMINI_API_KEY || '');
     case 'anthropic':
       if (!apiKey) throw new Error('LLM_API_KEY is required for Anthropic provider');
-      return new AnthropicProvider(apiKey);
+      return new AnthropicProvider(apiKey, buildAnthropicModelOverrides());
     case 'openai':
       if (!apiKey) throw new Error('LLM_API_KEY is required for OpenAI provider');
       return new OpenAIProvider(apiKey);

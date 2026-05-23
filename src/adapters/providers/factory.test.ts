@@ -61,7 +61,7 @@ describe('createLLMProvider', () => {
   it('creates Anthropic provider when configured', () => {
     mockConfig.LLM_PROVIDER = 'anthropic';
     createLLMProvider();
-    expect(mockAnthropicProvider).toHaveBeenCalledWith('test-api-key');
+    expect(mockAnthropicProvider).toHaveBeenCalledWith('test-api-key', {});
   });
 
   it('creates OpenAI provider when configured', () => {
