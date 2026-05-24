@@ -17,6 +17,7 @@ export async function sanitizeForPublic(content: string): Promise<string> {
       model: 'ROUTER',
       systemInstruction: SANITIZER_SYSTEM_PROMPT,
       contents: [{ role: 'user', parts: [{ text: content }] }],
+      temperature: 0,
     });
 
     return sanitized.trim() || '[internal update]';
@@ -73,6 +74,7 @@ export async function synthesizePublicReply(
       model: 'ROUTER',
       systemInstruction: SYNTHESIZER_SYSTEM_PROMPT,
       contents: [{ role: 'user', parts: [{ text: prompt }] }],
+      temperature: 0,
     });
 
     const result = synthesized.trim();
