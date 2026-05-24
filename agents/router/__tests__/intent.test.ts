@@ -17,6 +17,7 @@ vi.mock('../../telemetry/logger.js', () => ({
   logRoutingDecision: vi.fn(),
   logSecurityEvent: mockLogSecurityEventFn,
   logAdministrativeIntentClarificationEvent: mockLogAdminClarificationFn,
+  logAdminConfirmationGateEvent: vi.fn(),
   logger: {
     info: vi.fn(),
     warn: vi.fn(),
@@ -309,9 +310,9 @@ describe('routeMessage', () => {
   });
 
   // ---------------------------------------------------------------------------
-  // Test 10: AdministrativeAction — requiresConfirmation is surfaced as false
+  // Test 10: AdministrativeAction — admin gate intercepts and sets awaitingAdminConfirmation: true
   // ---------------------------------------------------------------------------
-  it('surfaces requiresConfirmation: false for a low-risk AdministrativeAction intent', async () => {
+  it('admin gate intercepts AdministrativeAction and sets awaitingAdminConfirmation: true', async () => {
     const geminiPayload = {
       intent: 'AdministrativeAction',
       confidenceScore: 0.85,
@@ -334,7 +335,9 @@ describe('routeMessage', () => {
     );
 
     expect(result[0].intent).toBe('AdministrativeAction');
-    expect(result[0].requiresConfirmation).toBe(false);
+    expect(result[0].awaitingAdminConfirmation).toBe(true);
+    expect(result[0].agentId).toBe('none');
+    expect(result[0].isFallback).toBe(false);
   });
 
   // ---------------------------------------------------------------------------
@@ -380,9 +383,9 @@ describe('routeMessage', () => {
   });
 
   // ---------------------------------------------------------------------------
-  // Test 13: AdministrativeAction at exact 0.6 boundary routes normally
+  // Test 13: AdministrativeAction at exact 0.6 boundary is intercepted by admin gate
   // ---------------------------------------------------------------------------
-  it('routes AdministrativeAction to nexus without fallback when confidenceScore is exactly 0.6', async () => {
+  it('admin gate intercepts AdministrativeAction at exactly 0.6 confidence', async () => {
     const geminiPayload = {
       intent: 'AdministrativeAction',
       confidenceScore: 0.6,
@@ -399,7 +402,8 @@ describe('routeMessage', () => {
 
     expect(results[0].isFallback).toBe(false);
     expect(results[0].intent).toBe('AdministrativeAction');
-    expect(results[0].agentId).toBe('nexus');
+    expect(results[0].awaitingAdminConfirmation).toBe(true);
+    expect(results[0].agentId).toBe('none');
   });
 
   // ---------------------------------------------------------------------------
@@ -504,9 +508,9 @@ describe('routeMessage', () => {
   });
 
   // ---------------------------------------------------------------------------
-  // Test 19: Explicit AdministrativeAction (score 0.97, settingKey/Value present) → isFallback: false, agentId: 'nexus'
+  // Test 19: Explicit AdministrativeAction (score 0.97, settingKey/Value present) → admin gate fires
   // ---------------------------------------------------------------------------
-  it('routes AdministrativeAction to nexus without fallback when score is 0.97 and entities are present', async () => {
+  it('admin gate intercepts AdministrativeAction when score is 0.97 and entities are present', async () => {
     const geminiPayload = {
       intent: 'AdministrativeAction',
       confidenceScore: 0.97,
@@ -522,7 +526,8 @@ describe('routeMessage', () => {
     const results = await routeMessage('enable autonomous mode', 'channel-19', 'user19');
 
     expect(results[0].isFallback).toBe(false);
-    expect(results[0].agentId).toBe('nexus');
+    expect(results[0].awaitingAdminConfirmation).toBe(true);
+    expect(results[0].agentId).toBe('none');
   });
 
   // ---------------------------------------------------------------------------

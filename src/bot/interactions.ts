@@ -6,6 +6,7 @@ import { parseArgs } from '../utils/parse-args.js';
 import { getPublicChannels } from '../settings/service.js';
 import { getCommunicationAdapter } from '../adapters/registry.js';
 import { buildSignedCustomId } from './interaction-crypto.js';
+import { createPendingAdminAction } from '../services/intent/admin-confirmation-store.js';
 
 export async function sendApprovalMessage(
   channelId: string,
@@ -123,6 +124,57 @@ export async function sendAutonomousNotification(
     await db.update(pendingActions)
       .set({ discordMessageId: result.message_id, channelId: unifiedId })
       .where(eq(pendingActions.id, actionId));
+  }
+}
+
+export async function sendAdminConfirmationGate(params: {
+  channelId: string;
+  orgId: string;
+  settingKey: string;
+  settingValue: string;
+  requestingUserId: string;
+  requestingUserName: string;
+  platform: 'discord' | 'slack';
+}): Promise<void> {
+  const { channelId, orgId, settingKey, settingValue, requestingUserId, requestingUserName, platform } = params;
+
+  const action = createPendingAdminAction({
+    orgId,
+    channelId,
+    settingKey,
+    settingValue,
+    requestingUserId,
+    requestingUserName,
+    platform,
+  });
+
+  const unifiedChannelId = channelId.includes(':') ? channelId : `${platform}:${channelId}`;
+
+  const content = `**Admin Action Required** — @${requestingUserName} wants to change a system setting.\n**Setting:** \`${settingKey}\`\n**New value:** \`${settingValue}\`\n\nPlease confirm or deny this administrative action.`;
+
+  const result = await getCommunicationAdapter().sendMessage(
+    {
+      content,
+      components: [
+        {
+          type: 'button',
+          custom_id: buildSignedCustomId('admin_confirm', action.id),
+          label: 'Confirm',
+          style: 'success',
+        },
+        {
+          type: 'button',
+          custom_id: buildSignedCustomId('admin_deny', action.id),
+          label: 'Deny',
+          style: 'danger',
+        },
+      ],
+    },
+    { channel_id: unifiedChannelId, orgId },
+  );
+
+  if (!result.success) {
+    logger.error({ actionId: action.id, error: result.error }, 'Failed to send admin confirmation gate message');
   }
 }
 

@@ -55,6 +55,13 @@ export function logAdministrativeIntentClarificationEvent(details: { confidenceS
   logger.info({ event: 'administrative_intent_clarification_triggered', ...details });
 }
 
+export function logAdminConfirmationGateEvent(
+  event: 'admin_confirmation_gate_shown' | 'admin_confirmation_gate_approved' | 'admin_confirmation_gate_denied' | 'admin_confirmation_gate_expired' | 'admin_gate_rbac_denied',
+  details: Record<string, unknown>,
+): void {
+  logger.info({ event, ...details });
+}
+
 export function logAdrEvent(
   event: 'adr_auto_drafted' | 'adr_human_approved' | 'duplicate_proposal_prevented',
   details: Record<string, unknown>,

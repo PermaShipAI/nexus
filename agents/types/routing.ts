@@ -8,6 +8,7 @@ export interface RouteResult {
   needsCodeAccess: boolean;
   isStrategySession: boolean;
   requiresConfirmation?: boolean;
+  awaitingAdminConfirmation?: boolean;
   isFallback: boolean;
   fallbackMessage?: string;
   actionableOptions?: string[];
