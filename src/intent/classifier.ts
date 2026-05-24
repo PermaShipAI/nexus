@@ -1,9 +1,8 @@
 import { ClassifiedIntent, ClassifiedIntentSchema } from '../../agents/schemas/intent.js';
 import { getMockIntent } from './mock_intents.js';
 import { getLLMProvider } from '../adapters/registry.js';
+import { config } from '../config.js';
 import featureFlags from '../../config/feature_flags.json' with { type: 'json' };
-
-const CLASSIFICATION_TIMEOUT_MS = 8000;
 
 const SYSTEM_PROMPT = `You are an intent classifier for the agent system.
 Classify the user's message into one of these intents:
@@ -47,7 +46,7 @@ export async function classifyIntent(message: string): Promise<ClassifiedIntent>
 
   // Race against timeout
   const timeoutPromise = new Promise<never>((_, reject) =>
-    setTimeout(() => reject(new Error('TIMEOUT')), CLASSIFICATION_TIMEOUT_MS),
+    setTimeout(() => reject(new Error('TIMEOUT')), config.AGENTOPS_INTENT_CLASSIFICATION_TIMEOUT_MS),
   );
 
   return Promise.race([classifyWithTimeout(), timeoutPromise]);

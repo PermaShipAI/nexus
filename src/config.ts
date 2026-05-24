@@ -45,6 +45,11 @@ const envSchema = z.object({
   AGENTOPS_EVAL_WINDOW_DAYS: z.coerce.number().default(7), // look-back window
   AGENTOPS_ADR_REJECTION_THRESHOLD: z.coerce.number().default(3), // trigger ADR draft after N rejections
 
+  // Intent routing tuning
+  AGENTOPS_INTENT_CONFIDENCE_GATE: z.coerce.number().default(0.6), // minimum confidence to route; below triggers clarification
+  AGENTOPS_INTENT_CLASSIFICATION_TIMEOUT_MS: z.coerce.number().default(8000), // LLM classification timeout
+  AGENTOPS_INTENT_EVAL_ACCURACY_GATE: z.coerce.number().default(0.95), // minimum acceptable eval accuracy
+
   // Usage metering
   USAGE_FLUSH_INTERVAL_MS: z.coerce.number().default(60_000),
   USAGE_FLUSH_TURN_THRESHOLD: z.coerce.number().default(100),

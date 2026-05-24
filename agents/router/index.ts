@@ -7,6 +7,7 @@ import { logRoutingDecision, logger, logSecurityEvent, logAdministrativeIntentCl
 import { buildIntentPrompt } from './prompts.js';
 import { checkForInjection } from '../../src/core/guardrails/prompt_injection.js';
 import { isIntentLocked, CIRCUIT_BREAKER_MESSAGE } from './circuit_breaker.js';
+import { config } from '../../src/config.js';
 
 // Read feature flags at module load time, once
 let featureFlags: FeatureFlags = { ENABLE_STRUCTURED_INTENT: false };
@@ -175,7 +176,7 @@ export async function routeMessage(
 
       const intentData = validation.data;
 
-      if (intentData.confidenceScore < 0.6) {
+      if (intentData.confidenceScore < config.AGENTOPS_INTENT_CONFIDENCE_GATE) {
         const { fallbackMessage, actionableOptions } = buildClarificationMessage(
           intentData.intent,
           intentData.extractedEntities ?? {},

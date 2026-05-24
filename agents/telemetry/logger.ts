@@ -6,6 +6,7 @@ import {
   routingConfidenceScore,
   routingInjectionBlockedTotal,
 } from '../../src/telemetry/prometheus.js';
+import { config } from '../../src/config.js';
 
 export const logger = pino({
   level: process.env.LOG_LEVEL ?? 'info',
@@ -71,5 +72,5 @@ export function logEvalMetrics(metrics: {
   failedIds: string[];
 }): void {
   logger.info({ event: 'intent_eval_accuracy', accuracy: metrics.accuracy, total: metrics.total, correct: metrics.correct, failedIds: metrics.failedIds });
-  logger.info({ event: 'intent_eval_drift', drift: metrics.drift, adminAvgConfidence: metrics.adminAvgConfidence, adminConfidenceGate: 0.6, accuracyGate: 0.95 });
+  logger.info({ event: 'intent_eval_drift', drift: metrics.drift, adminAvgConfidence: metrics.adminAvgConfidence, adminConfidenceGate: config.AGENTOPS_INTENT_CONFIDENCE_GATE, accuracyGate: config.AGENTOPS_INTENT_EVAL_ACCURACY_GATE });
 }

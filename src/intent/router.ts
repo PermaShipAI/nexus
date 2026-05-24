@@ -4,6 +4,7 @@ import { classifyIntent } from './classifier.js';
 import { checkPermission } from '../rbac/checker.js';
 import { checkChannelSafety } from '../middleware/channel_safety.js';
 import { logRoutingDecision } from './telemetry.js';
+import { config } from '../config.js';
 
 export interface RouterResult {
   allowed: boolean;
@@ -52,7 +53,7 @@ export async function routeIntent(
   const durationMs = Date.now() - startTime;
 
   // Low confidence — ask for clarification
-  if (intent.confidenceScore < 0.6) {
+  if (intent.confidenceScore < config.AGENTOPS_INTENT_CONFIDENCE_GATE) {
     logRoutingDecision({
       messageId: context.messageId,
       intentKind: intent.kind,
