@@ -36,6 +36,7 @@ Respond with a JSON array of agent IDs. Example: ["sre", "ciso", "product-manage
   const selectionResponse = await getLLMProvider().generateText({
     model: 'ROUTER',
     contents: [{ role: 'user', parts: [{ text: selectionPrompt }] }],
+    temperature: 0,
   });
 
   let selectedAgentIds: AgentId[] = [];
