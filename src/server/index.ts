@@ -15,6 +15,23 @@ import { getTicketTracker, getCommunicationAdapter } from '../adapters/registry.
 import { parseArgs } from '../utils/parse-args.js';
 import { internalChatRoutes } from './internal-chat-routes.js';
 import { verifySignedCustomId } from '../bot/interaction-crypto.js';
+import { getPendingAdminAction, removePendingAdminAction } from '../services/intent/admin-confirmation-store.js';
+import { getLinkedAccount } from '../auth/account_linker.js';
+import { setSetting } from '../settings/service.js';
+import { logAdminConfirmationGateEvent } from '../../agents/telemetry/logger.js';
+
+/**
+ * Parse an admin setting value string into the appropriate type.
+ * 'enabled'/'true' -> true, 'disabled'/'false' -> false, numeric strings -> number, else string.
+ */
+export function parseAdminSettingValue(value: string): boolean | number | string {
+  const lower = value.toLowerCase();
+  if (lower === 'enabled' || lower === 'true') return true;
+  if (lower === 'disabled' || lower === 'false') return false;
+  const num = Number(value);
+  if (!isNaN(num) && value.trim() !== '') return num;
+  return value;
+}
 
 export const server = Fastify({
   logger: false, // We use our own pino logger
@@ -200,9 +217,54 @@ server.post('/v1/webhooks/comms', async (request) => {
         }
 
         const actionId = verification.actionId;
-        const isApprove = custom_id.startsWith('approve_tool:');
-
         if (!actionId) return;
+
+        // Admin confirmation gate handlers — must appear before approve_tool check
+        if (custom_id.startsWith('admin_confirm:') || custom_id.startsWith('admin_deny:')) {
+          const pendingAction = getPendingAdminAction(actionId);
+          if (!pendingAction) {
+            logger.warn({ event: 'admin_confirmation_gate_expired', actionId }, 'Admin confirmation action not found or expired');
+            logAdminConfirmationGateEvent('admin_confirmation_gate_expired', { actionId });
+            return;
+          }
+
+          // RBAC check at time-of-click
+          const platformUserId = user?.id || user?.username || '';
+          const linkedAccount = getLinkedAccount(pendingAction.platform, platformUserId);
+          const role = linkedAccount?.role;
+          if (!linkedAccount || (role !== 'ADMIN' && role !== 'OWNER')) {
+            logger.warn({ event: 'admin_gate_rbac_denied', actionId, platformUserId, role }, 'User lacks ADMIN/OWNER role for admin confirmation gate');
+            logAdminConfirmationGateEvent('admin_gate_rbac_denied', { actionId, platformUserId, role });
+            return;
+          }
+
+          const isConfirm = custom_id.startsWith('admin_confirm:');
+          if (isConfirm) {
+            const parsedValue = parseAdminSettingValue(pendingAction.settingValue);
+            await setSetting(pendingAction.settingKey, parsedValue, pendingAction.orgId, pendingAction.requestingUserName);
+            removePendingAdminAction(actionId);
+            logAdminConfirmationGateEvent('admin_confirmation_gate_approved', {
+              actionId,
+              settingKey: pendingAction.settingKey,
+              settingValue: pendingAction.settingValue,
+              approvedBy: user?.username,
+              orgId: pendingAction.orgId,
+            });
+            logger.info({ actionId, approvedBy: user?.username, settingKey: pendingAction.settingKey }, 'Admin setting change approved via button');
+          } else {
+            removePendingAdminAction(actionId);
+            logAdminConfirmationGateEvent('admin_confirmation_gate_denied', {
+              actionId,
+              settingKey: pendingAction.settingKey,
+              deniedBy: user?.username,
+              orgId: pendingAction.orgId,
+            });
+            logger.info({ actionId, deniedBy: user?.username, settingKey: pendingAction.settingKey }, 'Admin setting change denied via button');
+          }
+          return;
+        }
+
+        const isApprove = custom_id.startsWith('approve_tool:');
 
         const [action] = await db
           .select()

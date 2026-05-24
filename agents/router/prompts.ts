@@ -32,6 +32,11 @@ Analyze the message and return a structured classification with:
 - isStrategySession: whether this is a strategy or planning discussion
 - requiresConfirmation: true if the action mutates critical system state or is irreversible, false otherwise.
 
+IMPORTANT for AdministrativeAction: Your role ends at intent classification.
+Do NOT describe execution steps, tool calls, or implementation details in your
+reasoning field. The system enforces a mandatory human confirmation gate before
+any state mutation occurs.
+
 For AdministrativeAction, always populate extractedEntities with settingKey (the configuration key) and settingValue (the desired new value) if discernible.
 
 Confidence-scoring rules for AdministrativeAction:

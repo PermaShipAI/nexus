@@ -1,5 +1,6 @@
 import { sendAgentMessage } from './formatter.js';
 export { sendAgentMessage };
+import { sendAdminConfirmationGate } from './interactions.js';
 import { checkDestructiveAction } from '../core/guardrails/DestructiveActionGuard.js';
 import { checkForInjection } from '../core/guardrails/prompt_injection.js';
 import { validateImageAttachments, type ImageAttachment } from '../core/guardrails/image_guard.js';
@@ -357,6 +358,26 @@ async function handleIncomingMessage(message: UnifiedMessage, isPublic: boolean,
     ? [{ agentId: targetAgentId, intent: 'steering', subMessage: message.content, confidenceScore: 1.0, reasoning: 'steering', extractedEntities: {}, needsCodeAccess: true, isStrategySession: false, isFallback: false }]
     : await routeMessage(message.content, message.channelId, userName, orgId);
   
+  // Structural admin confirmation gate — bypasses executeAgent entirely
+  const adminGateRoute = routes.find(r => r.awaitingAdminConfirmation);
+  if (adminGateRoute) {
+    const entities = adminGateRoute.extractedEntities as { settingKey?: string; settingValue?: string } | undefined;
+    const settingKey = entities?.settingKey;
+    const settingValue = entities?.settingValue;
+    if (settingKey && settingValue) {
+      await sendAdminConfirmationGate({
+        channelId: message.channelId,
+        orgId,
+        settingKey,
+        settingValue,
+        requestingUserId: message.authorId,
+        requestingUserName: userName,
+        platform: message.platform === 'github' ? 'discord' : message.platform,
+      });
+    }
+    return;
+  }
+
   const strategyRoute = routes.find((r) => r.isStrategySession);
   if (strategyRoute) {
     const strategyResponse = await orchestrateStrategy({
