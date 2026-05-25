@@ -187,6 +187,32 @@ describe('executor', () => {
     expect(result).toBeNull();
   });
 
+  it('should return [error] when generateWithTools throws a safety-block error (user source)', async () => {
+    const savedDatabaseUrl = process.env.DATABASE_URL;
+    delete process.env.DATABASE_URL;
+
+    try {
+      mockSourceExplorer = { readFile: vi.fn(), listFiles: vi.fn() };
+      mockGenerateWithTools.mockRejectedValue(new Error('Gemini response blocked by safety filters'));
+
+      const result = await executeAgent({
+        orgId: 'org-1',
+        agentId: 'nexus',
+        channelId: 'chan-1',
+        userId: 'user-1',
+        userName: 'Alice',
+        userMessage: 'Analyze this',
+        source: 'user',
+      });
+
+      // Safety-blocked tool-loop responses should surface an error indicator, not silently return null
+      expect(result).toBe('[error]');
+      expect(vi.mocked(logger.error)).toHaveBeenCalled();
+    } finally {
+      process.env.DATABASE_URL = savedDatabaseUrl;
+    }
+  });
+
   it('should exhaust tool loop budget and force a final text response', async () => {
     // Temporarily remove DATABASE_URL so useEmbeddedDb=true forces executeFast,
     // while needsCodeAccess is left undefined (truthy for tool loop) and

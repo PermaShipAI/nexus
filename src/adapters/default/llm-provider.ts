@@ -56,7 +56,18 @@ export class DefaultLLMProvider implements LLMProvider {
     );
     const response = await result.response;
 
-    const parts = response.candidates?.[0]?.content?.parts ?? [];
+    // Surface safety blocks rather than silently returning empty results.
+    // Prompt-level block (entire request rejected before generating candidates).
+    if (response.promptFeedback?.blockReason) {
+      throw new Error(`Gemini prompt blocked by safety filters: ${response.promptFeedback.blockReason}`);
+    }
+    const candidate = response.candidates?.[0];
+    // Candidate-level block (generation started but was cut off by safety filters).
+    if (candidate?.finishReason === 'SAFETY') {
+      throw new Error('Gemini response blocked by safety filters');
+    }
+
+    const parts = candidate?.content?.parts ?? [];
     const functionCalls = parts
       .filter((p) => p.functionCall)
       .map((p) => ({
@@ -66,7 +77,7 @@ export class DefaultLLMProvider implements LLMProvider {
 
     const text = parts
       .filter((p) => p.text)
-      .map((p) => p.text)
+      .map((p) => p.text as string)
       .join('');
 
     return { text: text || null, functionCalls, raw: response };
