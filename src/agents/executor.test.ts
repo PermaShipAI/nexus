@@ -3,6 +3,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { executeAgent } from './executor.js';
 import { logger } from '../logger.js';
 import { createTicketProposal } from '../tools/proposal-service.js';
+import { WaitingForHumanError } from './errors.js';
 
 const mockGenerateText = vi.fn();
 const mockGenerateWithTools = vi.fn();
@@ -185,6 +186,51 @@ describe('executor', () => {
 
     // Idle-initiated failures should return null (no user-facing error needed)
     expect(result).toBeNull();
+  });
+
+  it('should return [waiting_for_human:] when createTicketProposal throws WaitingForHumanError (no role)', async () => {
+    mockGenerateText.mockResolvedValue(
+      '<ticket-proposal>{"kind":"task","title":"Deploy","description":"Deploy app","project":"my-project"}</ticket-proposal>',
+    );
+    vi.mocked(createTicketProposal).mockRejectedValueOnce(new WaitingForHumanError());
+
+    const result = await executeAgent({
+      orgId: 'org-1',
+      agentId: 'nexus',
+      channelId: 'chan-1',
+      userId: 'user-1',
+      userName: 'Alice',
+      userMessage: 'Deploy the app',
+      needsCodeAccess: false,
+      source: 'user',
+    });
+
+    expect(result).toBe('[waiting_for_human:]');
+    expect(mockGenerateText).toHaveBeenCalledTimes(1);
+  });
+
+  it('should return [waiting_for_human:CISO] when WaitingForHumanError has requiredRole', async () => {
+    mockGenerateText.mockResolvedValue(
+      '<ticket-proposal>{"kind":"task","title":"Security fix","description":"Fix vuln","project":"my-project"}</ticket-proposal>',
+    );
+    vi.mocked(createTicketProposal).mockRejectedValueOnce(new WaitingForHumanError({ requiredRole: 'CISO' }));
+
+    const result = await executeAgent({
+      orgId: 'org-1',
+      agentId: 'ciso',
+      channelId: 'chan-1',
+      userId: 'user-1',
+      userName: 'Alice',
+      userMessage: 'Fix the security vulnerability',
+      needsCodeAccess: false,
+      source: 'user',
+    });
+
+    expect(result).toBe('[waiting_for_human:CISO]');
+    expect(vi.mocked(logger.warn)).toHaveBeenCalledWith(
+      expect.objectContaining({ requiredRole: 'CISO' }),
+      expect.stringContaining('waiting_for_human'),
+    );
   });
 
   it('should exhaust tool loop budget and force a final text response', async () => {

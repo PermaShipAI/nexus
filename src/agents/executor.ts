@@ -4,6 +4,7 @@ import { getLLMProvider, getSourceExplorer, getWorkspaceProvider } from '../adap
 import { logger } from '../logger.js';
 import { logToolStrippingEvent } from '../../agents/telemetry/logger.js';
 import type { AgentId } from './types.js';
+import { WaitingForHumanError } from './errors.js';
 import type { LLMContent } from '../adapters/interfaces/llm-provider.js';
 import { db } from '../db/index.js';
 import { pendingActions } from '../db/schema.js';
@@ -196,6 +197,7 @@ Please refine your proposal based on this feedback.
           });
           logger.info({ agentId, result }, 'Fast path ticket proposal processed');
         } catch (err) {
+          if (err instanceof WaitingForHumanError) throw err; // propagate immediately
           logger.warn({ err, agentId, block }, 'Failed to parse/process ticket-proposal block');
         }
       }
@@ -616,6 +618,10 @@ Please refine your proposal based on this feedback.
     const proposalCount = await agentCreatedProposalsSince(agentId, orgId, executionStart);
     return suppressProposalDetails(agentId, cleaned, proposalCount);
   } catch (err) {
+    if (err instanceof WaitingForHumanError) {
+      logger.warn({ agentId, requiredRole: err.requiredRole }, 'waiting_for_human: agent loop halted');
+      return `[waiting_for_human:${err.requiredRole ?? ''}]`;
+    }
     logger.error({ err, agentId, source }, 'Gemini API execution failed');
     // For user-initiated messages, return an error indicator instead of silent null
     if (source === 'user') {
@@ -759,10 +765,15 @@ async function executeToolLoop(opts: {
     for (let i = 0; i < result.functionCalls.length; i++) {
       const fc = result.functionCalls[i];
       const callId = (modelParts.find(p => p.functionCall?.name === fc.name) as any)?.functionCall?.id ?? fc.id;
-      const toolResult = await executeCodeTool(fc.name, fc.args, { orgId, explorer });
-      responseParts.push({
-        functionResponse: { name: fc.name, response: { result: toolResult }, id: callId },
-      });
+      try {
+        const toolResult = await executeCodeTool(fc.name, fc.args, { orgId, explorer });
+        responseParts.push({
+          functionResponse: { name: fc.name, response: { result: toolResult }, id: callId },
+        });
+      } catch (err) {
+        if (err instanceof WaitingForHumanError) return `[waiting_for_human:${err.requiredRole ?? ''}]`;
+        throw err;
+      }
     }
     contents.push({ role: 'user', parts: responseParts });
   }

@@ -10,6 +10,7 @@ import { parseArgs } from '../utils/parse-args.js';
 import { onProposalCreated } from '../nexus/scheduler.js';
 import { logCrossAgentConflictResolved } from '../telemetry/cross-agent.js';
 import { logGuardrailEvent } from '../telemetry/index.js';
+import { WaitingForHumanError } from '../agents/errors.js';
 
 export interface TicketProposalInput {
   orgId: string;
@@ -191,6 +192,16 @@ Where <index> is the 1-based index number from the EXISTING TICKETS list.`;
 }
 
 /**
+ * Safely extract a requiredRole from a 403 response payload.
+ */
+function extractRequiredRole(payload: unknown): string | undefined {
+  if (payload === null || typeof payload !== 'object') return undefined;
+  const p = payload as Record<string, unknown>;
+  const role = p['requiredRole'] ?? p['role'];
+  return typeof role === 'string' ? role : undefined;
+}
+
+/**
  * Create a ticket proposal: resolves project, checks duplicates, inserts into pendingActions.
  * Shared by both CLI path and fast path (structured output).
  */
@@ -317,17 +328,29 @@ export async function createTicketProposal(input: TicketProposalInput): Promise<
     };
   }
 
-  const [pending] = await db.insert(pendingActions).values({
-    orgId,
-    agentId,
-    command: 'create-ticket',
-    args: resolvedArgs,
-    description: `Create ${kind} ticket: "${title}"`,
-    status,
-    source: source ?? null,
-    channelId: channelId ?? null,
-    fileContext: fileContext ?? null,
-  }).returning();
+  let pending: typeof pendingActions.$inferSelect;
+  try {
+    const [inserted] = await db.insert(pendingActions).values({
+      orgId,
+      agentId,
+      command: 'create-ticket',
+      args: resolvedArgs,
+      description: `Create ${kind} ticket: "${title}"`,
+      status,
+      source: source ?? null,
+      channelId: channelId ?? null,
+      fileContext: fileContext ?? null,
+    }).returning();
+    pending = inserted;
+  } catch (err) {
+    const status403 = (err as { status?: number }).status;
+    if (status403 === 403) {
+      const payload = (err as { body?: unknown }).body;
+      const requiredRole = extractRequiredRole(payload);
+      throw new WaitingForHumanError({ requiredRole, rawPayload: payload });
+    }
+    throw err;
+  }
 
   const statusMessage = status === 'pending'
     ? `Ticket proposal "${title}" queued for human approval.`
