@@ -13,6 +13,7 @@ Classify the user's message into one of these intents:
 - SystemStatus: User wants to know the status of systems, deployments, or CI/CD
 - ManageProject: User wants to create, update, delete, or configure a project
 - AccessSecrets: User wants to retrieve, rotate, or manage secrets/credentials
+- AdministrativeAction: User wants to change a system setting or toggle a configuration option (e.g., enable/disable autonomous mode, set feature flags)
 - DestructiveAction: User wants to delete, drop, wipe, destroy, or irreversibly remove data or resources
 - Unknown: The intent is unclear or doesn't match any category
 

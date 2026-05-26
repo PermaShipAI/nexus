@@ -45,6 +45,7 @@ export function buildConfirmationPrompt(intent: string, entities: Record<string,
     RequestReview: "request a review",
     ManageProject: "modify project configuration",
     AccessSecrets: "access credentials or secrets",
+    AdministrativeAction: "apply an administrative configuration change",
     DestructiveAction: "perform a destructive operation",
   };
   const action = actionMap[intent] ?? intent;
