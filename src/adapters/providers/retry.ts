@@ -1,4 +1,5 @@
 import { logger } from '../../logger.js';
+import { GeminiSafetyBlockError } from '../default/llm-provider.js';
 
 export interface RetryConfig {
   maxRetries?: number;
@@ -22,7 +23,8 @@ const DEFAULTS: Required<RetryConfig> = {
  * - HTTP 5xx (server errors)
  * - Network connectivity errors
  */
-function isRetriable(err: unknown): boolean {
+export function isRetriable(err: unknown): boolean {
+  if (err instanceof GeminiSafetyBlockError) return false;
   if (err instanceof Error) {
     // Anthropic and OpenAI SDKs expose a `status` property
     const status = (err as unknown as { status?: number }).status;

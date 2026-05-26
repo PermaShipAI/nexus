@@ -1,6 +1,7 @@
 import { spawn } from 'node:child_process';
 import { writeGeminiContext, buildAgentPrompt } from './prompt-builder.js';
 import { getLLMProvider, getSourceExplorer, getWorkspaceProvider } from '../adapters/registry.js';
+import { GeminiSafetyBlockError } from '../adapters/default/llm-provider.js';
 import { logger } from '../logger.js';
 import { logToolStrippingEvent } from '../../agents/telemetry/logger.js';
 import type { AgentId } from './types.js';
@@ -616,6 +617,10 @@ Please refine your proposal based on this feedback.
     const proposalCount = await agentCreatedProposalsSince(agentId, orgId, executionStart);
     return suppressProposalDetails(agentId, cleaned, proposalCount);
   } catch (err) {
+    if (err instanceof GeminiSafetyBlockError) {
+      logger.warn({ agentId }, 'Gemini safety block: halting execution');
+      return source === 'user' ? "I'm unable to respond to that request due to safety guidelines." : null;
+    }
     logger.error({ err, agentId, source }, 'Gemini API execution failed');
     // For user-initiated messages, return an error indicator instead of silent null
     if (source === 'user') {

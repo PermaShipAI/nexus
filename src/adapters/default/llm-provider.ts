@@ -8,6 +8,13 @@ import type {
   LLMToolCallResult,
 } from '../interfaces/llm-provider.js';
 
+export class GeminiSafetyBlockError extends Error {
+  constructor() {
+    super('Gemini response blocked due to SAFETY finish reason');
+    this.name = 'GeminiSafetyBlockError';
+  }
+}
+
 const DEFAULT_MODEL_MAP = {
   ROUTER: 'gemini-3-flash-preview',
   AGENT: 'gemini-3.1-pro-preview',
@@ -37,6 +44,7 @@ export class DefaultLLMProvider implements LLMProvider {
       `gemini.generateText[${modelId}]`,
     );
     const response = await result.response;
+    if (response.candidates?.[0]?.finishReason === 'SAFETY') throw new GeminiSafetyBlockError();
     return response.text();
   }
 
@@ -55,6 +63,7 @@ export class DefaultLLMProvider implements LLMProvider {
       `gemini.generateWithTools[${modelId}]`,
     );
     const response = await result.response;
+    if (response.candidates?.[0]?.finishReason === 'SAFETY') throw new GeminiSafetyBlockError();
 
     const parts = response.candidates?.[0]?.content?.parts ?? [];
     const functionCalls = parts
