@@ -424,6 +424,23 @@ async function handleIncomingMessage(message: UnifiedMessage, isPublic: boolean,
       continue;
     }
 
+    const waitingMatch = response.match(/^\[waiting_for_human(?::([^\]]*))?\]$/);
+    if (waitingMatch) {
+      const requiredRole = waitingMatch[1] || undefined;
+      const microcopy = requiredRole
+        ? `Execution paused: This task requires ${requiredRole} approval before proceeding. Please review and approve the pending ticket.`
+        : `Execution paused: This task requires manual human approval before proceeding. Please review and approve the pending ticket.`;
+      await sendAgentMessage(message.channelId, agent.title, microcopy, orgId);
+      logGuardrailEvent({
+        event: 'waiting_for_human_approval_displayed',
+        agentId: route.agentId as AgentId,
+        channelId: message.channelId,
+        orgId,
+        requiredRole,
+      });
+      continue;
+    }
+
     if (isPublic) {
       publicResponses.push({ agentTitle: agent.title, agentId: route.agentId as AgentId, content: response });
     } else {

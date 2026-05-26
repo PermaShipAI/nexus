@@ -6,6 +6,7 @@ import type { LLMFunctionDeclaration } from '../adapters/interfaces/llm-provider
 import type { SourceExplorer } from '../adapters/interfaces/source-explorer.js';
 import { getProjectRegistry } from '../adapters/registry.js';
 import { logger } from '../logger.js';
+import { WaitingForHumanError } from './errors.js';
 
 export const CODE_TOOL_DECLARATIONS: LLMFunctionDeclaration[] = [
   {
@@ -133,6 +134,7 @@ export async function executeCodeTool(
         return `Unknown tool: ${name}`;
     }
   } catch (err) {
+    if (err instanceof WaitingForHumanError) throw err; // propagate to loop level
     logger.error({ err, tool: name, project }, 'Code tool execution failed');
     return `Tool error: ${(err as Error).message}`;
   }
