@@ -24,6 +24,7 @@ export interface GenerateTextOptions {
   systemInstruction?: string;
   contents: LLMContent[];
   orgId?: string;
+  temperature?: number;
 }
 
 export interface GenerateWithToolsOptions extends GenerateTextOptions {
