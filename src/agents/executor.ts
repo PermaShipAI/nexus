@@ -30,6 +30,19 @@ const MAX_TOOL_ROUNDS = 6;
 const DEEP_RESEARCH_MAX_TURNS = 25;
 const DEEP_RESEARCH_TIMEOUT_MS = 10 * 60 * 1000; // 10 minutes
 
+// FinOps agent uses tighter iteration caps to enforce its own cost-guardrail mandate.
+// Configurable via env vars so ops can tune without a deploy.
+const FINOPS_MAX_TOOL_ROUNDS = parseInt(process.env.FINOPS_MAX_TOOL_ROUNDS ?? '3', 10);
+const FINOPS_DEEP_RESEARCH_MAX_TURNS = parseInt(process.env.FINOPS_DEEP_RESEARCH_MAX_TURNS ?? '10', 10);
+
+function getMaxToolRounds(agentId: AgentId): number {
+  return agentId === 'finops' ? FINOPS_MAX_TOOL_ROUNDS : MAX_TOOL_ROUNDS;
+}
+
+function getDeepResearchMaxTurns(agentId: AgentId): number {
+  return agentId === 'finops' ? FINOPS_DEEP_RESEARCH_MAX_TURNS : DEEP_RESEARCH_MAX_TURNS;
+}
+
 export interface SteeringContext {
   originalActionId: string;
   previousProposal: string;
@@ -124,7 +137,7 @@ Please refine your proposal based on this feedback.
         systemPrompt,
         userMessage: fullUserMessage,
         explorer,
-        maxRounds: MAX_TOOL_ROUNDS,
+        maxRounds: getMaxToolRounds(agentId),
         modelTier: 'AGENT',
       });
     } else {
@@ -841,7 +854,8 @@ async function executeDeepResearch(input: ExecuteAgentInput): Promise<string | n
     const contents: LLMContent[] = [{ role: 'user', parts: [{ text: fullUserMessage }] }];
     const startTime = Date.now();
 
-    for (let round = 0; round < DEEP_RESEARCH_MAX_TURNS; round++) {
+    const deepResearchMaxTurns = getDeepResearchMaxTurns(agentId);
+    for (let round = 0; round < deepResearchMaxTurns; round++) {
       if (Date.now() - startTime > DEEP_RESEARCH_TIMEOUT_MS) {
         logger.warn({ agentId, round }, 'Deep research: timeout reached');
         break;
