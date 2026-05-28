@@ -8,8 +8,8 @@ import { workspaceLinks } from '../db/schema.js';
 import { eq, and } from 'drizzle-orm';
 import { initAdapters } from '../adapters/registry.js';
 import { initializeAgents } from '../agents/registry.js';
-import { startNexusScheduler } from '../nexus/scheduler.js';
-import { startKnowledgeSync } from '../knowledge/sync.js';
+import { startNexusScheduler, stopNexusScheduler } from '../nexus/scheduler.js';
+import { startKnowledgeSync, stopKnowledgeSync } from '../knowledge/sync.js';
 import { usageReporter } from '../telemetry/usage-reporter.js';
 import { config } from '../config.js';
 
@@ -227,7 +227,7 @@ async function main() {
 
     // Start the local UI server
     const port = parseInt(process.env.LOCAL_UI_PORT ?? '3000', 10);
-    await startLocalServer(port);
+    localServer = await startLocalServer(port);
 
     // Start usage reporter (noop in local mode but keeps the system happy)
     usageReporter.start();
@@ -244,10 +244,28 @@ async function main() {
   }
 }
 
+let localServer: Awaited<ReturnType<typeof startLocalServer>> | undefined;
+
 main();
 
 async function gracefulShutdown() {
   logger.info('Shutting down...');
+
+  // Stop all background schedulers before closing the server
+  stopNexusScheduler();
+  const { stopMissionScheduler } = await import('../missions/scheduler.js');
+  stopMissionScheduler();
+  const { stopIdleTimer } = await import('../idle/timer.js');
+  stopIdleTimer();
+  stopKnowledgeSync();
+  const { stopAgentOpsEvaluationScheduler } = await import('../agentops/scheduler.js');
+  stopAgentOpsEvaluationScheduler();
+
+  // Close the HTTP/WebSocket server so open connections are terminated
+  if (localServer) {
+    await localServer.close();
+  }
+
   await stopBackupScheduler(); // Final backup before exit
   await usageReporter.stop();
   await closeDb();
