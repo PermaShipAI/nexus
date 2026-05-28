@@ -1549,7 +1549,7 @@ You can modify the checklist using these blocks:
   return server;
 }
 
-export async function startLocalServer(port = 3000): Promise<void> {
+export async function startLocalServer(port = 3000) {
   const server = await createLocalServer(port);
 
   try {
@@ -1560,4 +1560,6 @@ export async function startLocalServer(port = 3000): Promise<void> {
     logger.error({ err }, 'Failed to start local server');
     process.exit(1);
   }
+
+  return server;
 }
