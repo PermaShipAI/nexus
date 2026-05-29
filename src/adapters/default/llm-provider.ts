@@ -27,9 +27,11 @@ export class DefaultLLMProvider implements LLMProvider {
     const override = options.orgId ? await getModelId(options.model, options.orgId) : null;
     const modelId = override || DEFAULT_MODEL_MAP[options.model];
     
+    const temperature = options.temperature ?? (options.model === 'ROUTER' ? 0 : undefined);
     const model = this.genAI.getGenerativeModel({
       model: modelId,
       systemInstruction: options.systemInstruction,
+      ...(temperature !== undefined ? { generationConfig: { temperature } } : {}),
     });
     const result = await withRetry(
       () => model.generateContent({ contents: options.contents as Content[] }),
@@ -44,10 +46,12 @@ export class DefaultLLMProvider implements LLMProvider {
     const override = options.orgId ? await getModelId(options.model, options.orgId) : null;
     const modelId = override || DEFAULT_MODEL_MAP[options.model];
 
+    const temperature = options.temperature ?? (options.model === 'ROUTER' ? 0 : undefined);
     const model = this.genAI.getGenerativeModel({
       model: modelId,
       systemInstruction: options.systemInstruction,
       tools: [{ functionDeclarations: options.tools as FunctionDeclaration[] }],
+      ...(temperature !== undefined ? { generationConfig: { temperature } } : {}),
     });
     const result = await withRetry(
       () => model.generateContent({ contents: options.contents as Content[] }),
