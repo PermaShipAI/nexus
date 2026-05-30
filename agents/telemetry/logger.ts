@@ -62,6 +62,15 @@ export function logAdrEvent(
   logger.info({ event, ...details });
 }
 
+export function logProposalValidationFailedEvent(details: {
+  agentId: string;
+  orgId: string;
+  field: string;
+  reason: string;
+}): void {
+  logger.warn({ event: 'agent_proposal_validation_failed_total', ...details });
+}
+
 export function logEvalMetrics(metrics: {
   accuracy: number;
   drift: number;
