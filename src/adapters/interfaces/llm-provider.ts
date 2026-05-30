@@ -24,6 +24,8 @@ export interface GenerateTextOptions {
   systemInstruction?: string;
   contents: LLMContent[];
   orgId?: string;
+  /** Sampling temperature (0 = deterministic). Defaults to 0 for ROUTER tier. */
+  temperature?: number;
 }
 
 export interface GenerateWithToolsOptions extends GenerateTextOptions {
