@@ -37,12 +37,14 @@ export class AnthropicProvider implements LLMProvider {
 
     logger.debug({ model, tier: options.model }, 'Calling Anthropic');
 
+    const temperature = options.temperature ?? (options.model === 'ROUTER' ? 0 : undefined);
     const response = await withRetry(
       () => this.client.messages.create({
         model,
         max_tokens: 8192,
         system: options.systemInstruction || undefined,
         messages,
+        ...(temperature !== undefined ? { temperature } : {}),
       }),
       undefined,
       `anthropic.generateText[${model}]`,
@@ -121,6 +123,7 @@ export class AnthropicProvider implements LLMProvider {
       input_schema: (t.parameters ?? { type: 'object' as const, properties: {} }) as Anthropic.Tool.InputSchema,
     }));
 
+    const temperature = options.temperature ?? (options.model === 'ROUTER' ? 0 : undefined);
     const response = await withRetry(
       () => this.client.messages.create({
         model,
@@ -128,6 +131,7 @@ export class AnthropicProvider implements LLMProvider {
         system: options.systemInstruction || undefined,
         messages,
         tools,
+        ...(temperature !== undefined ? { temperature } : {}),
       }),
       undefined,
       `anthropic.generateWithTools[${model}]`,

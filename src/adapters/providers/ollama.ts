@@ -40,11 +40,17 @@ export class OllamaProvider implements LLMProvider {
 
     logger.debug({ model, tier: options.model }, 'Calling Ollama');
 
+    const temperature = options.temperature ?? (options.model === 'ROUTER' ? 0 : undefined);
     const data = await withRetry(async () => {
       const response = await fetch(`${this.baseUrl}/api/chat`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ model, messages, stream: false }),
+        body: JSON.stringify({
+          model,
+          messages,
+          stream: false,
+          ...(temperature !== undefined ? { options: { temperature } } : {}),
+        }),
       });
       if (!response.ok) {
         const body = await response.text();
@@ -111,11 +117,18 @@ export class OllamaProvider implements LLMProvider {
       },
     }));
 
+    const temperature = options.temperature ?? (options.model === 'ROUTER' ? 0 : undefined);
     const data = await withRetry(async () => {
       const response = await fetch(`${this.baseUrl}/api/chat`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ model, messages, tools, stream: false }),
+        body: JSON.stringify({
+          model,
+          messages,
+          tools,
+          stream: false,
+          ...(temperature !== undefined ? { options: { temperature } } : {}),
+        }),
       });
       if (!response.ok) {
         const body = await response.text();
