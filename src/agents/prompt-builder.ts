@@ -121,43 +121,46 @@ async function getAgentTicketHistory(agentId: AgentId, orgId: string): Promise<s
 }
 
 async function getTicketActivityText(orgId: string): Promise<{ pending: string | null; ctoReview: string | null; existing: string | null }> {
-  // Pending actions awaiting human approval in Discord
-  const pending = await db
-    .select()
-    .from(pendingActions)
-    .where(and(eq(pendingActions.orgId, orgId), eq(pendingActions.status, 'pending')))
-    .orderBy(desc(pendingActions.createdAt))
-    .limit(20);
+  // Run all four DB queries in parallel
+  const [pending, ctoReview, processed, createdTickets] = await Promise.all([
+    // Pending actions awaiting human approval in Discord
+    db
+      .select()
+      .from(pendingActions)
+      .where(and(eq(pendingActions.orgId, orgId), eq(pendingActions.status, 'pending')))
+      .orderBy(desc(pendingActions.createdAt))
+      .limit(20),
 
-  // Proposals awaiting Nexus review
-  const ctoReview = await db
-    .select()
-    .from(pendingActions)
-    .where(and(eq(pendingActions.orgId, orgId), eq(pendingActions.status, 'nexus_review')))
-    .orderBy(desc(pendingActions.createdAt))
-    .limit(20);
+    // Proposals awaiting Nexus review
+    db
+      .select()
+      .from(pendingActions)
+      .where(and(eq(pendingActions.orgId, orgId), eq(pendingActions.status, 'nexus_review')))
+      .orderBy(desc(pendingActions.createdAt))
+      .limit(20),
 
-  // Recently approved/processed actions (to prevent duplicates)
-  const processed = await db
-    .select()
-    .from(pendingActions)
-    .where(
-      and(
-        eq(pendingActions.orgId, orgId),
-        ne(pendingActions.status, 'pending'),
-        ne(pendingActions.status, 'nexus_review'),
-      ),
-    )
-    .orderBy(desc(pendingActions.createdAt))
-    .limit(30);
+    // Recently approved/processed actions (to prevent duplicates)
+    db
+      .select()
+      .from(pendingActions)
+      .where(
+        and(
+          eq(pendingActions.orgId, orgId),
+          ne(pendingActions.status, 'pending'),
+          ne(pendingActions.status, 'nexus_review'),
+        ),
+      )
+      .orderBy(desc(pendingActions.createdAt))
+      .limit(30),
 
-  // Tickets that were actually created
-  const createdTickets = await db
-    .select()
-    .from(ticketsTable)
-    .where(eq(ticketsTable.orgId, orgId))
-    .orderBy(desc(ticketsTable.createdAt))
-    .limit(30);
+    // Tickets that were actually created
+    db
+      .select()
+      .from(ticketsTable)
+      .where(eq(ticketsTable.orgId, orgId))
+      .orderBy(desc(ticketsTable.createdAt))
+      .limit(30),
+  ]);
 
   const pendingText = pending.length > 0
     ? pending.map((a) => {

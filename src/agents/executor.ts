@@ -754,16 +754,16 @@ async function executeToolLoop(opts: {
     }
     contents.push({ role: 'model', parts: modelParts });
 
-    // Execute each tool call and build functionResponse parts
-    const responseParts: LLMContent['parts'] = [];
-    for (let i = 0; i < result.functionCalls.length; i++) {
-      const fc = result.functionCalls[i];
-      const callId = (modelParts.find(p => p.functionCall?.name === fc.name) as any)?.functionCall?.id ?? fc.id;
-      const toolResult = await executeCodeTool(fc.name, fc.args, { orgId, explorer });
-      responseParts.push({
-        functionResponse: { name: fc.name, response: { result: toolResult }, id: callId },
-      });
-    }
+    // Execute all tool calls in parallel and build functionResponse parts
+    const responseParts: LLMContent['parts'] = await Promise.all(
+      result.functionCalls.map(async (fc) => {
+        const callId = (modelParts.find(p => p.functionCall?.name === fc.name) as any)?.functionCall?.id ?? fc.id;
+        const toolResult = await executeCodeTool(fc.name, fc.args, { orgId, explorer });
+        return {
+          functionResponse: { name: fc.name, response: { result: toolResult }, id: callId },
+        };
+      }),
+    );
     contents.push({ role: 'user', parts: responseParts });
   }
 
