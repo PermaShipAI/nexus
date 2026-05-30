@@ -1,3 +1,4 @@
+import { z } from 'zod';
 import { db } from '../db/index.js';
 import { pendingActions, tickets as ticketsTable } from '../db/schema.js';
 import { eq, desc, and, gte, ne } from 'drizzle-orm';
@@ -43,6 +44,28 @@ export interface DuplicateCheckResult {
   actionId?: string;
   conflictType: 'DUPLICATE' | 'ROOT_CAUSE_OVERLAP';
 }
+
+/**
+ * Zod validation schema for ticket proposal inputs.
+ * - agentDiscussionContext: capped at 1500 chars to prevent token bloat in downstream prompts.
+ * - fallbackPlan: auto-normalized to include the "**Fallback:**" prefix if missing.
+ */
+export const TicketProposalInputSchema = z.object({
+  orgId: z.string(),
+  kind: z.enum(['bug', 'feature', 'task']),
+  title: z.string(),
+  description: z.string(),
+  project: z.string(),
+  repoKey: z.string().optional(),
+  priority: z.number().optional(),
+  agentId: z.string(),
+  source: z.enum(['user', 'idle']).optional(),
+  channelId: z.string().optional(),
+  agentDiscussionContext: z.string().max(1500, 'agentDiscussionContext must not exceed 1500 characters').optional(),
+  fallbackPlan: z.string().transform(val =>
+    val.startsWith('**Fallback:**') ? val : `**Fallback:** ${val}`
+  ).optional(),
+});
 
 /**
  * Use the LLM provider to check if a proposed ticket is a duplicate or root-cause overlap of recent tickets (last 24h).
@@ -195,8 +218,22 @@ Where <index> is the 1-based index number from the EXISTING TICKETS list.`;
  * Shared by both CLI path and fast path (structured output).
  */
 export async function createTicketProposal(input: TicketProposalInput): Promise<TicketProposalResult> {
-  const { orgId, kind, title, description, project, priority, agentId, source, channelId, agentDiscussionContext, fallbackPlan } = input;
+  const parseResult = TicketProposalInputSchema.safeParse(input);
+  if (!parseResult.success) {
+    for (const issue of parseResult.error.issues) {
+      const field = issue.path.join('.') || 'unknown';
+      logGuardrailEvent({ event: 'agent_proposal_validation_failed_total', agentId: input.agentId, orgId: input.orgId, field, reason: issue.message });
+    }
+    const messages = parseResult.error.issues.map(i => `${i.path.join('.') || 'field'}: ${i.message}`).join('; ');
+    return { success: false, message: `Proposal validation failed: ${messages}` };
+  }
+
+  const { orgId, kind, title, description, project, priority, agentId, source, channelId } = input;
   let { repoKey } = input;
+  // Use Zod-normalized values: agentDiscussionContext validated ≤1500 chars,
+  // fallbackPlan auto-prefixed with "**Fallback:**" if missing.
+  const agentDiscussionContext = parseResult.data.agentDiscussionContext;
+  const fallbackPlan = parseResult.data.fallbackPlan;
 
   // Enforce fallback plan for idle-sourced (agentops/system-initiated) proposals.
   // Human-facing guardrail: downstream subagents must not attempt primary and fallback
@@ -216,8 +253,8 @@ export async function createTicketProposal(input: TicketProposalInput): Promise<
     fullDescription += `\n\n## Agent Discussion Context\n${agentDiscussionContext}`;
   }
   if (fallbackPlan) {
-    const normalizedFallback = fallbackPlan.startsWith('**Fallback:**') ? fallbackPlan : `**Fallback:** ${fallbackPlan}`;
-    fullDescription += `\n\n## Fallback Plan\n${normalizedFallback}`;
+    // fallbackPlan is already normalized by the Zod schema transform to include "**Fallback:**" prefix
+    fullDescription += `\n\n## Fallback Plan\n${fallbackPlan}`;
   }
 
   if (fullDescription.length > 4000) {
