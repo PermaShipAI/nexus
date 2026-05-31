@@ -18,3 +18,12 @@ export function logRoutingDecision(decision: RoutingDecision): void {
   const level = decision.allowed ? 'info' : 'warn';
   logger[level](decision, 'routing_decision');
 }
+
+export function logAdministrativeIntentGateShown(params: {
+  channelId: string;
+  userId: string;
+  settingKey: string;
+  settingValue: string;
+}): void {
+  logger.info({ event: 'administrative_intent_clarification_triggered', ...params });
+}
