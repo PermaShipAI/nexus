@@ -73,3 +73,11 @@ export function logEvalMetrics(metrics: {
   logger.info({ event: 'intent_eval_accuracy', accuracy: metrics.accuracy, total: metrics.total, correct: metrics.correct, failedIds: metrics.failedIds });
   logger.info({ event: 'intent_eval_drift', drift: metrics.drift, adminAvgConfidence: metrics.adminAvgConfidence, adminConfidenceGate: 0.6, accuracyGate: 0.95 });
 }
+
+export function logAgentToolErrorRecovered(details: { tool: string; agentId: string; orgId: string; reason: string; code?: string }): void {
+  try {
+    logger.warn({ event: 'agent_tool_error_recovered', ...details });
+  } catch {
+    // fire-and-forget — never throw
+  }
+}
