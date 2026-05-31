@@ -651,6 +651,9 @@ npx tsx src/tools/cli.ts create-ticket --kind bug --title "Ticket title" --descr
 - \`--agent-discussion-context\` (optional): Synthesized prose summary of agent discussion context (max 1500 chars). Do NOT paste raw transcripts.
 - \`--fallback-plan\` (optional): Alternative execution path if the primary plan is blocked. Must begin with \`**Fallback:**\`.
 
+**If the tool returns \`"success": false\` or \`"status": "blocked"\` (including the \`ACTION REQUIRED\` sentinel):**
+Do NOT re-invoke the same tool. Send a message to the channel explaining what was blocked and why, and ask the human for guidance before retrying.
+
 ## Add shared knowledge (visible to all agents)
 \`\`\`bash
 npx tsx src/tools/cli.ts add-knowledge --topic "Topic" --content "Knowledge content" --org ${orgId}

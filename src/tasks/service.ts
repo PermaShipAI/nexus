@@ -3,6 +3,19 @@ import { db } from '../db/index.js';
 import { tasks, type Task, type NewTask } from '../db/schema.js';
 import type { AgentId } from '../agents/types.js';
 
+export class StateMachineConflictError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'StateMachineConflictError';
+  }
+}
+
+const VALID_TASK_TRANSITIONS: Record<string, string[]> = {
+  proposed: ['approved'],
+  approved: ['in_progress'],
+  in_progress: ['completed'],
+};
+
 export async function createTask(input: {
   orgId: string;
   title: string;
@@ -30,6 +43,12 @@ export async function updateTaskStatus(
   status: 'approved' | 'in_progress' | 'completed',
   assignedAgentId?: AgentId,
 ): Promise<Task | null> {
+  const [current] = await db.select({ status: tasks.status }).from(tasks).where(and(eq(tasks.id, taskId), eq(tasks.orgId, orgId))).limit(1);
+  if (!current) return null;
+  if (!(VALID_TASK_TRANSITIONS[current.status] ?? []).includes(status)) {
+    throw new StateMachineConflictError(`State machine conflict: cannot transition task from '${current.status}' to '${status}'`);
+  }
+
   const values: Partial<NewTask> = {
     status,
     updatedAt: new Date(),

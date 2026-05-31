@@ -317,17 +317,23 @@ export async function createTicketProposal(input: TicketProposalInput): Promise<
     };
   }
 
-  const [pending] = await db.insert(pendingActions).values({
-    orgId,
-    agentId,
-    command: 'create-ticket',
-    args: resolvedArgs,
-    description: `Create ${kind} ticket: "${title}"`,
-    status,
-    source: source ?? null,
-    channelId: channelId ?? null,
-    fileContext: fileContext ?? null,
-  }).returning();
+  let pending: typeof import('../db/schema.js').pendingActions.$inferSelect;
+  try {
+    const [inserted] = await db.insert(pendingActions).values({
+      orgId,
+      agentId,
+      command: 'create-ticket',
+      args: resolvedArgs,
+      description: `Create ${kind} ticket: "${title}"`,
+      status,
+      source: source ?? null,
+      channelId: channelId ?? null,
+      fileContext: fileContext ?? null,
+    }).returning();
+    pending = inserted;
+  } catch {
+    return { success: false, message: 'Conflict: duplicate or constraint violation. ACTION REQUIRED: Acknowledge failure and halt retry.' };
+  }
 
   const statusMessage = status === 'pending'
     ? `Ticket proposal "${title}" queued for human approval.`

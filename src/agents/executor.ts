@@ -2,7 +2,7 @@ import { spawn } from 'node:child_process';
 import { writeGeminiContext, buildAgentPrompt } from './prompt-builder.js';
 import { getLLMProvider, getSourceExplorer, getWorkspaceProvider } from '../adapters/registry.js';
 import { logger } from '../logger.js';
-import { logToolStrippingEvent } from '../../agents/telemetry/logger.js';
+import { logToolStrippingEvent, logAgentToolErrorRecovered } from '../../agents/telemetry/logger.js';
 import type { AgentId } from './types.js';
 import type { LLMContent } from '../adapters/interfaces/llm-provider.js';
 import { db } from '../db/index.js';
@@ -195,6 +195,10 @@ Please refine your proposal based on this feedback.
             fallbackPlan: parsed.fallbackPlan,
           });
           logger.info({ agentId, result }, 'Fast path ticket proposal processed');
+          if (!result.success) {
+            logAgentToolErrorRecovered({ tool: 'create_permaship_ticket', agentId, orgId, reason: result.message });
+            cleaned += `\n\n⚠️ **Tool call blocked** (\`create_permaship_ticket\`): ${result.message} ACTION REQUIRED: Acknowledge failure and halt retry.`;
+          }
         } catch (err) {
           logger.warn({ err, agentId, block }, 'Failed to parse/process ticket-proposal block');
         }
