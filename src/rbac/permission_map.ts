@@ -18,6 +18,7 @@ export const PERMISSION_MAP: Record<IntentKind, Role> = {
   DestructiveAction: 'OWNER',
   Unknown: 'VIEWER',
   StrictConsultation: 'VIEWER',
+  AdministrativeAction: 'ADMIN',
 };
 
 export function hasMinimumRole(userRole: Role, requiredRole: Role): boolean {

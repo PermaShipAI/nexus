@@ -11,8 +11,9 @@ import {
 } from 'discord.js';
 import { routeIntent, RouterResult } from '../../intent/router.js';
 import { getLinkedAccount } from '../../auth/account_linker.js';
-import { RequestContext } from '../../rbac/types.js';
+import { RequestContext, Role } from '../../rbac/types.js';
 import { requestAdminApproval } from './autonomous-mode-gate.js';
+import { logGuardrailEvent } from '../../telemetry/index.js';
 
 const CONFIRMATION_TIMEOUT_MS = 60_000;
 let cancellationCounter = 0;
@@ -80,6 +81,69 @@ export async function handleDiscordMessage(message: Message): Promise<void> {
 
       const approval = await requestAdminApproval(message, actionDescription, settingKey);
       if (!approval.approved) {
+        return;
+      }
+    } else if (result.intent.kind === 'AdministrativeAction') {
+      // Admin-only confirmation gate for system-level setting changes.
+      const ADMIN_ROLES: Role[] = ['ADMIN', 'OWNER'];
+      const settingKey = result.intent.params?.settingKey ?? result.intent.params?.setting_key ?? 'unknown';
+      const settingValue = result.intent.params?.settingValue ?? result.intent.params?.setting_value ?? 'unknown';
+
+      logGuardrailEvent({
+        event: 'administrative_intent_clarification_triggered',
+        channelId: message.channelId,
+        userId: message.author.id,
+        settingKey,
+        settingValue,
+      });
+
+      const confirmRow = new ActionRowBuilder<ButtonBuilder>().addComponents(
+        new ButtonBuilder()
+          .setCustomId('admin_confirm')
+          .setLabel('Confirm')
+          .setStyle(ButtonStyle.Success),
+        new ButtonBuilder()
+          .setCustomId('admin_cancel')
+          .setLabel('Cancel')
+          .setStyle(ButtonStyle.Danger),
+      );
+
+      const confirmMsg = await message.reply({
+        content: `Are you sure you want to change system setting: **${settingKey}** → **${settingValue}**?\nOnly you (as an admin) can confirm this action.`,
+        components: [confirmRow],
+      });
+
+      try {
+        const interaction = await confirmMsg.awaitMessageComponent({
+          componentType: ComponentType.Button,
+          time: CONFIRMATION_TIMEOUT_MS,
+          filter: (i) => {
+            const account = getLinkedAccount('discord', i.user.id);
+            const isAdmin = account !== null && ADMIN_ROLES.includes(account.role);
+            const isRequester = i.user.id === message.author.id;
+            if (!isRequester || !isAdmin) {
+              i.reply({
+                content: 'Only the original requester with Admin role can confirm this.',
+                ephemeral: true,
+              }).catch(() => {});
+              return false;
+            }
+            return true;
+          },
+        });
+
+        if (interaction.customId === 'admin_cancel') {
+          cancellationCounter++;
+          await interaction.update({ content: 'Action cancelled.', components: [] });
+          return;
+        }
+
+        await interaction.update({ content: '✅ Confirmed — executing...', components: [] });
+      } catch {
+        // Timeout
+        await confirmMsg
+          .edit({ content: 'Confirmation timed out. Action cancelled.', components: [] })
+          .catch(() => {});
         return;
       }
     } else {

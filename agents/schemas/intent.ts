@@ -42,6 +42,7 @@ export const IntentKindEnum = z.enum([
   'DestructiveAction',
   'Unknown',
   'StrictConsultation',
+  'AdministrativeAction',
 ]);
 
 export type IntentKind = z.infer<typeof IntentKindEnum>;
@@ -69,6 +70,7 @@ export const geminiResponseSchema = {
         'DestructiveAction',
         'Unknown',
         'StrictConsultation',
+        'AdministrativeAction',
       ],
     },
     confidenceScore: { type: 'number' },
