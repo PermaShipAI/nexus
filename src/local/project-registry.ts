@@ -73,6 +73,15 @@ export class LocalProjectRegistry implements ProjectRegistry {
 
   // ── CRUD helpers (not part of the interface, used by API routes) ──────
 
+  async findBySlug(orgId: string, slug: string): Promise<{ id: string; name: string } | undefined> {
+    const [row] = await db
+      .select({ id: localProjects.id, name: localProjects.name })
+      .from(localProjects)
+      .where(and(eq(localProjects.orgId, orgId), eq(localProjects.slug, slug)))
+      .limit(1);
+    return row;
+  }
+
   async addProject(
     orgId: string,
     name: string,
@@ -82,6 +91,14 @@ export class LocalProjectRegistry implements ProjectRegistry {
   ): Promise<{ id: string; slug: string }> {
     const slug = toSlug(name);
     const repoKey = slug;
+
+    const existing = await this.findBySlug(orgId, slug);
+    if (existing) {
+      const err = new Error(`A project named "${existing.name}" already exists`);
+      (err as any).code = 'DUPLICATE_PROJECT_SLUG';
+      (err as any).existingId = existing.id;
+      throw err;
+    }
 
     const [row] = await db.insert(localProjects).values({
       orgId,

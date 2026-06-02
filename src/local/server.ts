@@ -563,7 +563,7 @@ export async function createLocalServer(_port = 3000) {
   });
 
   /** Add a project (local folder or git URL) */
-  server.post('/api/projects', async (request) => {
+  server.post('/api/projects', async (request, reply) => {
     const { name, localPath, remoteUrl } = request.body as {
       name: string;
       localPath?: string;
@@ -607,7 +607,15 @@ export async function createLocalServer(_port = 3000) {
         }
       }
 
-      const project = await projectRegistry.addProject(LOCAL_ORG_ID, name.trim(), localPath, 'local');
+      let project: { id: string; slug: string };
+      try {
+        project = await projectRegistry.addProject(LOCAL_ORG_ID, name.trim(), localPath, 'local');
+      } catch (err: any) {
+        if (err?.code === 'DUPLICATE_PROJECT_SLUG') {
+          return reply.status(409).send({ success: false, error: err.message, existingId: err.existingId });
+        }
+        throw err;
+      }
       broadcast('project_added', project);
       return { success: true, project };
     }
@@ -621,7 +629,15 @@ export async function createLocalServer(_port = 3000) {
       const slug = name.trim().toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
       const targetPath = join(config.LOCAL_REPOS_DIR ?? './repos', slug);
 
-      const project = await projectRegistry.addProject(LOCAL_ORG_ID, name.trim(), targetPath, 'git', remoteUrl);
+      let project: { id: string; slug: string };
+      try {
+        project = await projectRegistry.addProject(LOCAL_ORG_ID, name.trim(), targetPath, 'git', remoteUrl);
+      } catch (err: any) {
+        if (err?.code === 'DUPLICATE_PROJECT_SLUG') {
+          return reply.status(409).send({ success: false, error: err.message, existingId: err.existingId });
+        }
+        throw err;
+      }
       broadcast('project_added', project);
 
       // Clone in background
