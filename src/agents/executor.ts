@@ -950,15 +950,20 @@ async function agentCreatedProposalsSince(agentId: string, orgId: string, since:
   return recent.length;
 }
 
-function suppressProposalDetails(agentId: string, response: string, proposalCount: number): string {
-  if (proposalCount === 0) return response;
+function suppressProposalDetails(agentId: string, response: string, proposalCount: number): string | null {
+  const trimmed = response.trim();
 
-  // If the agent already narrated their proposal, they don't need to do it again in the final response
-  // We want to avoid "I've created a ticket..." if the system is about to announce it anyway.
-  if (proposalCount > 0) {
-    logger.info({ agentId, proposalCount }, 'Suppressing redundant proposal narration');
-    return response; 
+  if (trimmed.length === 0) {
+    if (proposalCount > 0) {
+      // Agent's entire response was XML action blocks — surface a brief actionable summary
+      logger.info({ agentId, proposalCount }, 'Agent response was empty after XML stripping; returning proposal summary');
+      const noun = proposalCount === 1 ? 'proposal' : 'proposals';
+      return `I've queued ${proposalCount} task ${noun} for review.`;
+    }
+    // Nothing to say — suppress the empty message entirely
+    logger.info({ agentId }, 'Agent response was empty after XML stripping; suppressing');
+    return null;
   }
 
-  return response;
+  return trimmed;
 }
