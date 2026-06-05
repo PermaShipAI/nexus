@@ -8,22 +8,12 @@ import type { AgentId } from '../agents/types.js';
 const ENCRYPTED_PREFIX = 'enc:';
 
 function encrypt(value: string): string {
-  try {
-    return ENCRYPTED_PREFIX + encryptValue(value);
-  } catch {
-    // If encryption fails (e.g., in test env), store plaintext
-    return value;
-  }
+  return ENCRYPTED_PREFIX + encryptValue(value);
 }
 
 function decrypt(value: string): string {
   if (!value.startsWith(ENCRYPTED_PREFIX)) return value; // Legacy plaintext
-  try {
-    return decryptValue(value.slice(ENCRYPTED_PREFIX.length));
-  } catch {
-    logger.warn('Failed to decrypt secret value — may be from a different installation');
-    return value;
-  }
+  return decryptValue(value.slice(ENCRYPTED_PREFIX.length));
 }
 
 export async function setSecret(secret: NewSecret): Promise<Secret> {
