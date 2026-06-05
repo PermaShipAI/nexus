@@ -24,6 +24,8 @@ export interface GenerateTextOptions {
   systemInstruction?: string;
   contents: LLMContent[];
   orgId?: string;
+  /** Override sampling temperature. Set to 0 for deterministic/reproducible output. */
+  temperature?: number;
 }
 
 export interface GenerateWithToolsOptions extends GenerateTextOptions {

@@ -32,7 +32,10 @@ export class DefaultLLMProvider implements LLMProvider {
       systemInstruction: options.systemInstruction,
     });
     const result = await withRetry(
-      () => model.generateContent({ contents: options.contents as Content[] }),
+      () => model.generateContent({
+        contents: options.contents as Content[],
+        ...(options.temperature !== undefined ? { generationConfig: { temperature: options.temperature } } : {}),
+      }),
       undefined,
       `gemini.generateText[${modelId}]`,
     );
@@ -50,7 +53,10 @@ export class DefaultLLMProvider implements LLMProvider {
       tools: [{ functionDeclarations: options.tools as FunctionDeclaration[] }],
     });
     const result = await withRetry(
-      () => model.generateContent({ contents: options.contents as Content[] }),
+      () => model.generateContent({
+        contents: options.contents as Content[],
+        ...(options.temperature !== undefined ? { generationConfig: { temperature: options.temperature } } : {}),
+      }),
       undefined,
       `gemini.generateWithTools[${modelId}]`,
     );
