@@ -117,6 +117,9 @@ Please refine your proposal based on this feedback.
 
     let response: string;
 
+    // QA manager tasks require deterministic output for reproducible test scenarios and bug reports
+    const temperature = agentId === 'qa-manager' ? 0 : undefined;
+
     if (hasCodeTools && explorer) {
       // Tool-use loop: multi-turn conversation with code exploration tools
       response = await executeToolLoop({
@@ -126,6 +129,7 @@ Please refine your proposal based on this feedback.
         explorer,
         maxRounds: MAX_TOOL_ROUNDS,
         modelTier: 'AGENT',
+        temperature,
       });
     } else {
       // Single-shot: no code tools available
@@ -134,6 +138,7 @@ Please refine your proposal based on this feedback.
         orgId,
         systemInstruction: systemPrompt,
         contents: [{ role: 'user', parts: [{ text: fullUserMessage }] }],
+        temperature,
       });
     }
 
@@ -723,8 +728,9 @@ async function executeToolLoop(opts: {
   explorer: import('../adapters/interfaces/source-explorer.js').SourceExplorer;
   maxRounds: number;
   modelTier: import('../adapters/interfaces/llm-provider.js').ModelTier;
+  temperature?: number;
 }): Promise<string> {
-  const { orgId, systemPrompt, userMessage, explorer, maxRounds, modelTier } = opts;
+  const { orgId, systemPrompt, userMessage, explorer, maxRounds, modelTier, temperature } = opts;
   const contents: LLMContent[] = [{ role: 'user', parts: [{ text: userMessage }] }];
 
   for (let round = 0; round < maxRounds; round++) {
@@ -734,6 +740,7 @@ async function executeToolLoop(opts: {
       systemInstruction: systemPrompt,
       contents,
       tools: CODE_TOOL_DECLARATIONS,
+      ...(temperature !== undefined ? { temperature } : {}),
     });
 
     if (result.functionCalls.length === 0) {
@@ -774,6 +781,7 @@ async function executeToolLoop(opts: {
     orgId,
     systemInstruction: systemPrompt,
     contents,
+    ...(temperature !== undefined ? { temperature } : {}),
   });
   return finalResponse;
 }
