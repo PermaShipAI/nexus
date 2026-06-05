@@ -13,7 +13,7 @@ export function generateSessionToken(): string {
 
 /** Validate a session token from request */
 export function validateSession(token: string | undefined): boolean {
-  if (!sessionToken) return true; // No token generated = auth disabled
+  if (!sessionToken) return false; // No token generated = deny all (fail-closed)
   return token === sessionToken;
 }
 
