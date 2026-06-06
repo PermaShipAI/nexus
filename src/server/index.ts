@@ -20,8 +20,24 @@ export const server = Fastify({
   logger: false, // We use our own pino logger
 });
 
-// Security headers
-server.register(helmet);
+// Security headers with HSTS to enforce HTTPS
+server.register(helmet, {
+  hsts: {
+    maxAge: 31536000, // 1 year
+    includeSubDomains: true,
+    preload: true,
+  },
+});
+
+// Enforce HTTPS: redirect HTTP requests to HTTPS when behind a proxy
+server.addHook('onRequest', async (request, reply) => {
+  const proto = request.headers['x-forwarded-proto'];
+  if (proto && proto !== 'https') {
+    const host = request.headers.host ?? 'localhost';
+    const httpsUrl = `https://${host}${request.url}`;
+    return reply.code(301).redirect(httpsUrl);
+  }
+});
 
 // Internal chat routes (admin dashboard API)
 server.register(internalChatRoutes);
