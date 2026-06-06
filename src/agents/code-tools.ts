@@ -86,10 +86,10 @@ export async function executeCodeTool(
   const project = args.project as string;
   if (!project) return 'Error: "project" parameter is required.';
 
-  const repoKey = await resolveRepoKey(project, ctx.orgId);
-  if (!repoKey) return `Error: Project "${project}" not found. Check the Available Projects list.`;
-
   try {
+    const repoKey = await resolveRepoKey(project, ctx.orgId);
+    if (!repoKey) return `Error: Project "${project}" not found. Check the Available Projects list.`;
+
     switch (name) {
       case 'read_file': {
         const filePath = args.file_path as string;

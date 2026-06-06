@@ -66,25 +66,29 @@ export function loadPersonas(): AgentDefinition[] {
 /** Sync loaded personas into the database */
 export async function syncAgentsToDb(definitions: AgentDefinition[]): Promise<void> {
   for (const def of definitions) {
-    const existing = await db.select().from(agents).where(eq(agents.id, def.id)).limit(1);
+    try {
+      const existing = await db.select().from(agents).where(eq(agents.id, def.id)).limit(1);
 
-    if (existing.length > 0) {
-      await db
-        .update(agents)
-        .set({
+      if (existing.length > 0) {
+        await db
+          .update(agents)
+          .set({
+            title: def.title,
+            personaMd: def.personaMd,
+            updatedAt: new Date(),
+          })
+          .where(eq(agents.id, def.id));
+        logger.debug({ agentId: def.id }, 'Updated agent in DB');
+      } else {
+        await db.insert(agents).values({
+          id: def.id,
           title: def.title,
           personaMd: def.personaMd,
-          updatedAt: new Date(),
-        })
-        .where(eq(agents.id, def.id));
-      logger.debug({ agentId: def.id }, 'Updated agent in DB');
-    } else {
-      await db.insert(agents).values({
-        id: def.id,
-        title: def.title,
-        personaMd: def.personaMd,
-      });
-      logger.debug({ agentId: def.id }, 'Inserted agent into DB');
+        });
+        logger.debug({ agentId: def.id }, 'Inserted agent into DB');
+      }
+    } catch (err) {
+      logger.error({ err, agentId: def.id }, 'Failed to sync agent to DB');
     }
   }
 
@@ -115,18 +119,22 @@ export async function initializeAgents(): Promise<AgentDefinition[]> {
   registry = new Map(definitions.map((d) => [d.id, d]));
 
   // Also load any agents from DB that aren't in persona files (e.g. imported agents restored from backup)
-  const dbAgents = await db.select().from(agents);
-  for (const row of dbAgents) {
-    if (!registry.has(row.id as AgentId)) {
-      const def: AgentDefinition = {
-        id: row.id as AgentId,
-        title: row.title,
-        summary: row.title,
-        personaMd: row.personaMd,
-      };
-      registry.set(def.id, def);
-      logger.debug({ agentId: def.id }, 'Loaded imported agent from DB');
+  try {
+    const dbAgents = await db.select().from(agents);
+    for (const row of dbAgents) {
+      if (!registry.has(row.id as AgentId)) {
+        const def: AgentDefinition = {
+          id: row.id as AgentId,
+          title: row.title,
+          summary: row.title,
+          personaMd: row.personaMd,
+        };
+        registry.set(def.id, def);
+        logger.debug({ agentId: def.id }, 'Loaded imported agent from DB');
+      }
     }
+  } catch (err) {
+    logger.error({ err }, 'Failed to load agents from DB; proceeding with persona-file agents only');
   }
 
   return Array.from(registry.values());
