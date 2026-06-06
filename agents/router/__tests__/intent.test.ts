@@ -573,8 +573,9 @@ describe('routeMessage', () => {
 
   // ---------------------------------------------------------------------------
   // Test 22: Partial extraction (settingKey present, settingValue absent) → score between 0.6 and 0.8
+  // Low-risk (requiresConfirmation: false) routes normally — only high-risk is gated at 0.8
   // ---------------------------------------------------------------------------
-  it('routes AdministrativeAction with partial extraction (0.6–0.8) to agent without fallback', async () => {
+  it('routes AdministrativeAction with partial extraction (0.6–0.8) to agent without fallback when requiresConfirmation is false', async () => {
     const geminiPayload = {
       intent: 'AdministrativeAction',
       confidenceScore: 0.72,
@@ -593,5 +594,78 @@ describe('routeMessage', () => {
     expect(results[0].intent).toBe('AdministrativeAction');
     expect(results[0].confidenceScore).toBeGreaterThanOrEqual(0.6);
     expect(results[0].confidenceScore).toBeLessThan(0.8);
+  });
+
+  // ---------------------------------------------------------------------------
+  // Test 23: High-risk AdministrativeAction with score in 0.6–0.8 range → fallback
+  // requiresConfirmation: true + confidence < 0.8 must trigger clarification
+  // ---------------------------------------------------------------------------
+  it('returns isFallback: true for high-risk AdministrativeAction with score 0.72 (requiresConfirmation: true)', async () => {
+    const geminiPayload = {
+      intent: 'AdministrativeAction',
+      confidenceScore: 0.72,
+      targetAgent: 'sre',
+      extractedEntities: { settingKey: 'maintenanceMode' },
+      reasoning: 'User wants to enable maintenance mode but value is ambiguous.',
+      needsCodeAccess: false,
+      isStrategySession: false,
+      requiresConfirmation: true,
+    };
+    mockGenerateContent.mockResolvedValue({ response: { text: () => JSON.stringify(geminiPayload) } });
+
+    const results = await routeMessage('put the system in some kind of maintenance state', 'channel-23', 'user23');
+
+    expect(results[0].isFallback).toBe(true);
+    expect(results[0].agentId).toBe('none');
+    expect(results[0].intent).toBe('AdministrativeAction');
+    expect(results[0].fallbackMessage).toBeTruthy();
+  });
+
+  // ---------------------------------------------------------------------------
+  // Test 24: High-risk AdministrativeAction at exactly 0.8 boundary → routes normally
+  // ---------------------------------------------------------------------------
+  it('routes high-risk AdministrativeAction without fallback when confidenceScore is exactly 0.8', async () => {
+    const geminiPayload = {
+      intent: 'AdministrativeAction',
+      confidenceScore: 0.8,
+      targetAgent: 'sre',
+      extractedEntities: { settingKey: 'maintenanceMode', settingValue: 'enabled' },
+      reasoning: 'User wants to enable maintenance mode.',
+      needsCodeAccess: false,
+      isStrategySession: false,
+      requiresConfirmation: true,
+    };
+    mockGenerateContent.mockResolvedValue({ response: { text: () => JSON.stringify(geminiPayload) } });
+
+    const results = await routeMessage('enable maintenance mode', 'channel-24', 'user24');
+
+    expect(results[0].isFallback).toBe(false);
+    expect(results[0].agentId).toBe('sre');
+    expect(results[0].confidenceScore).toBe(0.8);
+  });
+
+  // ---------------------------------------------------------------------------
+  // Test 25: logAdministrativeIntentClarificationEvent called when high-risk admin scores 0.6–0.8
+  // ---------------------------------------------------------------------------
+  it('calls logAdministrativeIntentClarificationEvent when high-risk AdministrativeAction scores between 0.6 and 0.8', async () => {
+    const geminiPayload = {
+      intent: 'AdministrativeAction',
+      confidenceScore: 0.65,
+      targetAgent: 'sre',
+      extractedEntities: { settingKey: 'ingestionPipeline' },
+      reasoning: 'Partial extraction: settingValue is missing.',
+      needsCodeAccess: false,
+      isStrategySession: false,
+      requiresConfirmation: true,
+    };
+    mockGenerateContent.mockResolvedValue({ response: { text: () => JSON.stringify(geminiPayload) } });
+
+    await routeMessage('hit the kill switch on something', 'channel-25', 'user25');
+
+    expect(mockLogAdminClarificationFn).toHaveBeenCalledWith({
+      confidenceScore: 0.65,
+      channelId: 'channel-25',
+      userName: 'user25',
+    });
   });
 });
