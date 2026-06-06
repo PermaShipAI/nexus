@@ -201,6 +201,38 @@ export async function routeMessage(
         return [lowConfidenceResult];
       }
 
+      // High-risk administrative actions (requiresConfirmation: true) require confidence >= 0.8
+      // to prevent accidental state mutations from partially-extracted intents (settingKey present
+      // but settingValue absent, or vice versa). Scores in the 0.6–0.8 range indicate partial
+      // extraction and must trigger clarification for these destructive operations.
+      if (
+        intentData.intent === 'AdministrativeAction' &&
+        intentData.requiresConfirmation === true &&
+        intentData.confidenceScore < 0.8
+      ) {
+        const { fallbackMessage, actionableOptions } = buildClarificationMessage(
+          intentData.intent,
+          intentData.extractedEntities ?? {},
+        );
+        const partialConfidenceResult: RouteResult = {
+          agentId: 'none',
+          intent: intentData.intent,
+          subMessage: content,
+          confidenceScore: intentData.confidenceScore,
+          reasoning: intentData.reasoning,
+          extractedEntities: intentData.extractedEntities ?? {},
+          needsCodeAccess: false,
+          isStrategySession: false,
+          requiresConfirmation: false,
+          isFallback: true,
+          fallbackMessage,
+          actionableOptions,
+        };
+        logAdministrativeIntentClarificationEvent({ confidenceScore: intentData.confidenceScore, channelId, userName });
+        logRoutingDecision(partialConfidenceResult, elapsedMs);
+        return [partialConfidenceResult];
+      }
+
       if (isIntentLocked(resolvedSession, intentData.intent)) {
         const circuitBrokenResult: RouteResult = {
           agentId: 'none',
