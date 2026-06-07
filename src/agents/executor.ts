@@ -18,7 +18,7 @@ import { getMissionItem, updateMissionItem, addMissionItems, addSubSteps } from 
 import { onMissionItemChanged } from '../missions/scheduler.js';
 import { checkAndTriggerAdrDrafting } from './adr-service.js';
 import { shouldCreateSuggestion } from '../idle/throttle.js';
-import { sendApprovalMessage, sendAutonomousNotification, sendPublicChannelAlerts } from '../bot/interactions.js';
+import { sendApprovalMessage, sendAutonomousNotification, sendPublicChannelAlerts, sendConflictNotification } from '../bot/interactions.js';
 import { getAgent } from './registry.js';
 import { parseArgs } from '../utils/parse-args.js';
 import { CODE_TOOL_DECLARATIONS, executeCodeTool } from './code-tools.js';
@@ -195,6 +195,19 @@ Please refine your proposal based on this feedback.
             fallbackPlan: parsed.fallbackPlan,
           });
           logger.info({ agentId, result }, 'Fast path ticket proposal processed');
+          if (!result.success && result.matchedTitle) {
+            try {
+              await sendConflictNotification(
+                channelId,
+                parsed.title,
+                result.matchedTitle,
+                result.conflictingActionId,
+                orgId,
+              );
+            } catch (err) {
+              logger.error({ err, agentId }, 'Failed to send conflict notification');
+            }
+          }
         } catch (err) {
           logger.warn({ err, agentId, block }, 'Failed to parse/process ticket-proposal block');
         }

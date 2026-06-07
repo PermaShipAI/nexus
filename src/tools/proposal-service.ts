@@ -35,6 +35,7 @@ export interface TicketProposalResult {
   actionId?: string;
   duplicate?: boolean;
   matchedTitle?: string;
+  conflictingActionId?: string;
   message: string;
 }
 
@@ -271,6 +272,7 @@ export async function createTicketProposal(input: TicketProposalInput): Promise<
         success: false,
         duplicate: true,
         matchedTitle: conflictResult.matchedTitle,
+        conflictingActionId: conflictResult.actionId,
         message: `CROSS-AGENT CONFLICT REJECTED: This proposal targets the same underlying component or root cause as an existing proposal: "${conflictResult.matchedTitle}"${idClause}. Do NOT create a separate ticket. Instead, retrieve that proposal and merge your Acceptance Criteria into it to consolidate the work under a single execution context.`,
       };
     }
@@ -278,6 +280,7 @@ export async function createTicketProposal(input: TicketProposalInput): Promise<
       success: false,
       duplicate: true,
       matchedTitle: conflictResult.matchedTitle,
+      conflictingActionId: conflictResult.actionId,
       message: `DUPLICATE REJECTED: An AI review determined this ticket overlaps with an existing one: "${conflictResult.matchedTitle}". Do NOT re-propose tickets that have already been proposed or created.`,
     };
   }
