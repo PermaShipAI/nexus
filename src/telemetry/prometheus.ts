@@ -60,3 +60,10 @@ export const confirmationResolutionLatencyMs = new Histogram({
   buckets: [1000, 5000, 10000, 30000, 60000, 120000, 300000],
   registers: [registry],
 });
+
+export const proposalApprovalClickedTotal = new Counter({
+  name: 'nexus_proposal_approval_clicked_total',
+  help: 'Total number of proposal approval button clicks by action and agent',
+  labelNames: ['action', 'agent_id'] as const,
+  registers: [registry],
+});

@@ -126,6 +126,30 @@ export async function sendAutonomousNotification(
   }
 }
 
+export async function sendConflictNotification(
+  channelId: string,
+  blockedTitle: string,
+  conflictTitle: string,
+  conflictingActionId: string | undefined,
+  orgId?: string,
+): Promise<void> {
+  const unifiedChannelId = channelId.includes(':') ? channelId : `discord:${channelId}`;
+
+  let embedDescription = `A proposal was blocked because it conflicts with an existing proposal.\n\n**Blocked proposal:** "${blockedTitle}"\n**Conflicting proposal:** "${conflictTitle}"\n\nPlease review the Proposals panel to resolve the conflict manually.`;
+  if (conflictingActionId) {
+    embedDescription += `\nConflicting proposal ID: \`${conflictingActionId}\``;
+  }
+
+  await getCommunicationAdapter().sendMessage({
+    embed_title: '⚠️ Proposal Blocked — Manual Review Required',
+    embed_description: embedDescription,
+    embed_color: 0xFFA500,
+  }, {
+    channel_id: unifiedChannelId,
+    orgId,
+  });
+}
+
 export async function sendPublicChannelAlerts(
   kind: string,
   title: string,

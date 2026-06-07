@@ -12,6 +12,7 @@ import { db } from '../db/index.js';
 import { pendingActions } from '../db/schema.js';
 import { eq } from 'drizzle-orm';
 import { getTicketTracker, getCommunicationAdapter } from '../adapters/registry.js';
+import { proposalApprovalClickedTotal } from '../telemetry/prometheus.js';
 import { parseArgs } from '../utils/parse-args.js';
 import { internalChatRoutes } from './internal-chat-routes.js';
 import { verifySignedCustomId } from '../bot/interaction-crypto.js';
@@ -246,6 +247,7 @@ server.post('/v1/webhooks/comms', async (request) => {
             });
           }
 
+          proposalApprovalClickedTotal.inc({ action: 'approve', agent_id: action.agentId });
           logger.info({ actionId, user: user?.username }, 'Proposal approved via button');
         } else {
           await db.update(pendingActions)
@@ -260,6 +262,7 @@ server.post('/v1/webhooks/comms', async (request) => {
             );
           }
 
+          proposalApprovalClickedTotal.inc({ action: 'reject', agent_id: action.agentId });
           logger.info({ actionId, user: user?.username }, 'Proposal rejected via button');
         }
 

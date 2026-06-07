@@ -319,6 +319,16 @@ export async function createLocalServer(_port = 3000) {
       .set({ status: 'approved', resolvedAt: new Date() })
       .where(eq(pendingActions.id, id));
 
+    const { proposalApprovalClickedTotal } = await import('../telemetry/prometheus.js');
+    proposalApprovalClickedTotal.inc({ action: 'approve', agent_id: action.agentId });
+
+    const { logGuardrailEvent: logGuardrailApprove } = await import('../telemetry/index.js');
+    logGuardrailApprove({
+      event: 'proposal_approved_human',
+      proposalId: id,
+      agentId: action.agentId,
+      orgId: action.orgId,
+    });
 
     broadcast('proposal_resolved', { id, status: 'approved' });
 
@@ -371,6 +381,9 @@ export async function createLocalServer(_port = 3000) {
       .update(pendingActions)
       .set({ status: 'rejected', resolvedAt: new Date(), args: updatedArgs })
       .where(eq(pendingActions.id, id));
+
+    const { proposalApprovalClickedTotal: proposalRejectClickedTotal } = await import('../telemetry/prometheus.js');
+    proposalRejectClickedTotal.inc({ action: 'reject', agent_id: action.agentId });
 
     const { logGuardrailEvent } = await import('../telemetry/index.js');
     logGuardrailEvent({
