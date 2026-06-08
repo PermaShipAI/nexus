@@ -28,6 +28,8 @@ export interface TicketProposalInput {
   agentDiscussionContext?: string;
   /** Fallback plan for non-primary execution paths. Must begin with "**Fallback:**". */
   fallbackPlan?: string;
+  /** Explicit approval gate labels. If omitted, gates are auto-detected from the description. */
+  approvalGates?: string[];
 }
 
 export interface TicketProposalResult {
@@ -42,6 +44,23 @@ export interface DuplicateCheckResult {
   matchedTitle: string;
   actionId?: string;
   conflictType: 'DUPLICATE' | 'ROOT_CAUSE_OVERLAP';
+}
+
+const APPROVAL_GATE_KEYWORDS: Array<{ pattern: RegExp; canonical: string }> = [
+  { pattern: /nexus\s+dod/i, canonical: 'Nexus DoD' },
+  { pattern: /\bCISO\b/i, canonical: 'CISO' },
+  { pattern: /\bQA\s+Manager\b/i, canonical: 'QA Manager' },
+  { pattern: /\bSRE\b/i, canonical: 'SRE' },
+  { pattern: /human\s+review/i, canonical: 'human review' },
+  { pattern: /manual\s+review/i, canonical: 'manual review' },
+];
+
+export function detectApprovalGates(text: string): string[] {
+  const seen = new Set<string>();
+  for (const { pattern, canonical } of APPROVAL_GATE_KEYWORDS) {
+    if (pattern.test(text)) seen.add(canonical);
+  }
+  return Array.from(seen);
 }
 
 /**
@@ -195,7 +214,7 @@ Where <index> is the 1-based index number from the EXISTING TICKETS list.`;
  * Shared by both CLI path and fast path (structured output).
  */
 export async function createTicketProposal(input: TicketProposalInput): Promise<TicketProposalResult> {
-  const { orgId, kind, title, description, project, priority, agentId, source, channelId, agentDiscussionContext, fallbackPlan } = input;
+  const { orgId, kind, title, description, project, priority, agentId, source, channelId, agentDiscussionContext, fallbackPlan, approvalGates } = input;
   let { repoKey } = input;
 
   // Enforce fallback plan for idle-sourced (agentops/system-initiated) proposals.
@@ -223,6 +242,8 @@ export async function createTicketProposal(input: TicketProposalInput): Promise<
   if (fullDescription.length > 4000) {
     logger.warn({ agentId, descriptionLength: fullDescription.length }, 'ticket_proposal.description_too_long: fullDescription exceeds 4000 chars');
   }
+
+  const resolvedGates: string[] = approvalGates ?? detectApprovalGates(fullDescription);
 
   // Resolve project name to UUID
   const projectId = await getProjectRegistry().resolveProjectId(project, orgId);
@@ -284,6 +305,10 @@ export async function createTicketProposal(input: TicketProposalInput): Promise<
 
   logger.info({ agentId, hasDiscussionContext: !!agentDiscussionContext, hasFallbackPlan: !!fallbackPlan }, 'ticket_proposal.enriched');
 
+  if (resolvedGates.length > 0) {
+    logGuardrailEvent({ event: 'ticket_creation_with_approval_gates', orgId, agentId, title, gates: resolvedGates });
+  }
+
   // Store resolved project-id and repo-key in args for the approval flow
   const resolvedArgs = {
     kind,
@@ -293,6 +318,7 @@ export async function createTicketProposal(input: TicketProposalInput): Promise<
     'repo-key': repoKey,
     project,
     ...(priority !== undefined ? { priority: String(priority) } : {}),
+    ...(resolvedGates.length > 0 ? { approval_gates: resolvedGates } : {}),
   };
 
   // CTO proposals go directly to human review; all others need CTO gate first
