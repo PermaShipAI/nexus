@@ -33,4 +33,16 @@ describe('classifyIntent', () => {
     const result = await classifyIntent('get the database password');
     expect(result.kind).toBe('AccessSecrets');
   });
+
+  it('returns AdministrativeAction with high confidence for explicit admin request', async () => {
+    const result = await classifyIntent('enable autonomous mode');
+    expect(result.kind).toBe('AdministrativeAction');
+    expect(result.confidenceScore).toBeGreaterThanOrEqual(0.8);
+  });
+
+  it('returns AdministrativeAction with low confidence for vague admin request', async () => {
+    const result = await classifyIntent('change some system settings');
+    expect(result.kind).toBe('AdministrativeAction');
+    expect(result.confidenceScore).toBeLessThan(0.6);
+  });
 });
