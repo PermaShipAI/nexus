@@ -18,3 +18,11 @@ export function logRoutingDecision(decision: RoutingDecision): void {
   const level = decision.allowed ? 'info' : 'warn';
   logger[level](decision, 'routing_decision');
 }
+
+export function logAdministrativeIntentClarificationTriggered(details: {
+  confidenceScore: number;
+  messageId: string;
+  platform: string;
+}): void {
+  logger.warn({ event: 'administrative_intent_clarification_triggered', ...details });
+}
