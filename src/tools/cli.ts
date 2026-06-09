@@ -7,7 +7,7 @@ await loadAdapters();
 await initializeAgents();
 
 import { parseArgs } from 'node:util';
-import { createTask, updateTaskStatus, listTasks } from '../tasks/service.js';
+import { createTask, updateTaskStatus, listTasks, TaskConflictError } from '../tasks/service.js';
 import { addSharedKnowledge, addAgentMemory, queryKnowledge } from '../knowledge/service.js';
 import { getProjectRegistry, getTicketTracker } from '../adapters/registry.js';
 import { db } from '../db/index.js';
@@ -152,13 +152,21 @@ async function run(): Promise<void> {
         strict: false,
       });
       const orgId = requireArg(values, 'org');
-      const task = await updateTaskStatus(
-        requireArg(values, 'id'),
-        orgId,
-        requireArg(values, 'status') as any,
-        str(values.agent) ? validateAgentId(str(values.agent)!) : undefined,
-      );
-      printResult({ success: !!task, task });
+      try {
+        const task = await updateTaskStatus(
+          requireArg(values, 'id'),
+          orgId,
+          requireArg(values, 'status') as any,
+          str(values.agent) ? validateAgentId(str(values.agent)!) : undefined,
+        );
+        printResult({ success: !!task, task });
+      } catch (err) {
+        if (err instanceof TaskConflictError) {
+          printResult({ success: false, conflict: true, message: `ERROR: HTTP 409 - ${err.message}` });
+        } else {
+          throw err;
+        }
+      }
       break;
     }
 
