@@ -22,6 +22,7 @@ import { sendApprovalMessage, sendAutonomousNotification, sendPublicChannelAlert
 import { getAgent } from './registry.js';
 import { parseArgs } from '../utils/parse-args.js';
 import { CODE_TOOL_DECLARATIONS, executeCodeTool } from './code-tools.js';
+import { recordTrip, isPersonaPaused } from '../tools/tool-circuit-breaker.js';
 
 const WORKSPACE_ROOT = process.env.WORKSPACE_ROOT
   ?? (process.env.NODE_ENV === 'production' ? '/app' : process.cwd());
@@ -85,6 +86,10 @@ export async function executeAgent(input: ExecuteAgentInput): Promise<string | n
 /** Fast API-based execution for conversational messages */
 async function executeFast(input: ExecuteAgentInput): Promise<string | null> {
   const { orgId, agentId, channelId, userMessage, steering, source, projectHint } = input;
+  if (isPersonaPaused(agentId)) {
+    logger.warn({ orgId, agentId }, 'Fast path: agent paused by 409 circuit breaker');
+    return null;
+  }
   logger.info({ orgId, agentId, messageLength: userMessage.length }, 'Fast path: calling Gemini API');
   const executionStart = new Date();
 
@@ -195,6 +200,13 @@ Please refine your proposal based on this feedback.
             fallbackPlan: parsed.fallbackPlan,
           });
           logger.info({ agentId, result }, 'Fast path ticket proposal processed');
+          if (result.duplicate === true) {
+            const { shouldHalt } = recordTrip(agentId, orgId, 'create_ticket_proposal', 409);
+            if (shouldHalt) {
+              logger.warn({ agentId, orgId }, 'Fast path: halting due to repeated 409 conflicts');
+              return null;
+            }
+          }
         } catch (err) {
           logger.warn({ err, agentId, block }, 'Failed to parse/process ticket-proposal block');
         }
@@ -628,6 +640,10 @@ Please refine your proposal based on this feedback.
 /** Full CLI-based execution with codebase access */
 async function executeCli(input: ExecuteAgentInput): Promise<string | null> {
   const { orgId, agentId, channelId, userMessage, steering } = input;
+  if (isPersonaPaused(agentId)) {
+    logger.warn({ orgId, agentId }, 'CLI path: agent paused by 409 circuit breaker');
+    return null;
+  }
 
   const { cleanup } = await writeGeminiContext(agentId, channelId, orgId);
   const executionStart = new Date();
@@ -793,6 +809,10 @@ async function processDeepResearchResult(input: ExecuteAgentInput, response: str
 /** Deep research mode: clone workspace and explore with extended tools and budget. */
 async function executeDeepResearch(input: ExecuteAgentInput): Promise<string | null> {
   const { orgId, agentId, channelId, userMessage, steering } = input;
+  if (isPersonaPaused(agentId)) {
+    logger.warn({ orgId, agentId }, 'Deep research: agent paused by 409 circuit breaker');
+    return null;
+  }
   logger.info({ orgId, agentId }, 'Deep research: starting');
   const executionStart = new Date();
 
