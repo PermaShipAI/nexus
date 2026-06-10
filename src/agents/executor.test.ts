@@ -3,6 +3,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { executeAgent } from './executor.js';
 import { logger } from '../logger.js';
 import { createTicketProposal } from '../tools/proposal-service.js';
+import { TransientInfrastructureError } from './types.js';
 
 const mockGenerateText = vi.fn();
 const mockGenerateWithTools = vi.fn();
@@ -89,15 +90,17 @@ vi.mock('./registry.js', () => ({
 vi.mock('../utils/parse-args.js', () => ({
   parseArgs: vi.fn().mockReturnValue({}),
 }));
+const mockExecuteCodeTool = vi.fn().mockResolvedValue('tool result');
 vi.mock('./code-tools.js', () => ({
   CODE_TOOL_DECLARATIONS: [],
-  executeCodeTool: vi.fn().mockResolvedValue('tool result'),
+  executeCodeTool: (...args: unknown[]) => mockExecuteCodeTool(...args),
 }));
 
 describe('executor', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mockSourceExplorer = null;
+    mockExecuteCodeTool.mockResolvedValue('tool result');
   });
 
   it('should execute agent via fast path', async () => {
@@ -222,6 +225,113 @@ describe('executor', () => {
       // After exhausting the budget, the executor must call generateText to get a final answer
       expect(mockGenerateText).toHaveBeenCalledTimes(1);
       expect(result).toBe('Final answer after tool budget exhausted');
+    } finally {
+      process.env.DATABASE_URL = savedDatabaseUrl;
+    }
+  });
+
+  it('circuit-breaks and returns degraded message when executeCodeTool throws TransientInfrastructureError(503)', async () => {
+    const savedDatabaseUrl = process.env.DATABASE_URL;
+    delete process.env.DATABASE_URL;
+
+    try {
+      mockSourceExplorer = { readFile: vi.fn(), listFiles: vi.fn() };
+
+      mockGenerateWithTools.mockResolvedValue({
+        text: 'Searching...',
+        functionCalls: [{ name: 'read_file', args: { project: 'my-repo', file_path: 'src/index.ts' }, id: 'call_1' }],
+        raw: null,
+      });
+
+      mockExecuteCodeTool.mockRejectedValue(
+        new TransientInfrastructureError(503, 'Tool read_file failed with HTTP 503'),
+      );
+
+      const result = await executeAgent({
+        orgId: 'org-1',
+        agentId: 'nexus',
+        channelId: 'chan-1',
+        userId: 'user-1',
+        userName: 'Alice',
+        userMessage: 'Analyze the codebase',
+      });
+
+      expect(result).toBe('The orchestration engine is currently degraded. Please try again later.');
+      // Only the initial generateWithTools call — no second round after circuit-break
+      expect(mockGenerateWithTools).toHaveBeenCalledTimes(1);
+    } finally {
+      process.env.DATABASE_URL = savedDatabaseUrl;
+    }
+  });
+
+  it('circuit-breaks and returns degraded message when executeCodeTool throws TransientInfrastructureError(429)', async () => {
+    const savedDatabaseUrl = process.env.DATABASE_URL;
+    delete process.env.DATABASE_URL;
+
+    try {
+      mockSourceExplorer = { readFile: vi.fn(), listFiles: vi.fn() };
+
+      mockGenerateWithTools.mockResolvedValue({
+        text: 'Searching...',
+        functionCalls: [{ name: 'read_file', args: { project: 'my-repo', file_path: 'src/index.ts' }, id: 'call_2' }],
+        raw: null,
+      });
+
+      mockExecuteCodeTool.mockRejectedValue(
+        new TransientInfrastructureError(429, 'Tool read_file failed with HTTP 429'),
+      );
+
+      const result = await executeAgent({
+        orgId: 'org-1',
+        agentId: 'nexus',
+        channelId: 'chan-1',
+        userId: 'user-1',
+        userName: 'Alice',
+        userMessage: 'Analyze the codebase',
+      });
+
+      expect(result).toBe('The orchestration engine is currently degraded. Please try again later.');
+      expect(mockGenerateWithTools).toHaveBeenCalledTimes(1);
+    } finally {
+      process.env.DATABASE_URL = savedDatabaseUrl;
+    }
+  });
+
+  it('does NOT circuit-break when executeCodeTool returns a plain "Tool error: 400" string', async () => {
+    const savedDatabaseUrl = process.env.DATABASE_URL;
+    delete process.env.DATABASE_URL;
+
+    try {
+      mockSourceExplorer = { readFile: vi.fn(), listFiles: vi.fn() };
+
+      // First call: returns a tool call; second call: returns final text
+      mockGenerateWithTools
+        .mockResolvedValueOnce({
+          text: 'Searching...',
+          functionCalls: [{ name: 'read_file', args: { project: 'my-repo', file_path: 'src/index.ts' }, id: 'call_3' }],
+          raw: null,
+        })
+        .mockResolvedValueOnce({
+          text: 'Final answer',
+          functionCalls: [],
+          raw: null,
+        });
+
+      // executeCodeTool returns a plain error string — should NOT throw
+      mockExecuteCodeTool.mockResolvedValue('Tool error: 400 Bad Request');
+
+      const result = await executeAgent({
+        orgId: 'org-1',
+        agentId: 'nexus',
+        channelId: 'chan-1',
+        userId: 'user-1',
+        userName: 'Alice',
+        userMessage: 'Analyze the codebase',
+      });
+
+      // Loop continues — generateWithTools called a second time
+      expect(mockGenerateWithTools).toHaveBeenCalledTimes(2);
+      expect(result).toBe('Final answer');
     } finally {
       process.env.DATABASE_URL = savedDatabaseUrl;
     }

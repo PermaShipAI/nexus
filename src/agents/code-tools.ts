@@ -6,6 +6,7 @@ import type { LLMFunctionDeclaration } from '../adapters/interfaces/llm-provider
 import type { SourceExplorer } from '../adapters/interfaces/source-explorer.js';
 import { getProjectRegistry } from '../adapters/registry.js';
 import { logger } from '../logger.js';
+import { TransientInfrastructureError } from './types.js';
 
 export const CODE_TOOL_DECLARATIONS: LLMFunctionDeclaration[] = [
   {
@@ -134,6 +135,21 @@ export async function executeCodeTool(
     }
   } catch (err) {
     logger.error({ err, tool: name, project }, 'Code tool execution failed');
+
+    // Re-throw transient infrastructure errors so the tool loop can circuit-break
+    // instead of feeding the error back to the LLM as a retryable string.
+    // Detection mirrors src/adapters/providers/retry.ts for consistency.
+    const httpStatus = (err as { status?: number }).status;
+    if (typeof httpStatus === 'number' && (httpStatus === 429 || httpStatus === 502 || httpStatus === 503)) {
+      throw new TransientInfrastructureError(httpStatus, `Tool ${name} failed with HTTP ${httpStatus}`);
+    }
+    if (err instanceof Error) {
+      const m = err.message.match(/\b(429|502|503)\b/);
+      if (m) {
+        throw new TransientInfrastructureError(parseInt(m[1], 10), `Tool ${name} failed with HTTP ${m[1]}`);
+      }
+    }
+
     return `Tool error: ${(err as Error).message}`;
   }
 }
