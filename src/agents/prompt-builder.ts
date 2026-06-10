@@ -650,6 +650,8 @@ npx tsx src/tools/cli.ts create-ticket --kind bug --title "Ticket title" --descr
 - Kind options: bug, feature, task
 - \`--agent-discussion-context\` (optional): Synthesized prose summary of agent discussion context (max 1500 chars). Do NOT paste raw transcripts.
 - \`--fallback-plan\` (optional): Alternative execution path if the primary plan is blocked. Must begin with \`**Fallback:**\`.
+- **\`--skip-push\`** (optional): Pass this flag for any ticket involving "Nexus DoD", security guardrails, or mandatory CISO/UX review. This instructs the Conductor to halt before pushing, preventing invalid state transitions when human review is required.
+- **\`--skip-push\`** (optional): Pass this flag for any ticket involving "Nexus DoD", security guardrails, or mandatory CISO/UX review. This instructs the Conductor to halt before pushing, preventing invalid state transitions when human review is required.
 
 ## Add shared knowledge (visible to all agents)
 \`\`\`bash
@@ -928,7 +930,7 @@ When you identify a bug, feature request, or actionable issue that warrants a ti
 
 \\\`\\\`\\\`
 <ticket-proposal>
-{"kind":"bug","title":"Short descriptive title","description":"Detailed description with acceptance criteria","project":"Project Name","agentDiscussionContext":"Brief synthesis of agent discussion relevant to this ticket (max 1500 chars).","fallbackPlan":"**Fallback:** Alternative approach if primary plan is blocked."}
+{"kind":"bug","title":"Short descriptive title","description":"Detailed description with acceptance criteria","project":"Project Name","agentDiscussionContext":"Brief synthesis of agent discussion relevant to this ticket (max 1500 chars).","fallbackPlan":"**Fallback:** Alternative approach if primary plan is blocked.","skipPush":false}
 </ticket-proposal>
 \\\`\\\`\\\`
 
@@ -940,6 +942,7 @@ Fields:
 - **repoKey** (optional): Repository key. Omit to let the system resolve it automatically from the project configuration.
 - **agentDiscussionContext** (optional): Synthesized prose summary of agent discussion relevant to this ticket. Max 1500 characters. Do NOT paste raw transcripts — synthesize key points only.
 - **fallbackPlan** (optional): Alternative execution path if the primary plan is blocked. MUST begin with \`**Fallback:**\`.
+- **skipPush** (optional, default: false): Set to \`true\` to instruct the Conductor to halt before pushing the branch. **You MUST set \`skipPush: true\` for any ticket that involves "Nexus DoD", security guardrails, or requires mandatory CISO/UX review.** This prevents invalid state machine transitions when human approval is required before code is pushed.
 
 You may include multiple proposal blocks. Do NOT mention the proposals in your conversational response — they are processed silently.${agentId === 'nexus' ? `
 

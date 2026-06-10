@@ -194,6 +194,7 @@ async function run(): Promise<void> {
           agent: { type: 'string' },
           'agent-discussion-context': { type: 'string' },
           'fallback-plan': { type: 'string' },
+          'skip-push': { type: 'boolean' },
         },
         strict: false,
       });
@@ -208,6 +209,7 @@ async function run(): Promise<void> {
         agentId: validateAgentId(requireArg(values, 'agent')),
         agentDiscussionContext: str(values['agent-discussion-context']),
         fallbackPlan: str(values['fallback-plan']),
+        skipPush: values['skip-push'] === true,
       });
       printResult(result);
       break;

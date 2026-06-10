@@ -193,6 +193,7 @@ Please refine your proposal based on this feedback.
             channelId,
             agentDiscussionContext: parsed.agentDiscussionContext,
             fallbackPlan: parsed.fallbackPlan,
+            skipPush: parsed.skipPush,
           });
           logger.info({ agentId, result }, 'Fast path ticket proposal processed');
         } catch (err) {
@@ -239,6 +240,7 @@ Please refine your proposal based on this feedback.
                 projectId: updatedArgs['project-id'] as string,
                 priority: updatedArgs.priority ? parseInt(updatedArgs.priority as string, 10) : undefined,
                 createdByAgentId: action.agentId as AgentId,
+                skipPush: updatedArgs.skipPush === true,
               });
               await db.update(pendingActions)
                 .set({ status: 'approved', resolvedAt: new Date() })
