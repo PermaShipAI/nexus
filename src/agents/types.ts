@@ -38,3 +38,18 @@ export interface AgentContext {
   userId: string;
   userName: string;
 }
+
+/**
+ * Thrown by tool executors when an external HTTP call returns a transient
+ * infrastructure error (429, 502, 503). The multi-turn tool loop catches this
+ * to circuit-break immediately instead of letting the LLM retry.
+ */
+export class TransientInfrastructureError extends Error {
+  constructor(
+    public readonly httpStatus: number,
+    message: string,
+  ) {
+    super(message);
+    this.name = 'TransientInfrastructureError';
+  }
+}

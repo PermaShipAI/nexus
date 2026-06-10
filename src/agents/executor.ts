@@ -4,6 +4,7 @@ import { getLLMProvider, getSourceExplorer, getWorkspaceProvider } from '../adap
 import { logger } from '../logger.js';
 import { logToolStrippingEvent } from '../../agents/telemetry/logger.js';
 import type { AgentId } from './types.js';
+import { TransientInfrastructureError } from './types.js';
 import type { LLMContent } from '../adapters/interfaces/llm-provider.js';
 import { db } from '../db/index.js';
 import { pendingActions } from '../db/schema.js';
@@ -759,7 +760,19 @@ async function executeToolLoop(opts: {
     for (let i = 0; i < result.functionCalls.length; i++) {
       const fc = result.functionCalls[i];
       const callId = (modelParts.find(p => p.functionCall?.name === fc.name) as any)?.functionCall?.id ?? fc.id;
-      const toolResult = await executeCodeTool(fc.name, fc.args, { orgId, explorer });
+      let toolResult: string;
+      try {
+        toolResult = await executeCodeTool(fc.name, fc.args, { orgId, explorer });
+      } catch (err) {
+        if (err instanceof TransientInfrastructureError) {
+          logger.warn(
+            { httpStatus: err.httpStatus, tool: fc.name, orgId },
+            'circuit_breaker.transient_infra: aborting tool loop',
+          );
+          return 'The orchestration engine is currently degraded. Please try again later.';
+        }
+        throw err;
+      }
       responseParts.push({
         functionResponse: { name: fc.name, response: { result: toolResult }, id: callId },
       });
