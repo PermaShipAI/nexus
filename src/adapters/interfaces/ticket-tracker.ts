@@ -20,6 +20,13 @@ export interface CreateTicketInput {
   priority?: number;
   labels?: string[];
   createdByAgentId: AgentId;
+  /**
+   * When true, instructs the Conductor to halt before pushing the branch.
+   * MUST be set to true for any ticket involving "Nexus DoD", security guardrails,
+   * or mandatory CISO/UX review gates to prevent invalid state machine transitions
+   * from waiting_for_human to ci_running.
+   */
+  skipPush?: boolean;
 }
 
 export interface Suggestion {

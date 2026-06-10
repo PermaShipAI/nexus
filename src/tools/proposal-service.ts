@@ -28,6 +28,12 @@ export interface TicketProposalInput {
   agentDiscussionContext?: string;
   /** Fallback plan for non-primary execution paths. Must begin with "**Fallback:**". */
   fallbackPlan?: string;
+  /**
+   * When true, instructs the Conductor to halt before pushing the branch.
+   * MUST be set to true for any ticket involving "Nexus DoD", security guardrails,
+   * or mandatory CISO/UX review gates. Defaults to false if omitted.
+   */
+  skipPush?: boolean;
 }
 
 export interface TicketProposalResult {
@@ -198,6 +204,14 @@ export async function createTicketProposal(input: TicketProposalInput): Promise<
   const { orgId, kind, title, description, project, priority, agentId, source, channelId, agentDiscussionContext, fallbackPlan } = input;
   let { repoKey } = input;
 
+  // Safety net: force skipPush=true if "Nexus DoD" appears in title or description,
+  // regardless of what the LLM set. This prevents invalid state machine transitions
+  // from waiting_for_human to ci_running for tickets that require mandatory review gates.
+  const nexusDoDPattern = /nexus\s+dod/i;
+  const skipPush: boolean = input.skipPush === true ||
+    nexusDoDPattern.test(title) ||
+    nexusDoDPattern.test(description);
+
   // Enforce fallback plan for idle-sourced (agentops/system-initiated) proposals.
   // Human-facing guardrail: downstream subagents must not attempt primary and fallback
   // paths simultaneously. Reject idle proposals that omit a fallbackPlan entirely.
@@ -293,6 +307,7 @@ export async function createTicketProposal(input: TicketProposalInput): Promise<
     'repo-key': repoKey,
     project,
     ...(priority !== undefined ? { priority: String(priority) } : {}),
+    skipPush,
   };
 
   // CTO proposals go directly to human review; all others need CTO gate first
