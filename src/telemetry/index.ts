@@ -13,6 +13,7 @@ export type GuardrailEvent =
   | { event: "agentops_evaluation_triggered"; orgId: string; windowDays: number; topFailureClasses: Array<{ reason: string; count: number }> }
   | { event: "agentops_adr_draft_triggered"; orgId: string; agentId: string; reason: string; rejectionCount: number }
   | { event: "agentops_fallback_missing"; orgId: string; agentId: string; title: string }
+  | { event: "agentops_fallback_malformed"; orgId: string; agentId: string; title: string }
   | { event: "autonomous_mode_gate_shown"; channelId: string; userId: string; settingKey: string }
   | { event: "autonomous_mode_gate_approved"; channelId: string; userId: string; approverId: string; settingKey: string }
   | { event: "autonomous_mode_gate_denied"; channelId: string; userId: string; approverId: string; settingKey: string }

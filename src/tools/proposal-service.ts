@@ -216,8 +216,15 @@ export async function createTicketProposal(input: TicketProposalInput): Promise<
     fullDescription += `\n\n## Agent Discussion Context\n${agentDiscussionContext}`;
   }
   if (fallbackPlan) {
-    const normalizedFallback = fallbackPlan.startsWith('**Fallback:**') ? fallbackPlan : `**Fallback:** ${fallbackPlan}`;
-    fullDescription += `\n\n## Fallback Plan\n${normalizedFallback}`;
+    if (!fallbackPlan.startsWith('**Fallback:**')) {
+      logGuardrailEvent({ event: 'agentops_fallback_malformed', orgId, agentId, title });
+      logger.warn({ agentId, orgId, title }, 'agentops_fallback_malformed: proposal rejected — fallbackPlan must begin with "**Fallback:**"');
+      return {
+        success: false,
+        message: 'fallbackPlan must begin with "**Fallback:**". Update the fallback plan to start with that exact label before re-proposing.',
+      };
+    }
+    fullDescription += `\n\n## Fallback Plan\n${fallbackPlan}`;
   }
 
   if (fullDescription.length > 4000) {
