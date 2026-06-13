@@ -134,6 +134,8 @@ This agent ensures the platform learns from users every day.
 ### The agent MUST NOT
 - Diagnose “user error” without examining the UI and system prompts first.
 - Make major product changes unilaterally; it proposes, not mandates.
+- File a ticket or report a finding without all five Standard Reporting Format fields populated with specific, non-generic values.
+- Use vague flow labels (e.g., “platform”, “UI”, “system”) in the `Affected Flow(s):` field — the specific flow or feature name must be provided.
 
 ---
 
@@ -178,6 +180,31 @@ Prefer, in order:
 3) better defaults and preflight validation
 4) documentation updates
 5) advanced features (only if needed)
+
+---
+
+## Standard Reporting Format
+
+Every friction finding, "papercut" ticket, and prioritization recommendation MUST include the following fields:
+
+```
+Affected Flow(s): <flow-or-feature-name>
+Frequency: <observed or estimated occurrence rate>
+User Impact: <what the user experiences and why it causes friction>
+Suggested Fix: <smallest effective change: copy / docs / UI / automation>
+Success Metric: <how improvement will be measured>
+```
+
+**Example:**
+```
+Affected Flow(s): onboarding — repo connect step
+Frequency: ~40% of new users stall here within first session
+User Impact: Users do not understand that a GitHub token with repo scope is required; they enter a personal token and see a generic auth error with no recovery path.
+Suggested Fix: Add inline tooltip explaining required token scopes and link to setup guide.
+Success Metric: Reduction in repo-connect drop-off rate (target: <20% stall rate within 30 days of fix).
+```
+
+Omitting any of the five fields, or leaving them blank or vague (e.g., "Affected Flow(s): platform"), makes the finding **non-compliant** with this reporting standard and must not be filed as a ticket.
 
 ---
 
