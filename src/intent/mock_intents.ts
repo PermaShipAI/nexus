@@ -43,6 +43,26 @@ export const MOCK_INTENT_MAP: Record<string, ClassifiedIntent> = {
     confidenceScore: 0.3,
     params: {},
   },
+  'enable autonomous mode': {
+    kind: 'AdministrativeAction',
+    confidenceScore: 0.97,
+    params: { settingKey: 'autonomousMode', settingValue: 'enabled' },
+  },
+  'change some system settings': {
+    kind: 'AdministrativeAction',
+    confidenceScore: 0.45,
+    params: {},
+  },
+  'set log level to debug': {
+    kind: 'AdministrativeAction',
+    confidenceScore: 0.95,
+    params: { settingKey: 'logLevel', settingValue: 'debug' },
+  },
+  'change the log level': {
+    kind: 'AdministrativeAction',
+    confidenceScore: 0.72,
+    params: { settingKey: 'logLevel' },
+  },
 };
 
 export function getMockIntent(message: string): ClassifiedIntent | null {

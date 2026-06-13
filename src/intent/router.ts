@@ -4,6 +4,7 @@ import { classifyIntent } from './classifier.js';
 import { checkPermission } from '../rbac/checker.js';
 import { checkChannelSafety } from '../middleware/channel_safety.js';
 import { logRoutingDecision } from './telemetry.js';
+import { logAdministrativeIntentClarificationEvent } from '../../agents/telemetry/logger.js';
 
 export interface RouterResult {
   allowed: boolean;
@@ -11,11 +12,21 @@ export interface RouterResult {
   userMessage: string;
   requiresConfirmation?: boolean;
   blockReason?: string;
+  actionableOptions?: string[];
 }
 
-const CONFIRMATION_REQUIRED_INTENTS = ['ManageProject', 'ProposeTask', 'AccessSecrets', 'DestructiveAction'];
+const CONFIRMATION_REQUIRED_INTENTS = ['ManageProject', 'ProposeTask', 'AccessSecrets', 'DestructiveAction', 'AdministrativeAction'];
 const CLARIFICATION_MESSAGE =
   "I'm not sure what you'd like to do. Could you clarify?";
+const ADMIN_CLARIFICATION_MESSAGE =
+  "Which setting would you like to configure? Please specify the setting name and value. For example:";
+const ADMIN_CLARIFICATION_OPTIONS = [
+  'enable autonomous mode',
+  'set log level to debug',
+  'disable rate limiting',
+  'enable maintenance mode',
+  'set request timeout to 30 seconds',
+];
 const TIMEOUT_MESSAGE =
   "Intent analysis timed out. Please try a `!command` directly.";
 
@@ -64,6 +75,26 @@ export async function routeIntent(
       durationMs,
       timestamp: new Date().toISOString(),
     });
+
+    if (intent.kind === 'AdministrativeAction') {
+      logAdministrativeIntentClarificationEvent({
+        confidenceScore: intent.confidenceScore,
+        channelId: context.messageId,
+        userName: context.platformUserId,
+      });
+      const settingKey = intent.params['settingKey'];
+      const userMessage = settingKey
+        ? `What value should **${settingKey}** be set to? Please specify the desired value.`
+        : ADMIN_CLARIFICATION_MESSAGE;
+      return {
+        allowed: false,
+        intent,
+        userMessage,
+        blockReason: 'LowConfidence',
+        actionableOptions: settingKey ? undefined : ADMIN_CLARIFICATION_OPTIONS,
+      };
+    }
+
     return {
       allowed: false,
       intent,
