@@ -13,11 +13,12 @@ Classify the user's message into one of these intents:
 - SystemStatus: User wants to know the status of systems, deployments, or CI/CD
 - ManageProject: User wants to create, update, delete, or configure a project
 - AccessSecrets: User wants to retrieve, rotate, or manage secrets/credentials
+- AdministrativeAction: User wants to enable, disable, configure, or change a system setting or agent behavior (e.g., toggle autonomous mode, change log level). Extract settingKey and settingValue into params when present. If neither can be determined, set confidenceScore below 0.6.
 - DestructiveAction: User wants to delete, drop, wipe, destroy, or irreversibly remove data or resources
 - Unknown: The intent is unclear or doesn't match any category
 
 Always return a confidenceScore between 0 and 1 reflecting how confident you are.
-Extract relevant params from the message (e.g., subject, target, secretName, deleteTarget).`;
+Extract relevant params from the message (e.g., subject, target, secretName, deleteTarget, settingKey, settingValue).`;
 
 export async function classifyIntent(message: string): Promise<ClassifiedIntent> {
   // Mock mode for CI/CD — bypasses feature flag and makes no live Gemini calls
