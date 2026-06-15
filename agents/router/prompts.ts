@@ -106,9 +106,7 @@ Input: "I only want advice here — do not approve anything, reject anything, or
 User message:
 """
 ${content}
-"""
-
-Return ONLY valid JSON. Do not include markdown fences or any other text.`;
+"""`;
 }
 
 export function LEGACY_ROUTING_PROMPT(

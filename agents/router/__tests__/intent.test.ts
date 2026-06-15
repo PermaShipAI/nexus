@@ -17,6 +17,7 @@ vi.mock('../../telemetry/logger.js', () => ({
   logRoutingDecision: vi.fn(),
   logSecurityEvent: mockLogSecurityEventFn,
   logAdministrativeIntentClarificationEvent: mockLogAdminClarificationFn,
+  logRoutingFailed: vi.fn(),
   logger: {
     info: vi.fn(),
     warn: vi.fn(),

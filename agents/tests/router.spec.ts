@@ -20,6 +20,7 @@ vi.mock('../../src/core/guardrails/prompt_injection', () => ({
 vi.mock('../telemetry/logger', () => ({
   logRoutingDecision: vi.fn(),
   logSecurityEvent: vi.fn(),
+  logRoutingFailed: vi.fn(),
   logger: {
     info: vi.fn(),
     warn: vi.fn(),
@@ -163,6 +164,29 @@ describe('router regression: single-agent routing (anti-chatter)', () => {
     // JSON schema must specify targetAgent type as 'string'
     expect(INTENT_RESPONSE_JSON_SCHEMA.properties.targetAgent.type).toBe(
       'string',
+    );
+  });
+
+  // ---------------------------------------------------------------------------
+  // Test 4: JSON parse failure — isFallback and logRoutingFailed called
+  // ---------------------------------------------------------------------------
+  it('returns isFallback=true and calls logRoutingFailed with json_parse_error when Gemini returns invalid JSON', async () => {
+    mockGenerateContent.mockResolvedValue({
+      response: { text: () => 'not json' },
+    });
+
+    const results = await routeMessage(
+      'some user message',
+      'channel-json-fail',
+      'tester',
+    );
+
+    expect(results[0].isFallback).toBe(true);
+
+    const { logRoutingFailed } = await import('../telemetry/logger.js');
+    expect(vi.mocked(logRoutingFailed)).toHaveBeenCalledWith(
+      'json_parse_error',
+      expect.objectContaining({ channelId: 'channel-json-fail', userName: 'tester' }),
     );
   });
 });

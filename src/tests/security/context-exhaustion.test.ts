@@ -12,6 +12,7 @@ vi.mock('../../../src/core/guardrails/prompt_injection.js', () => ({
 vi.mock('../../../agents/telemetry/logger.js', () => ({
   logRoutingDecision: vi.fn(),
   logSecurityEvent: vi.fn(),
+  logRoutingFailed: vi.fn(),
   logger: {
     info: vi.fn(),
     warn: vi.fn(),

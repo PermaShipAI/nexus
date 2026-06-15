@@ -5,6 +5,7 @@ import {
   routingLatencyMs,
   routingConfidenceScore,
   routingInjectionBlockedTotal,
+  agentopsRoutingFailuresTotal,
 } from '../../src/telemetry/prometheus.js';
 
 export const logger = pino({
@@ -72,4 +73,9 @@ export function logEvalMetrics(metrics: {
 }): void {
   logger.info({ event: 'intent_eval_accuracy', accuracy: metrics.accuracy, total: metrics.total, correct: metrics.correct, failedIds: metrics.failedIds });
   logger.info({ event: 'intent_eval_drift', drift: metrics.drift, adminAvgConfidence: metrics.adminAvgConfidence, adminConfidenceGate: 0.6, accuracyGate: 0.95 });
+}
+
+export function logRoutingFailed(reason: string, details: Record<string, unknown>): void {
+  logger.error({ event: 'agentops_routing_failed', reason, ...details });
+  agentopsRoutingFailuresTotal.inc({ reason });
 }
