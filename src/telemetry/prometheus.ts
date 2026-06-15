@@ -60,3 +60,10 @@ export const confirmationResolutionLatencyMs = new Histogram({
   buckets: [1000, 5000, 10000, 30000, 60000, 120000, 300000],
   registers: [registry],
 });
+
+export const agentopsRoutingFailuresTotal = new Counter({
+  name: 'agentops_routing_failures_total',
+  help: 'Total number of routing failures in the Gemini Flash router',
+  labelNames: ['reason'] as const,
+  registers: [registry],
+});

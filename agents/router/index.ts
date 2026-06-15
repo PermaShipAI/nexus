@@ -3,7 +3,7 @@ import { join } from 'path';
 import { GoogleGenerativeAI } from '@google/generative-ai';
 import { IntentResponseSchema, INTENT_RESPONSE_JSON_SCHEMA } from '../schemas/intent.js';
 import type { RouteResult, FeatureFlags } from '../types/routing.js';
-import { logRoutingDecision, logger, logSecurityEvent, logAdministrativeIntentClarificationEvent } from '../telemetry/logger.js';
+import { logRoutingDecision, logger, logSecurityEvent, logAdministrativeIntentClarificationEvent, logRoutingFailed } from '../telemetry/logger.js';
 import { buildIntentPrompt } from './prompts.js';
 import { checkForInjection } from '../../src/core/guardrails/prompt_injection.js';
 import { isIntentLocked, CIRCUIT_BREAKER_MESSAGE } from './circuit_breaker.js';
@@ -159,6 +159,7 @@ export async function routeMessage(
         parsed = JSON.parse(text ?? '');
       } catch {
         logger.warn({ channelId, userName }, 'Failed to JSON.parse Gemini response');
+        logRoutingFailed('json_parse_error', { channelId, userName });
         logRoutingDecision(PARSE_ERROR_FALLBACK(content), elapsedMs);
         return [PARSE_ERROR_FALLBACK(content)];
       }
@@ -169,6 +170,7 @@ export async function routeMessage(
           { channelId, userName, issues: validation.error.issues },
           'Gemini response failed Zod validation',
         );
+        logRoutingFailed('schema_validation_error', { channelId, userName, issues: validation.error.issues });
         logRoutingDecision(PARSE_ERROR_FALLBACK(content), elapsedMs);
         return [PARSE_ERROR_FALLBACK(content)];
       }
@@ -248,6 +250,7 @@ export async function routeMessage(
         { err, channelId, userName },
         'Unexpected error during structured intent routing',
       );
+      logRoutingFailed('provider_error', { channelId, userName, err });
       logRoutingDecision(PARSE_ERROR_FALLBACK(content), elapsedMs);
       return [PARSE_ERROR_FALLBACK(content)];
     }
