@@ -210,14 +210,35 @@ export async function createTicketProposal(input: TicketProposalInput): Promise<
     };
   }
 
+  // Enforce explicit fallback label format. Auto-normalization is intentionally
+  // rejected here: silently fixing the label would mask agent non-compliance and
+  // allow unlabeled fallback text to reach downstream subagents unchecked.
+  if (fallbackPlan && !fallbackPlan.startsWith('**Fallback:**')) {
+    logGuardrailEvent({ event: 'agentops_fallback_malformed', orgId, agentId, title });
+    logger.warn({ agentId, orgId, title }, 'agentops_fallback_malformed: fallbackPlan must begin with "**Fallback:**"');
+    return {
+      success: false,
+      message: 'fallbackPlan must begin with "**Fallback:**". Example: "**Fallback:** If the primary approach fails, revert the migration and open a manual review ticket."',
+    };
+  }
+
+  // Enforce agentDiscussionContext length cap to prevent raw transcript dumps.
+  if (agentDiscussionContext && agentDiscussionContext.length > 1500) {
+    logGuardrailEvent({ event: 'discussion_context_too_long', orgId, agentId, title, length: agentDiscussionContext.length });
+    logger.warn({ agentId, orgId, title, length: agentDiscussionContext.length }, 'discussion_context_too_long: agentDiscussionContext exceeds 1500 chars');
+    return {
+      success: false,
+      message: `agentDiscussionContext must be a synthesized prose summary of at most 1500 characters (got ${agentDiscussionContext.length}). Summarize the key constraints and decisions — do not paste raw transcripts.`,
+    };
+  }
+
   // Compose enriched description from base description + optional sections
   let fullDescription = description;
   if (agentDiscussionContext) {
     fullDescription += `\n\n## Agent Discussion Context\n${agentDiscussionContext}`;
   }
   if (fallbackPlan) {
-    const normalizedFallback = fallbackPlan.startsWith('**Fallback:**') ? fallbackPlan : `**Fallback:** ${fallbackPlan}`;
-    fullDescription += `\n\n## Fallback Plan\n${normalizedFallback}`;
+    fullDescription += `\n\n## Fallback Plan\n${fallbackPlan}`;
   }
 
   if (fullDescription.length > 4000) {
