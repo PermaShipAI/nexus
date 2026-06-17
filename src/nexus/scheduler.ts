@@ -387,7 +387,7 @@ Do NOT respond conversationally. Output exactly one decision block above and a b
 
               await sendAutonomousNotification(channelId, agent.title, proposal.id, ticketResult);
 
-              sendPublicChannelAlerts(
+              await sendPublicChannelAlerts(
                 (updatedArgs.kind as string) ?? 'task',
                 (updatedArgs.title as string) ?? 'Untitled',
                 orgId,

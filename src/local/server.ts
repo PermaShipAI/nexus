@@ -326,7 +326,7 @@ export async function createLocalServer(_port = 3000) {
     // Create the actual ticket (triggers execution backend if configured)
     const args = parseArgs(action.args);
     if (action.command === 'create-ticket' && args.title) {
-      getTicketTracker().createTicket({
+      await getTicketTracker().createTicket({
         orgId: action.orgId,
         kind: (args.kind as 'bug' | 'feature' | 'task') ?? 'task',
         title: args.title as string,
