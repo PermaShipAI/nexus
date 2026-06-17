@@ -244,7 +244,7 @@ Please refine your proposal based on this feedback.
                 .set({ status: 'approved', resolvedAt: new Date() })
                 .where(eq(pendingActions.id, parsed.id));
               await sendAutonomousNotification(channelId, getAgent(action.agentId as AgentId)?.title ?? action.agentId, parsed.id, ticketResult);
-              sendPublicChannelAlerts(
+              await sendPublicChannelAlerts(
                 (updatedArgs.kind as string) ?? 'task',
                 (updatedArgs.title as string) ?? 'Untitled',
                 orgId,
