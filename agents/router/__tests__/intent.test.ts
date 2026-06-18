@@ -594,4 +594,39 @@ describe('routeMessage', () => {
     expect(results[0].confidenceScore).toBeGreaterThanOrEqual(0.6);
     expect(results[0].confidenceScore).toBeLessThan(0.8);
   });
+
+  // ---------------------------------------------------------------------------
+  // Test 23: IntentResponseSchema rejects payloads with unknown fields (strict mode)
+  // ---------------------------------------------------------------------------
+  it('IntentResponseSchema.safeParse fails when the payload contains unknown fields', async () => {
+    const { IntentResponseSchema } = await import('../../schemas/intent.js');
+    const payloadWithExtra = {
+      intent: 'InvestigateBug',
+      confidenceScore: 0.9,
+      targetAgent: 'sre',
+      extractedEntities: {},
+      reasoning: 'Bug report',
+      needsCodeAccess: true,
+      isStrategySession: false,
+      requiresConfirmation: false,
+      unknownField: 'should be rejected',
+    };
+    const result = IntentResponseSchema.safeParse(payloadWithExtra);
+    expect(result.success).toBe(false);
+  });
+
+  // ---------------------------------------------------------------------------
+  // Test 24: ClassifiedIntentSchema rejects payloads with unknown fields (strict mode)
+  // ---------------------------------------------------------------------------
+  it('ClassifiedIntentSchema.safeParse fails when the payload contains unknown fields', async () => {
+    const { ClassifiedIntentSchema } = await import('../../schemas/intent.js');
+    const payloadWithExtra = {
+      kind: 'InvestigateBug',
+      confidenceScore: 0.85,
+      params: {},
+      injectedField: 'attacker-controlled-data',
+    };
+    const result = ClassifiedIntentSchema.safeParse(payloadWithExtra);
+    expect(result.success).toBe(false);
+  });
 });
