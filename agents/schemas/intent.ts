@@ -24,7 +24,7 @@ export const IntentResponseSchema = z.object({
   needsCodeAccess: z.boolean(),
   isStrategySession: z.boolean(),
   requiresConfirmation: z.boolean(),
-});
+}).strict();
 
 export type IntentResponse = z.infer<typeof IntentResponseSchema>;
 
@@ -50,7 +50,7 @@ export const ClassifiedIntentSchema = z.object({
   kind: IntentKindEnum,
   confidenceScore: z.number().min(0).max(1),
   params: z.record(z.string(), z.string().optional()).default({}),
-});
+}).strict();
 
 export type ClassifiedIntent = z.infer<typeof ClassifiedIntentSchema>;
 
@@ -78,6 +78,7 @@ export const geminiResponseSchema = {
     },
   },
   required: ['kind', 'confidenceScore', 'params'],
+  additionalProperties: false,
 } as const;
 
 export const INTENT_RESPONSE_JSON_SCHEMA = {
@@ -100,7 +101,7 @@ export const INTENT_RESPONSE_JSON_SCHEMA = {
     },
     confidenceScore: { type: 'number', minimum: 0, maximum: 1 },
     targetAgent: { type: 'string' },
-    extractedEntities: { type: 'object', additionalProperties: true },
+    extractedEntities: { type: 'object', additionalProperties: true }, // intentionally open — stores arbitrary entity key/value pairs
     reasoning: { type: 'string' },
     needsCodeAccess: { type: 'boolean' },
     isStrategySession: { type: 'boolean' },
@@ -116,4 +117,5 @@ export const INTENT_RESPONSE_JSON_SCHEMA = {
     'isStrategySession',
     'requiresConfirmation',
   ],
+  additionalProperties: false,
 };
