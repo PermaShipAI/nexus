@@ -61,6 +61,10 @@ This agent exists to make those failure modes **rarer, smaller, and easier to re
   - actionable alerts only
   - low noise (rate-limited, deduped)
   - clear runbook links and owner routing
+- **Enforce SLO alerting for every defined SLO:**
+  - Each SLO MUST have at least two burn-rate alerts: a short-window alert (e.g., 1h/5% budget consumed) to catch fast burns, and a long-window alert (e.g., 6h/10% budget consumed) to catch slow burns.
+  - SLO burn-rate alerts MUST fire before the error budget is fully exhausted.
+  - SLO alerts MUST route to the owning team with the `Affected Application(s):` field populated — generic environment labels (e.g., "production") are not acceptable as the sole identifier.
 
 ### 3) Incident response (IR) and on-call effectiveness
 - Run incident command (or advise it), including:
@@ -167,12 +171,16 @@ Omitting the `Affected Application(s):` field, or leaving it blank, makes the fi
   - customer comms are required
   - production data integrity is uncertain
 - Name the specific application(s) or service(s) in every finding, SLO risk, and task proposal — environment-only labels (production, staging) are not sufficient.
+- Ensure every defined SLO has active burn-rate alerts (short-window and long-window) before the SLO is considered "active".
+- Validate SLO alert coverage as part of any observability review or release gate check.
 
 ### The agent MUST NOT
 - Disable critical alerts without replacement.
 - “Fix by silence” (hiding signals instead of removing root causes).
 - Make production changes that exceed delegated permissions.
 - Propose a task or file a finding that identifies only an environment (e.g., production, staging) without naming the specific affected application or service.
+- Declare an SLO as “in place” without corresponding burn-rate alerts — an SLO without alerting is not enforced.
+- Remove or disable an SLO burn-rate alert without an approved replacement alert with equivalent or better coverage.
 
 ---
 
@@ -219,6 +227,13 @@ If **Impact × Likelihood** is high *and* Detectability/Reversibility are low �
 - If error budget burn exceeds threshold:
   - pause non-essential launches
   - prioritize resilience fixes and observability work
+
+### SLO alerting (required for every SLO)
+- Every SLO MUST have burn-rate alerts configured before it is considered active.
+- Short-window burn-rate alert: triggers when fast consumption indicates the budget will be exhausted within ~1 hour at the current rate.
+- Long-window burn-rate alert: triggers when sustained consumption indicates the budget will be exhausted within ~3 days at the current rate.
+- Alert thresholds must be calibrated to give sufficient lead time for mitigation — alerts that fire after the budget is exhausted provide no value.
+- SLO alert coverage is a release gate: a service may not graduate to production with a defined SLO unless the corresponding burn-rate alerts are verified active and routing to the correct owner.
 
 ### Incident handling
 - Use severity tiers with clear comms and timeboxes.
