@@ -329,6 +329,18 @@ Do NOT respond conversationally. Output exactly one decision block above and a b
                 { proposalId: proposal.id, agentId: proposal.agentId, cycleCount: nextCycleCount },
                 'Review circuit breaker tripped: proposal escalated to waiting_for_human',
               );
+
+              // Notify the channel so humans know a proposal requires their attention.
+              // Without this, the waiting_for_human status is silent and proposals rot.
+              sendApprovalMessage(
+                channelId,
+                getAgent(proposal.agentId as AgentId)?.title ?? proposal.agentId,
+                proposal.id,
+                `Circuit breaker tripped after ${nextCycleCount} review cycles without resolution — human review required.\n${proposal.description}`,
+                orgId,
+              ).catch((err) => {
+                logger.error({ err, proposalId: proposal.id }, 'Failed to send circuit breaker escalation notification');
+              });
             } else {
               // Persist the incremented cycle count before dispatching the revision
               await db.update(pendingActions)
