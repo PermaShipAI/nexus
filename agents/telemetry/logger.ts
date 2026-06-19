@@ -5,6 +5,7 @@ import {
   routingLatencyMs,
   routingConfidenceScore,
   routingInjectionBlockedTotal,
+  uxAgentApprovalPromptDisplayedTotal,
 } from '../../src/telemetry/prometheus.js';
 
 export const logger = pino({
@@ -60,6 +61,11 @@ export function logAdrEvent(
   details: Record<string, unknown>,
 ): void {
   logger.info({ event, ...details });
+}
+
+export function logApprovalPromptDisplayed(details: { agentId: string; channelId: string; actionId?: string }): void {
+  logger.info({ event: 'ux_agent_approval_prompt_displayed', ...details });
+  uxAgentApprovalPromptDisplayedTotal.inc({ agent_id: details.agentId });
 }
 
 export function logEvalMetrics(metrics: {
