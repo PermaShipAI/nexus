@@ -2,7 +2,7 @@ import { spawn } from 'node:child_process';
 import { writeGeminiContext, buildAgentPrompt } from './prompt-builder.js';
 import { getLLMProvider, getSourceExplorer, getWorkspaceProvider } from '../adapters/registry.js';
 import { logger } from '../logger.js';
-import { logToolStrippingEvent } from '../../agents/telemetry/logger.js';
+import { logToolStrippingEvent, logApprovalPromptDisplayed } from '../../agents/telemetry/logger.js';
 import type { AgentId } from './types.js';
 import type { LLMContent } from '../adapters/interfaces/llm-provider.js';
 import { db } from '../db/index.js';
@@ -19,6 +19,7 @@ import { onMissionItemChanged } from '../missions/scheduler.js';
 import { checkAndTriggerAdrDrafting } from './adr-service.js';
 import { shouldCreateSuggestion } from '../idle/throttle.js';
 import { sendApprovalMessage, sendAutonomousNotification, sendPublicChannelAlerts } from '../bot/interactions.js';
+import { sendAgentMessage } from '../bot/formatter.js';
 import { getAgent } from './registry.js';
 import { parseArgs } from '../utils/parse-args.js';
 import { CODE_TOOL_DECLARATIONS, executeCodeTool } from './code-tools.js';
@@ -29,6 +30,17 @@ const GEMINI_TIMEOUT_MS = 19 * 60 * 1000; // 19 minutes
 const MAX_TOOL_ROUNDS = 6;
 const DEEP_RESEARCH_MAX_TURNS = 25;
 const DEEP_RESEARCH_TIMEOUT_MS = 10 * 60 * 1000; // 10 minutes
+
+const STATE_LOCK_MESSAGE = '⚠️ **Approval Required:** Execution is paused due to governance policies. Please review and approve the ticket in the Permaship Control dashboard to resume.';
+
+export function isStateLockError(err: unknown): boolean {
+  if (!err || typeof err !== 'object') return false;
+  const e = err as Record<string, unknown>;
+  const status = Number(e.status ?? e.statusCode ?? 0);
+  if (status !== 409 && status !== 422) return false;
+  const message = String(e.message ?? e.body ?? '').toLowerCase();
+  return message.includes('waiting_for_human') || message.includes('state_lock') || message.includes('invalid state transition');
+}
 
 export interface SteeringContext {
   originalActionId: string;
@@ -277,7 +289,19 @@ Please refine your proposal based on this feedback.
               }
             }
           } catch (err) {
-            logger.error({ err, actionId: parsed.id }, 'Error creating suggestion/ticket for fast-path approved proposal');
+            if (isStateLockError(err)) {
+              const proposingAgent = getAgent(action.agentId as AgentId);
+              const agentTitle = proposingAgent?.title ?? action.agentId;
+              try {
+                await sendAgentMessage(channelId, agentTitle, STATE_LOCK_MESSAGE, orgId);
+              } catch (notifyErr) {
+                logger.error({ notifyErr, actionId: parsed.id }, 'Failed to send state-lock notification');
+              }
+              logApprovalPromptDisplayed({ agentId: action.agentId, channelId, actionId: parsed.id });
+              logger.warn({ actionId: parsed.id, agentId: action.agentId }, 'State lock detected: waiting_for_human — approval prompt displayed, halting task');
+            } else {
+              logger.error({ err, actionId: parsed.id }, 'Error creating suggestion/ticket for fast-path approved proposal');
+            }
           }
         } catch (err) {
           logger.warn({ err, agentId }, 'Failed to parse/process approve-proposal block');

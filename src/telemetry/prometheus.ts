@@ -60,3 +60,10 @@ export const confirmationResolutionLatencyMs = new Histogram({
   buckets: [1000, 5000, 10000, 30000, 60000, 120000, 300000],
   registers: [registry],
 });
+
+export const uxAgentApprovalPromptDisplayedTotal = new Counter({
+  name: 'nexus_ux_agent_approval_prompt_displayed_total',
+  help: 'Number of times the approval-required prompt was shown due to waiting_for_human state locks',
+  labelNames: ['agent_id'] as const,
+  registers: [registry],
+});
