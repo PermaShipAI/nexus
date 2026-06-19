@@ -13,7 +13,7 @@ export interface RouterResult {
   blockReason?: string;
 }
 
-const CONFIRMATION_REQUIRED_INTENTS = ['ManageProject', 'ProposeTask', 'AccessSecrets', 'DestructiveAction'];
+const CONFIRMATION_REQUIRED_INTENTS = ['ManageProject', 'ProposeTask', 'AccessSecrets', 'DestructiveAction', 'AdministrativeAction'];
 const CLARIFICATION_MESSAGE =
   "I'm not sure what you'd like to do. Could you clarify?";
 const TIMEOUT_MESSAGE =
