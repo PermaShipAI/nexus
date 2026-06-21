@@ -42,7 +42,11 @@ export async function classifyIntent(message: string): Promise<ClassifiedIntent>
     });
 
     const parsed = JSON.parse(text);
-    return ClassifiedIntentSchema.parse(parsed);
+    const result = ClassifiedIntentSchema.safeParse(parsed);
+    if (!result.success) {
+      return { kind: 'Unknown', confidenceScore: 0, params: {} };
+    }
+    return result.data;
   };
 
   // Race against timeout
