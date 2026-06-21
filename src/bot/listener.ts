@@ -170,12 +170,10 @@ async function handleAdminCommand(message: UnifiedMessage, orgId: string): Promi
   const content = message.content.trim();
   const userName = message.authorName;
 
-  // !autonomous on/off
+  // !autonomous on/off — blocked: autonomous mode must be toggled via the UI Settings panel
   const autonomousMatch = content.match(/^!autonomous\s+(on|off)$/i);
   if (autonomousMatch) {
-    const enabled = autonomousMatch[1].toLowerCase() === 'on';
-    await setSetting('autonomous_mode', enabled, orgId, userName);
-    await sendAgentMessage(message.channelId, 'System', `Autonomous mode **${enabled ? 'enabled' : 'disabled'}** for this organization by ${userName}.`, orgId);
+    await sendAgentMessage(message.channelId, 'System', `Autonomous mode can only be changed through the **Settings panel** in the UI. Please use the Settings button to modify this setting.`, orgId);
     return true;
   }
 

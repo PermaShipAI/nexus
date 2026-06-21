@@ -4,9 +4,10 @@ import type { RouteResult } from '../../types/routing';
 
 // Use vi.hoisted to create stable spy references that survive vi.resetModules().
 // These fn references are used both in the vi.mock factory and in the tests.
-const { mockLogSecurityEventFn, mockLogAdminClarificationFn } = vi.hoisted(() => ({
+const { mockLogSecurityEventFn, mockLogAdminClarificationFn, mockLogAdminUiEnforcementFn } = vi.hoisted(() => ({
   mockLogSecurityEventFn: vi.fn(),
   mockLogAdminClarificationFn: vi.fn(),
+  mockLogAdminUiEnforcementFn: vi.fn(),
 }));
 
 // These mocks must be declared before any dynamic imports.
@@ -17,6 +18,7 @@ vi.mock('../../telemetry/logger.js', () => ({
   logRoutingDecision: vi.fn(),
   logSecurityEvent: mockLogSecurityEventFn,
   logAdministrativeIntentClarificationEvent: mockLogAdminClarificationFn,
+  logAdministrativeUiEnforcementEvent: mockLogAdminUiEnforcementFn,
   logger: {
     info: vi.fn(),
     warn: vi.fn(),
@@ -309,9 +311,9 @@ describe('routeMessage', () => {
   });
 
   // ---------------------------------------------------------------------------
-  // Test 10: AdministrativeAction — requiresConfirmation is surfaced as false
+  // Test 10: AdministrativeAction — blocked with UI enforcement fallback
   // ---------------------------------------------------------------------------
-  it('surfaces requiresConfirmation: false for a low-risk AdministrativeAction intent', async () => {
+  it('blocks AdministrativeAction with UI enforcement fallback regardless of risk level', async () => {
     const geminiPayload = {
       intent: 'AdministrativeAction',
       confidenceScore: 0.85,
@@ -334,7 +336,9 @@ describe('routeMessage', () => {
     );
 
     expect(result[0].intent).toBe('AdministrativeAction');
-    expect(result[0].requiresConfirmation).toBe(false);
+    expect(result[0].isFallback).toBe(true);
+    expect(result[0].agentId).toBe('none');
+    expect(result[0].fallbackMessage).toContain('Settings panel');
   });
 
   // ---------------------------------------------------------------------------
@@ -380,9 +384,9 @@ describe('routeMessage', () => {
   });
 
   // ---------------------------------------------------------------------------
-  // Test 13: AdministrativeAction at exact 0.6 boundary routes normally
+  // Test 13: AdministrativeAction at exact 0.6 boundary is blocked by UI enforcement
   // ---------------------------------------------------------------------------
-  it('routes AdministrativeAction to nexus without fallback when confidenceScore is exactly 0.6', async () => {
+  it('blocks AdministrativeAction with UI enforcement when confidenceScore is exactly 0.6', async () => {
     const geminiPayload = {
       intent: 'AdministrativeAction',
       confidenceScore: 0.6,
@@ -397,15 +401,16 @@ describe('routeMessage', () => {
 
     const results = await routeMessage('set log level to info', 'channel-13', 'user');
 
-    expect(results[0].isFallback).toBe(false);
+    expect(results[0].isFallback).toBe(true);
     expect(results[0].intent).toBe('AdministrativeAction');
-    expect(results[0].agentId).toBe('nexus');
+    expect(results[0].agentId).toBe('none');
+    expect(results[0].fallbackMessage).toContain('Settings panel');
   });
 
   // ---------------------------------------------------------------------------
-  // Test 14: Security-sensitive admin propagates settingKey/settingValue and requiresConfirmation
+  // Test 14: Security-sensitive AdministrativeAction is blocked by UI enforcement
   // ---------------------------------------------------------------------------
-  it('propagates settingKey, settingValue, and requiresConfirmation for security-sensitive AdministrativeAction', async () => {
+  it('blocks security-sensitive AdministrativeAction with UI enforcement fallback', async () => {
     const geminiPayload = {
       intent: 'AdministrativeAction',
       confidenceScore: 0.92,
@@ -420,11 +425,9 @@ describe('routeMessage', () => {
 
     const results = await routeMessage('disable rate limiting', 'channel-14', 'user');
 
-    expect(results[0].extractedEntities).toMatchObject({
-      settingKey: 'rateLimiting',
-      settingValue: 'disabled',
-    });
-    expect(results[0].requiresConfirmation).toBe(true);
+    expect(results[0].isFallback).toBe(true);
+    expect(results[0].agentId).toBe('none');
+    expect(results[0].fallbackMessage).toContain('Settings panel');
   });
 
   // ---------------------------------------------------------------------------
@@ -504,9 +507,9 @@ describe('routeMessage', () => {
   });
 
   // ---------------------------------------------------------------------------
-  // Test 19: Explicit AdministrativeAction (score 0.97, settingKey/Value present) → isFallback: false, agentId: 'nexus'
+  // Test 19: Explicit AdministrativeAction for autonomousMode is blocked by UI enforcement
   // ---------------------------------------------------------------------------
-  it('routes AdministrativeAction to nexus without fallback when score is 0.97 and entities are present', async () => {
+  it('blocks AdministrativeAction for autonomousMode with UI enforcement even when score is 0.97', async () => {
     const geminiPayload = {
       intent: 'AdministrativeAction',
       confidenceScore: 0.97,
@@ -521,8 +524,9 @@ describe('routeMessage', () => {
 
     const results = await routeMessage('enable autonomous mode', 'channel-19', 'user19');
 
-    expect(results[0].isFallback).toBe(false);
-    expect(results[0].agentId).toBe('nexus');
+    expect(results[0].isFallback).toBe(true);
+    expect(results[0].agentId).toBe('none');
+    expect(results[0].fallbackMessage).toContain('Settings panel');
   });
 
   // ---------------------------------------------------------------------------
@@ -572,9 +576,9 @@ describe('routeMessage', () => {
   });
 
   // ---------------------------------------------------------------------------
-  // Test 22: Partial extraction (settingKey present, settingValue absent) → score between 0.6 and 0.8
+  // Test 22: AdministrativeAction with partial extraction (0.6–0.8) is blocked by UI enforcement
   // ---------------------------------------------------------------------------
-  it('routes AdministrativeAction with partial extraction (0.6–0.8) to agent without fallback', async () => {
+  it('blocks AdministrativeAction with partial extraction (0.6–0.8) via UI enforcement', async () => {
     const geminiPayload = {
       intent: 'AdministrativeAction',
       confidenceScore: 0.72,
@@ -589,9 +593,34 @@ describe('routeMessage', () => {
 
     const results = await routeMessage('change the log level', 'channel-22', 'user22');
 
-    expect(results[0].isFallback).toBe(false);
+    expect(results[0].isFallback).toBe(true);
     expect(results[0].intent).toBe('AdministrativeAction');
-    expect(results[0].confidenceScore).toBeGreaterThanOrEqual(0.6);
-    expect(results[0].confidenceScore).toBeLessThan(0.8);
+    expect(results[0].agentId).toBe('none');
+    expect(results[0].fallbackMessage).toContain('Settings panel');
+  });
+
+  // ---------------------------------------------------------------------------
+  // Test 23: logAdministrativeUiEnforcementEvent is called when AdministrativeAction is blocked
+  // ---------------------------------------------------------------------------
+  it('calls logAdministrativeUiEnforcementEvent when AdministrativeAction is blocked by UI enforcement', async () => {
+    const geminiPayload = {
+      intent: 'AdministrativeAction',
+      confidenceScore: 0.97,
+      targetAgent: 'nexus',
+      extractedEntities: { settingKey: 'autonomousMode', settingValue: 'enabled' },
+      reasoning: 'User wants to enable autonomous mode.',
+      needsCodeAccess: false,
+      isStrategySession: false,
+      requiresConfirmation: true,
+    };
+    mockGenerateContent.mockResolvedValue({ response: { text: () => JSON.stringify(geminiPayload) } });
+
+    await routeMessage('enable autonomous mode', 'channel-23', 'user23');
+
+    expect(mockLogAdminUiEnforcementFn).toHaveBeenCalledWith({
+      confidenceScore: 0.97,
+      channelId: 'channel-23',
+      userName: 'user23',
+    });
   });
 });

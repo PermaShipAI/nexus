@@ -3,10 +3,13 @@ import { join } from 'path';
 import { GoogleGenerativeAI } from '@google/generative-ai';
 import { IntentResponseSchema, INTENT_RESPONSE_JSON_SCHEMA } from '../schemas/intent.js';
 import type { RouteResult, FeatureFlags } from '../types/routing.js';
-import { logRoutingDecision, logger, logSecurityEvent, logAdministrativeIntentClarificationEvent } from '../telemetry/logger.js';
+import { logRoutingDecision, logger, logSecurityEvent, logAdministrativeIntentClarificationEvent, logAdministrativeUiEnforcementEvent } from '../telemetry/logger.js';
 import { buildIntentPrompt } from './prompts.js';
 import { checkForInjection } from '../../src/core/guardrails/prompt_injection.js';
 import { isIntentLocked, CIRCUIT_BREAKER_MESSAGE } from './circuit_breaker.js';
+
+const ADMIN_UI_ENFORCEMENT_MESSAGE =
+  'Administrative settings can only be changed through the **Settings panel** in the UI. Please use the Settings button to modify system configuration.';
 
 // Read feature flags at module load time, once
 let featureFlags: FeatureFlags = { ENABLE_STRUCTURED_INTENT: false };
@@ -199,6 +202,26 @@ export async function routeMessage(
         }
         logRoutingDecision(lowConfidenceResult, elapsedMs);
         return [lowConfidenceResult];
+      }
+
+      // Enforce manual UI controls: AdministrativeAction intents must go through the UI settings panel
+      if (intentData.intent === 'AdministrativeAction') {
+        const uiEnforcedResult: RouteResult = {
+          agentId: 'none',
+          intent: intentData.intent,
+          subMessage: content,
+          confidenceScore: intentData.confidenceScore,
+          reasoning: 'AdministrativeAction blocked: must be performed via UI settings panel',
+          extractedEntities: intentData.extractedEntities ?? {},
+          needsCodeAccess: false,
+          isStrategySession: false,
+          requiresConfirmation: false,
+          isFallback: true,
+          fallbackMessage: ADMIN_UI_ENFORCEMENT_MESSAGE,
+        };
+        logAdministrativeUiEnforcementEvent({ confidenceScore: intentData.confidenceScore, channelId, userName });
+        logRoutingDecision(uiEnforcedResult, elapsedMs);
+        return [uiEnforcedResult];
       }
 
       if (isIntentLocked(resolvedSession, intentData.intent)) {
