@@ -101,7 +101,7 @@ describe('listener', () => {
     );
   });
 
-  it('should handle !autonomous command', async () => {
+  it('should redirect !autonomous command to the UI settings panel', async () => {
     const mockContext: any = {
       orgId: 'org-1',
       internalChannelId: 'chan-1',
@@ -114,7 +114,7 @@ describe('listener', () => {
     expect(sendAgentMessage).toHaveBeenCalledWith(
       'discord:chan-1',
       'System',
-      expect.stringMatching(/Autonomous mode .*enabled/i),
+      expect.stringMatching(/Settings panel/i),
       'org-1'
     );
   });

@@ -55,6 +55,10 @@ export function logAdministrativeIntentClarificationEvent(details: { confidenceS
   logger.info({ event: 'administrative_intent_clarification_triggered', ...details });
 }
 
+export function logAdministrativeUiEnforcementEvent(details: { confidenceScore: number; channelId: string; userName: string }): void {
+  logger.info({ event: 'administrative_ui_enforcement_triggered', ...details });
+}
+
 export function logAdrEvent(
   event: 'adr_auto_drafted' | 'adr_human_approved' | 'duplicate_proposal_prevented',
   details: Record<string, unknown>,
