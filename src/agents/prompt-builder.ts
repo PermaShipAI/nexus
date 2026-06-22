@@ -484,7 +484,7 @@ async function buildGeminiMd(agentId: AgentId, channelId: string, orgId: string)
   // Conversation history
   if (conversation.length > 0) {
     const convText = conversation
-      .map((m) => `${sanitizeIndirectInput(m.authorName)}: ${m.content}`)
+      .map((m) => `${sanitizeIndirectInput(m.authorName)}: ${truncateMessageContent(m.content)}`)
       .join('\n');
     sections.push(`# Recent Conversation\n${convText}`);
   }
