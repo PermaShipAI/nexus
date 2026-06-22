@@ -1,3 +1,4 @@
+import { z } from 'zod';
 import { queryKnowledge } from '../knowledge/service.js';
 import { getLLMProvider } from '../adapters/registry.js';
 import { logger } from '../logger.js';
@@ -6,6 +7,26 @@ import type { RouteResult } from '../../agents/types/routing.js';
 import { getTenantResolver } from '../adapters/registry.js';
 import { getAllAgents } from '../agents/registry.js';
 import { checkForInjection } from '../core/guardrails/prompt_injection.js';
+
+const RouteResultSchema = z.object({
+  agentId: z.string(),
+  intent: z.string(),
+  subMessage: z.string(),
+  confidenceScore: z.number(),
+  reasoning: z.string(),
+  extractedEntities: z.record(z.string(), z.unknown()).default({}),
+  needsCodeAccess: z.boolean(),
+  isStrategySession: z.boolean(),
+  requiresConfirmation: z.boolean().optional(),
+  isFallback: z.boolean(),
+  fallbackMessage: z.string().optional(),
+  actionableOptions: z.array(z.string()).optional(),
+  isCircuitBroken: z.boolean().optional(),
+  isStrictConsultation: z.boolean().optional(),
+  needsDeepResearch: z.boolean().optional(),
+});
+
+const RouteResultArraySchema = z.array(RouteResultSchema);
 
 const INJECTION_REFUSAL: RouteResult = {
   agentId: 'none',
@@ -82,7 +103,23 @@ Example: [{"agentId": "sre", "intent": "investigation", "subMessage": "Investiga
 
     try {
       const cleaned = response.trim().replace(/^```(?:json)?\s*\n?/i, '').replace(/\n?```\s*$/i, '');
-      const results = JSON.parse(cleaned) as RouteResult[];
+      let parsed: unknown;
+      try {
+        parsed = JSON.parse(cleaned);
+      } catch (parseErr) {
+        logger.error({ err: parseErr, response }, 'Failed to JSON.parse router response');
+        throw parseErr;
+      }
+
+      const validation = RouteResultArraySchema.safeParse(parsed);
+      if (!validation.success) {
+        logger.error(
+          { issues: validation.error.issues, response },
+          'Router LLM response failed Zod validation',
+        );
+        throw new Error('Invalid router response payload');
+      }
+      const results: RouteResult[] = validation.data;
 
       // Detect deep research requests based on investigation keywords
       const deepResearchKeywords = /\b(investigate|trace through|audit thoroughly|analyze security of|deep dive|root cause analysis)\b/i;
