@@ -34,10 +34,12 @@ vi.mock('../agents/registry.js', () => ({
 vi.mock('../../agents/telemetry/logger.js', () => ({
   logRoutingDecision: vi.fn(),
   logSecurityEvent: vi.fn(),
+  logAdministrativeIntentClarificationEvent: vi.fn(),
 }));
 
 import { routeMessage } from './index.js';
-import { logSecurityEvent } from '../../agents/telemetry/logger.js';
+import { getLLMProvider } from '../adapters/registry.js';
+import { logSecurityEvent, logAdministrativeIntentClarificationEvent } from '../../agents/telemetry/logger.js';
 
 describe('src/router/index routeMessage injection guard', () => {
   beforeEach(() => {
@@ -101,5 +103,138 @@ describe('src/router/index routeMessage injection guard', () => {
 
     expect(results).toBeDefined();
     expect(results[0].reasoning).not.toBe('Prompt injection detected');
+  });
+});
+
+describe('src/router/index routeMessage Zod validation and confidence gating', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('returns isFallback with fallbackMessage and agentId none when LLM returns invalid JSON', async () => {
+    const mockProvider = getLLMProvider();
+    vi.mocked(mockProvider.generateText).mockResolvedValueOnce('not valid json {{{');
+
+    const results = await routeMessage(
+      'What is the deployment status?',
+      'channel-10',
+      'user',
+      'org-1',
+    );
+
+    expect(results).toHaveLength(1);
+    expect(results[0].isFallback).toBe(true);
+    expect(results[0].agentId).toBe('none');
+    expect(results[0].fallbackMessage).toBeTruthy();
+  });
+
+  it('returns clarification fallback with non-empty fallbackMessage and agentId none when confidenceScore is 0.45', async () => {
+    const mockProvider = getLLMProvider();
+    vi.mocked(mockProvider.generateText).mockResolvedValueOnce(
+      JSON.stringify({
+        intent: 'GeneralInquiry',
+        confidenceScore: 0.45,
+        targetAgent: 'nexus',
+        extractedEntities: {},
+        reasoning: 'low confidence',
+        needsCodeAccess: false,
+        isStrategySession: false,
+        requiresConfirmation: false,
+      }),
+    );
+
+    const results = await routeMessage(
+      'do something',
+      'channel-11',
+      'user',
+      'org-1',
+    );
+
+    expect(results).toHaveLength(1);
+    expect(results[0].isFallback).toBe(true);
+    expect(results[0].agentId).toBe('none');
+    expect(results[0].fallbackMessage).toBeTruthy();
+    expect(results[0].fallbackMessage!.length).toBeGreaterThan(0);
+  });
+
+  it('calls logAdministrativeIntentClarificationEvent for AdministrativeAction with low confidence', async () => {
+    const mockProvider = getLLMProvider();
+    vi.mocked(mockProvider.generateText).mockResolvedValueOnce(
+      JSON.stringify({
+        intent: 'AdministrativeAction',
+        confidenceScore: 0.3,
+        targetAgent: 'nexus',
+        extractedEntities: {},
+        reasoning: 'low confidence admin',
+        needsCodeAccess: false,
+        isStrategySession: false,
+        requiresConfirmation: false,
+      }),
+    );
+
+    await routeMessage(
+      'change the setting',
+      'channel-12',
+      'alice',
+      'org-1',
+    );
+
+    expect(logAdministrativeIntentClarificationEvent).toHaveBeenCalledWith({
+      confidenceScore: 0.3,
+      channelId: 'channel-12',
+      userName: 'alice',
+    });
+  });
+
+  it('does NOT call logAdministrativeIntentClarificationEvent for GeneralInquiry with low confidence', async () => {
+    const mockProvider = getLLMProvider();
+    vi.mocked(mockProvider.generateText).mockResolvedValueOnce(
+      JSON.stringify({
+        intent: 'GeneralInquiry',
+        confidenceScore: 0.45,
+        targetAgent: 'nexus',
+        extractedEntities: {},
+        reasoning: 'low confidence general',
+        needsCodeAccess: false,
+        isStrategySession: false,
+        requiresConfirmation: false,
+      }),
+    );
+
+    await routeMessage(
+      'do something',
+      'channel-13',
+      'bob',
+      'org-1',
+    );
+
+    expect(logAdministrativeIntentClarificationEvent).not.toHaveBeenCalled();
+  });
+
+  it('routes normally without fallback when confidenceScore is exactly 0.6', async () => {
+    const mockProvider = getLLMProvider();
+    vi.mocked(mockProvider.generateText).mockResolvedValueOnce(
+      JSON.stringify({
+        intent: 'GeneralInquiry',
+        confidenceScore: 0.6,
+        targetAgent: 'nexus',
+        extractedEntities: {},
+        reasoning: 'borderline confidence',
+        needsCodeAccess: false,
+        isStrategySession: false,
+        requiresConfirmation: false,
+      }),
+    );
+
+    const results = await routeMessage(
+      'What is the deployment status?',
+      'channel-14',
+      'user',
+      'org-1',
+    );
+
+    expect(results).toHaveLength(1);
+    expect(results[0].isFallback).toBe(false);
+    expect(results[0].agentId).toBe('nexus');
   });
 });
