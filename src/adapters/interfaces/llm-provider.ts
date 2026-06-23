@@ -24,6 +24,7 @@ export interface GenerateTextOptions {
   systemInstruction?: string;
   contents: LLMContent[];
   orgId?: string;
+  responseSchema?: Record<string, unknown>;
 }
 
 export interface GenerateWithToolsOptions extends GenerateTextOptions {

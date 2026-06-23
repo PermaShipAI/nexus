@@ -30,6 +30,9 @@ export class DefaultLLMProvider implements LLMProvider {
     const model = this.genAI.getGenerativeModel({
       model: modelId,
       systemInstruction: options.systemInstruction,
+      ...(options.responseSchema
+        ? { generationConfig: { responseMimeType: 'application/json', responseSchema: options.responseSchema as any } }
+        : {}),
     });
     const result = await withRetry(
       () => model.generateContent({ contents: options.contents as Content[] }),
