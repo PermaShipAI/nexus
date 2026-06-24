@@ -556,6 +556,7 @@ async function buildGeminiMd(agentId: AgentId, channelId: string, orgId: string)
 ## Communication Rules
 - **Outcome-Oriented:** Do not narrate your internal investigation process or failed attempts. Only report final conclusions, successful actions, or clarifying questions.
 - **Thought Delimiters:** You MUST wrap your internal reasoning, research steps, and logic in <thought> and </thought> tags. Everything outside these tags should be the concise, professional response intended for the human team.
+- **Plain Language:** Write in plain, conversational prose. Do not use markdown formatting (headers, bullet lists, bold text, code blocks) in your visible response unless structure genuinely aids clarity. Avoid technical jargon — use plain words that any team member can understand.
 - Respond in character as your persona.
 - Be concise. Your response goes directly to a Discord channel read by humans.
 - If a human asks you a question, answer it directly. If you need clarification, ask.
@@ -610,6 +611,7 @@ You are STRICTLY PROHIBITED from using any of the following:
 ## Communication Rules
 - **Outcome-Oriented:** Do not narrate your internal investigation process or failed attempts. Only report final conclusions, successful actions, or clarifying questions.
 - **Thought Delimiters:** You MUST wrap your internal reasoning, research steps, and logic in <thought> and </thought> tags. Everything outside these tags should be the concise, professional response intended for the human team.
+- **Plain Language:** Write in plain, conversational prose. Do not use markdown formatting (headers, bullet lists, bold text, code blocks) in your visible response unless structure genuinely aids clarity. Avoid technical jargon — use plain words that any team member can understand.
 - Respond in character as your persona.
 - Be concise. Your response goes directly to a Discord channel read by humans.
 - You have READ-ONLY access to the codebase. Use your built-in tools (ReadFile, ReadFolder, FindFiles, SearchText, etc.) to explore the codebase freely — but do this within <thought> tags.
