@@ -17,6 +17,8 @@ interface OrgBuffer {
 export class UsageReporter {
   private buffers: Map<string, OrgBuffer> = new Map();
   private timer: ReturnType<typeof setInterval> | null = null;
+  /** Lifetime per-org token totals — never reset, used for budget enforcement. */
+  private runningTotals: Map<string, number> = new Map();
 
   record(orgId: string, usage: TokenUsage): void {
     const existing = this.buffers.get(orgId);
@@ -32,10 +34,17 @@ export class UsageReporter {
         windowStartedAt: new Date().toISOString(),
       });
     }
+    const total = usage.inputTokens + usage.outputTokens;
+    this.runningTotals.set(orgId, (this.runningTotals.get(orgId) ?? 0) + total);
     const buf = this.buffers.get(orgId)!;
     if (buf.turns >= config.USAGE_FLUSH_TURN_THRESHOLD) {
       void this.flush(orgId);
     }
+  }
+
+  /** Total tokens consumed by an org since process start (never resets). */
+  getTotalTokens(orgId: string): number {
+    return this.runningTotals.get(orgId) ?? 0;
   }
 
   async flush(orgId: string): Promise<void> {
