@@ -1,7 +1,7 @@
 import { ClassifiedIntent, IntentKind } from '../../agents/schemas/intent.js';
 import { RequestContext, PermissionResult } from '../rbac/types.js';
 
-const PUBLIC_CHANNEL_BLOCKED_INTENTS: IntentKind[] = ['ManageProject', 'AccessSecrets'];
+const PUBLIC_CHANNEL_BLOCKED_INTENTS: IntentKind[] = ['ManageProject', 'AccessSecrets', 'AdministrativeAction'];
 
 export function checkChannelSafety(
   intent: ClassifiedIntent,

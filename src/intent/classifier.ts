@@ -14,10 +14,17 @@ Classify the user's message into one of these intents:
 - ManageProject: User wants to create, update, delete, or configure a project
 - AccessSecrets: User wants to retrieve, rotate, or manage secrets/credentials
 - DestructiveAction: User wants to delete, drop, wipe, destroy, or irreversibly remove data or resources
+- AdministrativeAction: User wants to configure, enable, disable, or change a system setting or agent behavior
 - Unknown: The intent is unclear or doesn't match any category
 
 Always return a confidenceScore between 0 and 1 reflecting how confident you are.
-Extract relevant params from the message (e.g., subject, target, secretName, deleteTarget).`;
+Extract relevant params from the message (e.g., subject, target, secretName, deleteTarget, settingKey, settingValue).
+
+For AdministrativeAction, always extract settingKey and settingValue if discernible.
+Confidence-scoring rules for AdministrativeAction:
+- Score MUST be below 0.6 if neither settingKey nor settingValue can be extracted (vague references to "settings" or "configuration" without specifics).
+- Score SHOULD be above 0.8 only when both settingKey and settingValue are clearly extractable.
+- Score between 0.6 and 0.8 for partial extraction (one of the two is missing).`;
 
 export async function classifyIntent(message: string): Promise<ClassifiedIntent> {
   // Mock mode for CI/CD — bypasses feature flag and makes no live Gemini calls

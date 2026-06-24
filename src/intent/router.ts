@@ -13,9 +13,11 @@ export interface RouterResult {
   blockReason?: string;
 }
 
-const CONFIRMATION_REQUIRED_INTENTS = ['ManageProject', 'ProposeTask', 'AccessSecrets', 'DestructiveAction'];
+const CONFIRMATION_REQUIRED_INTENTS = ['ManageProject', 'ProposeTask', 'AccessSecrets', 'DestructiveAction', 'AdministrativeAction'];
 const CLARIFICATION_MESSAGE =
   "I'm not sure what you'd like to do. Could you clarify?";
+const ADMIN_CLARIFICATION_MESSAGE =
+  "I can see you want to change a system setting, but I need more details. Which setting would you like to change, and to what value?";
 const TIMEOUT_MESSAGE =
   "Intent analysis timed out. Please try a `!command` directly.";
 
@@ -53,22 +55,24 @@ export async function routeIntent(
 
   // Low confidence — ask for clarification
   if (intent.confidenceScore < 0.6) {
+    const isAdminIntent = intent.kind === 'AdministrativeAction';
     logRoutingDecision({
       messageId: context.messageId,
       intentKind: intent.kind,
       confidenceScore: intent.confidenceScore,
       allowed: false,
-      blockReason: 'LowConfidence',
+      blockReason: isAdminIntent ? 'AdminIntentClarificationRequired' : 'LowConfidence',
       channelType: context.channelType,
       platform: context.platform,
       durationMs,
       timestamp: new Date().toISOString(),
+      event: isAdminIntent ? 'administrative_intent_clarification_triggered' : undefined,
     });
     return {
       allowed: false,
       intent,
-      userMessage: CLARIFICATION_MESSAGE,
-      blockReason: 'LowConfidence',
+      userMessage: isAdminIntent ? ADMIN_CLARIFICATION_MESSAGE : CLARIFICATION_MESSAGE,
+      blockReason: isAdminIntent ? 'AdminIntentClarificationRequired' : 'LowConfidence',
     };
   }
 

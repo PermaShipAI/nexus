@@ -12,6 +12,7 @@ export interface RoutingDecision {
   platform: string;
   durationMs: number;
   timestamp: string;
+  event?: string;
 }
 
 export function logRoutingDecision(decision: RoutingDecision): void {
