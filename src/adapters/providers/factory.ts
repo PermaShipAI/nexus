@@ -6,6 +6,7 @@ import { OpenAIProvider } from './openai.js';
 import { OllamaProvider } from './ollama.js';
 import { MultiProvider } from './multi.js';
 import { SecretRedactionProvider } from './secret-redaction.js';
+import { TokenBudgetProvider } from './budget-enforcer.js';
 
 function buildSingleProvider(name: string, apiKey: string): LLMProvider {
   switch (name) {
@@ -70,5 +71,5 @@ export function createLLMProvider(): LLMProvider {
     inner = buildSingleProvider(provider, apiKey);
   }
 
-  return new SecretRedactionProvider(inner);
+  return new SecretRedactionProvider(new TokenBudgetProvider(inner));
 }
