@@ -650,6 +650,9 @@ npx tsx src/tools/cli.ts create-ticket --kind bug --title "Ticket title" --descr
 - Kind options: bug, feature, task
 - \`--agent-discussion-context\` (optional): Synthesized prose summary of agent discussion context (max 1500 chars). Do NOT paste raw transcripts.
 - \`--fallback-plan\` (optional): Alternative execution path if the primary plan is blocked. Must begin with \`**Fallback:**\`.
+- \`--requires-human-approval\` (flag, no value): Set this flag when the proposed task involves 'Nexus DoD', security review, CISO sign-off, or release-blocking conditions. Default: omitted (false). Standard bug fixes and low-risk tasks should NOT use this flag.
+
+**AgentOps Directive:** If a ticket you are proposing requires CISO approval, QA sign-off, security review, or is listed as a 'Nexus DoD' item, you MUST pass \`--requires-human-approval\` to \`create-ticket\`. For standard, low-risk bug fixes or feature requests, omit this flag.
 
 ## Add shared knowledge (visible to all agents)
 \`\`\`bash
@@ -932,6 +935,8 @@ When you identify a bug, feature request, or actionable issue that warrants a ti
 </ticket-proposal>
 \\\`\\\`\\\`
 
+**AgentOps Directive:** If a ticket you are proposing requires CISO approval, QA sign-off, security review, or is listed as a 'Nexus DoD' item, you MUST set \`requiresHumanApproval: true\` in the proposal block. For standard, low-risk bug fixes or feature requests, omit this field.
+
 Fields:
 - **kind** (required): "bug", "feature", or "task"
 - **title** (required): Concise ticket title
@@ -940,6 +945,7 @@ Fields:
 - **repoKey** (optional): Repository key. Omit to let the system resolve it automatically from the project configuration.
 - **agentDiscussionContext** (optional): Synthesized prose summary of agent discussion relevant to this ticket. Max 1500 characters. Do NOT paste raw transcripts — synthesize key points only.
 - **fallbackPlan** (optional): Alternative execution path if the primary plan is blocked. MUST begin with \`**Fallback:**\`.
+- **requiresHumanApproval** (optional boolean, default false): Set to \`true\` when the proposal involves 'Nexus DoD', CISO sign-off, security review, or release-blocking conditions. Omit for standard, low-risk changes.
 
 You may include multiple proposal blocks. Do NOT mention the proposals in your conversational response — they are processed silently.${agentId === 'nexus' ? `
 

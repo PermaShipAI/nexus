@@ -90,6 +90,8 @@ When you identify a bug, feature request, or actionable issue that warrants a ti
 </ticket-proposal>
 \\\`\\\`\\\`
 
+**AgentOps Directive:** If a ticket you are proposing requires CISO approval, QA sign-off, security review, or is listed as a 'Nexus DoD' item, you MUST set \`requiresHumanApproval: true\` in the proposal block. For standard, low-risk bug fixes or feature requests, omit this field.
+
 Fields:
 - **kind** (required): "bug", "feature", or "task"
 - **title** (required): Concise ticket title
@@ -98,6 +100,7 @@ Fields:
 - **repoKey** (optional): Repository key. Omit to let the system resolve it automatically from the project configuration.
 - **agentDiscussionContext** (optional): Synthesized prose summary of agent discussion relevant to this ticket. Max 1500 characters. Do NOT paste raw transcripts — synthesize key points only.
 - **fallbackPlan** (optional): Alternative execution path if the primary plan is blocked. MUST begin with \`**Fallback:**\`.
+- **requiresHumanApproval** (optional boolean, default false): Set to \`true\` when the proposal involves 'Nexus DoD', CISO sign-off, security review, or release-blocking conditions. Omit for standard, low-risk changes.
 
 You may include multiple proposal blocks. Do NOT mention the proposals in your conversational response — they are processed silently.
 
@@ -209,6 +212,8 @@ When you identify a bug, feature request, or actionable issue that warrants a ti
 </ticket-proposal>
 \\\`\\\`\\\`
 
+**AgentOps Directive:** If a ticket you are proposing requires CISO approval, QA sign-off, security review, or is listed as a 'Nexus DoD' item, you MUST set \`requiresHumanApproval: true\` in the proposal block. For standard, low-risk bug fixes or feature requests, omit this field.
+
 Fields:
 - **kind** (required): "bug", "feature", or "task"
 - **title** (required): Concise ticket title
@@ -217,6 +222,7 @@ Fields:
 - **repoKey** (optional): Repository key. Omit to let the system resolve it automatically from the project configuration.
 - **agentDiscussionContext** (optional): Synthesized prose summary of agent discussion relevant to this ticket. Max 1500 characters. Do NOT paste raw transcripts — synthesize key points only.
 - **fallbackPlan** (optional): Alternative execution path if the primary plan is blocked. MUST begin with \`**Fallback:**\`.
+- **requiresHumanApproval** (optional boolean, default false): Set to \`true\` when the proposal involves 'Nexus DoD', CISO sign-off, security review, or release-blocking conditions. Omit for standard, low-risk changes.
 
 You may include multiple proposal blocks. Do NOT mention the proposals in your conversational response — they are processed silently.
 
@@ -322,6 +328,8 @@ When you identify a bug, feature request, or actionable issue that warrants a ti
 </ticket-proposal>
 \\\`\\\`\\\`
 
+**AgentOps Directive:** If a ticket you are proposing requires CISO approval, QA sign-off, security review, or is listed as a 'Nexus DoD' item, you MUST set \`requiresHumanApproval: true\` in the proposal block. For standard, low-risk bug fixes or feature requests, omit this field.
+
 Fields:
 - **kind** (required): "bug", "feature", or "task"
 - **title** (required): Concise ticket title
@@ -330,6 +338,7 @@ Fields:
 - **repoKey** (optional): Repository key. Omit to let the system resolve it automatically from the project configuration.
 - **agentDiscussionContext** (optional): Synthesized prose summary of agent discussion relevant to this ticket. Max 1500 characters. Do NOT paste raw transcripts — synthesize key points only.
 - **fallbackPlan** (optional): Alternative execution path if the primary plan is blocked. MUST begin with \`**Fallback:**\`.
+- **requiresHumanApproval** (optional boolean, default false): Set to \`true\` when the proposal involves 'Nexus DoD', CISO sign-off, security review, or release-blocking conditions. Omit for standard, low-risk changes.
 
 You may include multiple proposal blocks. Do NOT mention the proposals in your conversational response — they are processed silently.
 
@@ -445,6 +454,8 @@ When you identify a bug, feature request, or actionable issue that warrants a ti
 </ticket-proposal>
 \\\`\\\`\\\`
 
+**AgentOps Directive:** If a ticket you are proposing requires CISO approval, QA sign-off, security review, or is listed as a 'Nexus DoD' item, you MUST set \`requiresHumanApproval: true\` in the proposal block. For standard, low-risk bug fixes or feature requests, omit this field.
+
 Fields:
 - **kind** (required): "bug", "feature", or "task"
 - **title** (required): Concise ticket title
@@ -453,6 +464,7 @@ Fields:
 - **repoKey** (optional): Repository key. Omit to let the system resolve it automatically from the project configuration.
 - **agentDiscussionContext** (optional): Synthesized prose summary of agent discussion relevant to this ticket. Max 1500 characters. Do NOT paste raw transcripts — synthesize key points only.
 - **fallbackPlan** (optional): Alternative execution path if the primary plan is blocked. MUST begin with \`**Fallback:**\`.
+- **requiresHumanApproval** (optional boolean, default false): Set to \`true\` when the proposal involves 'Nexus DoD', CISO sign-off, security review, or release-blocking conditions. Omit for standard, low-risk changes.
 
 You may include multiple proposal blocks. Do NOT mention the proposals in your conversational response — they are processed silently.
 
