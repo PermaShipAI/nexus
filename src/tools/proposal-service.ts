@@ -8,8 +8,64 @@ import { logger } from '../logger.js';
 import type { AgentId } from '../agents/types.js';
 import { parseArgs } from '../utils/parse-args.js';
 import { onProposalCreated } from '../nexus/scheduler.js';
-import { logCrossAgentConflictResolved } from '../telemetry/cross-agent.js';
+import { logCrossAgentConflictResolved, logDodPreflightBlocked } from '../telemetry/cross-agent.js';
 import { logGuardrailEvent } from '../telemetry/index.js';
+
+/**
+ * Returned verbatim to the LLM context when a pre-flight DoD gate blocks a
+ * state transition. The microcopy is intentionally directive to prevent the
+ * model from attempting creative workarounds (which burns tokens with no
+ * productive outcome).
+ */
+export const DOD_TRANSITION_BLOCKED_ERROR =
+  "ERROR_TRANSITION_BLOCKED: Nexus DoD requires explicit manual approval from CISO/QA. You must transition this task to 'waiting_for_human'. Do not retry the push.";
+
+/**
+ * Pre-flight DoD gate: check whether an existing proposal for overlapping work
+ * is currently in the `waiting_for_human` state (pending mandatory human
+ * approval). If so, block the new proposal immediately to prevent token-burning
+ * retry loops against a hard approval gate.
+ *
+ * Uses a 24 h TTL window and title-prefix substring matching (≥ 30 chars) to
+ * limit false positives from unrelated short-named proposals.
+ */
+async function checkWaitingForHumanGate(
+  orgId: string,
+  title: string,
+): Promise<{ blocked: true; proposalId: string } | { blocked: false }> {
+  const since = new Date(Date.now() - 24 * 60 * 60 * 1000);
+  const waitingProposals = await db
+    .select({ id: pendingActions.id, args: pendingActions.args })
+    .from(pendingActions)
+    .where(
+      and(
+        eq(pendingActions.orgId, orgId),
+        eq(pendingActions.status, 'waiting_for_human'),
+        gte(pendingActions.createdAt, since),
+      ),
+    )
+    .limit(20);
+
+  const titleNorm = title.toLowerCase().trim();
+  const MIN_PREFIX = 30;
+
+  for (const proposal of waitingProposals) {
+    const args = parseArgs(proposal.args);
+    const existingTitle = ((args.title as string) ?? '').toLowerCase().trim();
+    if (!existingTitle) continue;
+
+    // Exact match or long-enough prefix overlap in either direction
+    if (
+      existingTitle === titleNorm ||
+      (titleNorm.length >= MIN_PREFIX && existingTitle.startsWith(titleNorm.slice(0, MIN_PREFIX))) ||
+      (existingTitle.length >= MIN_PREFIX && titleNorm.startsWith(existingTitle.slice(0, MIN_PREFIX)))
+    ) {
+      return { blocked: true, proposalId: proposal.id };
+    }
+  }
+
+  return { blocked: false };
+}
 
 export interface TicketProposalInput {
   orgId: string;
@@ -207,6 +263,19 @@ export async function createTicketProposal(input: TicketProposalInput): Promise<
     return {
       success: false,
       message: 'Idle proposals must include a fallbackPlan. Add a "**Fallback:**" section describing the alternative execution path.',
+    };
+  }
+
+  // Pre-flight DoD gate: if an existing proposal for overlapping work is
+  // waiting for mandatory human approval, return a directive error immediately.
+  // This prevents the LLM from entering a token-burning retry loop against a
+  // hard approval gate (e.g. CISO/QA sign-off required by Nexus DoD).
+  const dodGate = await checkWaitingForHumanGate(orgId, title);
+  if (dodGate.blocked) {
+    logDodPreflightBlocked({ orgId, agentId, title, blockedByProposalId: dodGate.proposalId });
+    return {
+      success: false,
+      message: DOD_TRANSITION_BLOCKED_ERROR,
     };
   }
 

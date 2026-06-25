@@ -8,7 +8,7 @@ import type { LLMContent } from '../adapters/interfaces/llm-provider.js';
 import { db } from '../db/index.js';
 import { pendingActions } from '../db/schema.js';
 import { and, eq, isNull, gte } from 'drizzle-orm';
-import { createTicketProposal } from '../tools/proposal-service.js';
+import { createTicketProposal, DOD_TRANSITION_BLOCKED_ERROR } from '../tools/proposal-service.js';
 
 import type { TicketProposalInput } from '../tools/proposal-service.js';
 import { getTicketTracker } from '../adapters/registry.js';
@@ -215,6 +215,20 @@ Please refine your proposal based on this feedback.
             logger.warn({ agentId, actionId: parsed.id }, 'approve-proposal: action not found');
             continue;
           }
+
+          // Pre-flight DoD gate: block automated approval of proposals that
+          // are waiting for mandatory human sign-off. Inject the error into
+          // the response so it enters LLM conversation history and prevents
+          // the model from retrying the same transition.
+          if (action.status === 'waiting_for_human') {
+            logger.warn(
+              { agentId, actionId: parsed.id, status: action.status },
+              'approve-proposal blocked: proposal requires human DoD approval',
+            );
+            cleaned = `${DOD_TRANSITION_BLOCKED_ERROR}\n\n${cleaned}`.trim();
+            continue;
+          }
+
           const existingArgs = parseArgs(action.args);
           const updatedArgs: Record<string, unknown> = { ...existingArgs, ctoDecisionReason: parsed.reason };
           await db.update(pendingActions)
