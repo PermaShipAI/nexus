@@ -51,3 +51,21 @@ export function logCircuitBreakerTripped(details: {
     ...details,
   });
 }
+
+/**
+ * Emitted when a pre-flight DoD gate blocks a proposal creation or state
+ * transition because an existing proposal is waiting for human approval.
+ * Used to track FinOps savings from prevented token-burning retry loops.
+ */
+export function logDodPreflightBlocked(details: {
+  orgId: string;
+  agentId: string;
+  title: string;
+  blockedByProposalId: string;
+}): void {
+  logger.warn({
+    event: 'dod_preflight_blocked',
+    state: 'waiting_for_human',
+    ...details,
+  });
+}
