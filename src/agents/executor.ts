@@ -193,6 +193,7 @@ Please refine your proposal based on this feedback.
             channelId,
             agentDiscussionContext: parsed.agentDiscussionContext,
             fallbackPlan: parsed.fallbackPlan,
+            requiresHumanApproval: parsed.requiresHumanApproval,
           });
           logger.info({ agentId, result }, 'Fast path ticket proposal processed');
         } catch (err) {

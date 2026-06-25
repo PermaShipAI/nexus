@@ -28,6 +28,8 @@ export interface TicketProposalInput {
   agentDiscussionContext?: string;
   /** Fallback plan for non-primary execution paths. Must begin with "**Fallback:**". */
   fallbackPlan?: string;
+  /** Whether this proposal requires explicit human approval (e.g. Nexus DoD, CISO sign-off, security review). */
+  requiresHumanApproval?: boolean;
 }
 
 export interface TicketProposalResult {
@@ -195,7 +197,7 @@ Where <index> is the 1-based index number from the EXISTING TICKETS list.`;
  * Shared by both CLI path and fast path (structured output).
  */
 export async function createTicketProposal(input: TicketProposalInput): Promise<TicketProposalResult> {
-  const { orgId, kind, title, description, project, priority, agentId, source, channelId, agentDiscussionContext, fallbackPlan } = input;
+  const { orgId, kind, title, description, project, priority, agentId, source, channelId, agentDiscussionContext, fallbackPlan, requiresHumanApproval } = input;
   let { repoKey } = input;
 
   // Enforce fallback plan for idle-sourced (agentops/system-initiated) proposals.
@@ -282,7 +284,7 @@ export async function createTicketProposal(input: TicketProposalInput): Promise<
     };
   }
 
-  logger.info({ agentId, hasDiscussionContext: !!agentDiscussionContext, hasFallbackPlan: !!fallbackPlan }, 'ticket_proposal.enriched');
+  logger.info({ agentId, hasDiscussionContext: !!agentDiscussionContext, hasFallbackPlan: !!fallbackPlan, requiresHumanApproval: requiresHumanApproval ?? false }, 'ticket_proposal.enriched');
 
   // Store resolved project-id and repo-key in args for the approval flow
   const resolvedArgs = {
@@ -293,6 +295,7 @@ export async function createTicketProposal(input: TicketProposalInput): Promise<
     'repo-key': repoKey,
     project,
     ...(priority !== undefined ? { priority: String(priority) } : {}),
+    requiresHumanApproval: requiresHumanApproval ?? false,
   };
 
   // CTO proposals go directly to human review; all others need CTO gate first
