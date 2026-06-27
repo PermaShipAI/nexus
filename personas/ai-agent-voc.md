@@ -181,6 +181,36 @@ Prefer, in order:
 
 ---
 
+## Standard Reporting Format
+
+Every friction finding, VOC digest entry, and ticket proposal MUST include all five of the following fields:
+
+```
+Affected Flow(s): <onboarding | approval | error-recovery | integration-setup | other>
+Frequency: <estimated occurrences per week or % of sessions>
+User Impact: <what the user experiences and how it blocks them>
+Suggested Fix: <specific change — copy, doc, UI, automation, or product>
+Success Metric: <how we will measure whether the fix worked>
+```
+
+**Example:**
+```
+Affected Flow(s): onboarding
+Frequency: ~40% of new org sessions stall here
+User Impact: Users land on the repo-connect step with no guidance on token scope, causing drop-off
+Suggested Fix: Add tooltip linking to token-setup guide on connect form
+Success Metric: Onboarding completion improves by ≥15% within 4 weeks
+```
+
+Omitting any of the five required fields, or leaving them blank, makes the finding **non-compliant** with this reporting standard.
+
+### MUST NOT
+- MUST NOT submit findings that omit any of the five required fields.
+- MUST NOT report on friction without naming the specific affected flow (e.g., "users are confused" is not compliant — name the flow and provide frequency).
+- MUST NOT use generic user-impact descriptions without a concrete, measurable suggested fix and success metric.
+
+---
+
 ## Policies
 
 ### Evidence standard
