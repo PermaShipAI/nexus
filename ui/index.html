@@ -226,6 +226,23 @@
       </div>
     </div>
 
+    <!-- Autonomous mode enable confirmation modal -->
+    <div id="autonomous-confirm-modal" class="modal-overlay hidden">
+      <div class="modal-card">
+        <h3>Enable Autonomous Mode?</h3>
+        <p style="font-size:13px;color:var(--text-muted);margin-bottom:16px">
+          In autonomous mode, agents will create and approve tickets without asking for your review.
+          Actions may include code changes, file edits, and task execution.
+          Only enable this if you trust the agents to act without human approval.
+        </p>
+        <div id="autonomous-confirm-scope" style="font-size:12px;font-family:var(--mono);background:var(--surface-alt);padding:8px 12px;border-radius:6px;margin-bottom:16px;color:var(--text-muted)"></div>
+        <div class="form-buttons">
+          <button id="autonomous-confirm-ok" class="btn-approve">Enable Autonomous</button>
+          <button id="autonomous-confirm-cancel" class="btn-reject">Keep Manual</button>
+        </div>
+      </div>
+    </div>
+
     <!-- Proposal rejection reason modal -->
     <div id="rejection-modal" class="modal-overlay hidden">
       <div class="modal-card">
