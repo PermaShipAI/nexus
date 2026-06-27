@@ -1149,6 +1149,21 @@ async function loadProjects() {
 
 async function setMissionAutonomous(missionId, value) {
   const enabled = value === 'null' ? null : value === 'true';
+  if (enabled === true) {
+    const confirmed = await confirmAutonomousEnable(`Scope: Mission ${missionId}`);
+    if (!confirmed) {
+      // Revert the select element to its previous value
+      const sel = document.querySelector(`select[onchange*="${missionId}"]`);
+      if (sel) {
+        const prev = sel.dataset.prevValue ?? 'null';
+        sel.value = prev;
+      }
+      return;
+    }
+  }
+  // Track previous value for potential revert
+  const sel = document.querySelector(`select[onchange*="${missionId}"]`);
+  if (sel) sel.dataset.prevValue = value;
   await apiFetch(`/api/missions/${missionId}/autonomous`, {
     method: 'PUT',
     body: JSON.stringify({ enabled }),
@@ -1177,6 +1192,10 @@ async function toggleMissionAgent(missionId, agentId, checked) {
 
 async function cycleProjectAutonomous(projectId, current) {
   const next = current === null ? true : current === true ? false : null;
+  if (next === true) {
+    const confirmed = await confirmAutonomousEnable(`Scope: Project ${projectId}`);
+    if (!confirmed) return;
+  }
   await apiFetch(`/api/projects/${projectId}/autonomous`, {
     method: 'PUT',
     body: JSON.stringify({ enabled: next }),
@@ -1406,7 +1425,34 @@ async function testExecutor(backend) {
   }
 }
 
+function confirmAutonomousEnable(scopeLabel) {
+  return new Promise((resolve) => {
+    const modal = document.getElementById('autonomous-confirm-modal');
+    const scopeEl = document.getElementById('autonomous-confirm-scope');
+    const okBtn = document.getElementById('autonomous-confirm-ok');
+    const cancelBtn = document.getElementById('autonomous-confirm-cancel');
+    if (scopeEl) scopeEl.textContent = scopeLabel;
+    modal.classList.remove('hidden');
+    function cleanup() {
+      modal.classList.add('hidden');
+      okBtn.removeEventListener('click', onOk);
+      cancelBtn.removeEventListener('click', onCancel);
+    }
+    function onOk() { cleanup(); resolve(true); }
+    function onCancel() { cleanup(); resolve(false); }
+    okBtn.addEventListener('click', onOk);
+    cancelBtn.addEventListener('click', onCancel);
+  });
+}
+
 autonomousToggle.addEventListener('change', async () => {
+  if (autonomousToggle.checked) {
+    const confirmed = await confirmAutonomousEnable('Scope: Global (all projects and missions)');
+    if (!confirmed) {
+      autonomousToggle.checked = false;
+      return;
+    }
+  }
   try {
     await apiFetch('/api/settings/autonomous', {
       method: 'POST',
