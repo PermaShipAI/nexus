@@ -157,6 +157,12 @@ Please refine your proposal based on this feedback.
     }
 
     if (!input.isStrictConsultation) {
+      // Derive the mission context from the channel ID (format: "mission:<uuid>").
+      // Used below to enforce that item-level state mutations only affect items
+      // belonging to the current mission — prevents cross-mission state tampering
+      // by a compromised or misbehaving LLM output.
+      const contextMissionId = channelId.startsWith('mission:') ? channelId.slice('mission:'.length) : null;
+
       // Extract and process <ticket-proposal> blocks
       const proposalRegex = /<ticket-proposal>\s*([\s\S]*?)(?:<\/ticket-proposal>|$)/gi;
       const proposalBlocks: string[] = [];
@@ -407,12 +413,20 @@ Please refine your proposal based on this feedback.
             continue;
           }
           const completedItem = await getMissionItem(parsed.itemId);
+          if (!completedItem) {
+            logger.warn({ agentId, itemId: parsed.itemId }, 'mission-item-complete: item not found — skipping');
+            continue;
+          }
+          if (contextMissionId && completedItem.missionId !== contextMissionId) {
+            logger.warn({ agentId, itemId: parsed.itemId, itemMissionId: completedItem.missionId, contextMissionId }, 'SECURITY: mission-item-complete rejected — item does not belong to current mission context');
+            continue;
+          }
           await updateMissionItem(parsed.itemId, {
             status: 'agent_complete',
             completedByAgentId: agentId,
           });
           logger.info({ agentId, itemId: parsed.itemId }, 'Mission item marked agent_complete');
-          if (completedItem) onMissionItemChanged(completedItem.missionId);
+          onMissionItemChanged(completedItem.missionId);
         } catch (err) {
           logger.warn({ err, agentId }, 'Failed to parse/process mission-item-complete block');
         }
@@ -426,12 +440,20 @@ Please refine your proposal based on this feedback.
           const parsed = JSON.parse(match[1].trim()) as { itemId: string };
           if (!parsed.itemId) continue;
           const verifiedItem = await getMissionItem(parsed.itemId);
+          if (!verifiedItem) {
+            logger.warn({ agentId, itemId: parsed.itemId }, 'mission-verify: item not found — skipping');
+            continue;
+          }
+          if (contextMissionId && verifiedItem.missionId !== contextMissionId) {
+            logger.warn({ agentId, itemId: parsed.itemId, itemMissionId: verifiedItem.missionId, contextMissionId }, 'SECURITY: mission-verify rejected — item does not belong to current mission context');
+            continue;
+          }
           await updateMissionItem(parsed.itemId, {
             status: 'verified',
             verifiedAt: new Date(),
           });
           logger.info({ agentId, itemId: parsed.itemId }, 'Mission item verified');
-          if (verifiedItem) onMissionItemChanged(verifiedItem.missionId);
+          onMissionItemChanged(verifiedItem.missionId);
         } catch (err) {
           logger.warn({ err, agentId }, 'Failed to parse/process mission-verify block');
         }
@@ -444,6 +466,17 @@ Please refine your proposal based on this feedback.
         try {
           const parsed = JSON.parse(match[1].trim()) as { itemId: string; reason: string };
           if (!parsed.itemId) continue;
+          if (contextMissionId) {
+            const reopenItem = await getMissionItem(parsed.itemId);
+            if (!reopenItem) {
+              logger.warn({ agentId, itemId: parsed.itemId }, 'mission-reopen: item not found — skipping');
+              continue;
+            }
+            if (reopenItem.missionId !== contextMissionId) {
+              logger.warn({ agentId, itemId: parsed.itemId, itemMissionId: reopenItem.missionId, contextMissionId }, 'SECURITY: mission-reopen rejected — item does not belong to current mission context');
+              continue;
+            }
+          }
           await updateMissionItem(parsed.itemId, { status: 'in_progress', heartbeatCount: 1 });
           logger.info({ agentId, itemId: parsed.itemId, reason: parsed.reason }, 'Mission item reopened');
           // NOTE: do NOT trigger onMissionItemChanged here — reopening should
@@ -504,6 +537,10 @@ Please refine your proposal based on this feedback.
           if (!parsed.itemId || !parsed.replacements?.length) continue;
           const item = await getMissionItem(parsed.itemId);
           if (!item) continue;
+          if (contextMissionId && item.missionId !== contextMissionId) {
+            logger.warn({ agentId, itemId: parsed.itemId, itemMissionId: item.missionId, contextMissionId }, 'SECURITY: mission-replace-item rejected — item does not belong to current mission context');
+            continue;
+          }
 
           // Determine the phase this item belongs to
           const phaseId = item.isPhase ? item.id : (item.parentId ?? item.id);
@@ -532,6 +569,17 @@ Please refine your proposal based on this feedback.
         try {
           const parsed = JSON.parse(match[1].trim()) as { itemId: string; reason: string };
           if (!parsed.itemId) continue;
+          if (contextMissionId) {
+            const removeItem = await getMissionItem(parsed.itemId);
+            if (!removeItem) {
+              logger.warn({ agentId, itemId: parsed.itemId }, 'mission-remove-item: item not found — skipping');
+              continue;
+            }
+            if (removeItem.missionId !== contextMissionId) {
+              logger.warn({ agentId, itemId: parsed.itemId, itemMissionId: removeItem.missionId, contextMissionId }, 'SECURITY: mission-remove-item rejected — item does not belong to current mission context');
+              continue;
+            }
+          }
           // Mark as verified (effectively removes it from the active checklist)
           await updateMissionItem(parsed.itemId, {
             status: 'verified',
