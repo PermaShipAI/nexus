@@ -255,27 +255,56 @@
     <!-- Mission creation modal -->
     <div id="mission-modal" class="modal-overlay hidden">
       <div class="modal-card">
-        <h3>New Mission</h3>
-        <div class="setup-field">
-          <label for="mission-title">Title</label>
-          <input type="text" id="mission-title" placeholder="e.g., Improve API error handling" autocomplete="off">
+        <!-- Step 1: Mission form -->
+        <div id="mission-form-step">
+          <h3>New Mission</h3>
+          <div class="setup-field">
+            <label for="mission-title">Title</label>
+            <input type="text" id="mission-title" placeholder="e.g., Improve API error handling" autocomplete="off">
+          </div>
+          <div class="setup-field">
+            <label for="mission-desc">Goal</label>
+            <textarea id="mission-desc" rows="4" placeholder="Describe the objective. Nexus will break this into verifiable checklist items." class="settings-textarea"></textarea>
+          </div>
+          <div class="setup-field">
+            <label>Projects (optional)</label>
+            <div id="mission-project-checkboxes" class="mission-project-list"></div>
+          </div>
+          <div class="setup-field">
+            <label><input type="checkbox" id="mission-autonomous"> Enable autonomous mode for this mission</label>
+          </div>
+          <div class="form-buttons">
+            <button id="mission-review-btn" class="btn-approve">Review &amp; Create</button>
+            <button id="mission-cancel-btn" class="btn-reject">Cancel</button>
+          </div>
+          <div id="mission-error" class="setup-error hidden"></div>
         </div>
-        <div class="setup-field">
-          <label for="mission-desc">Goal</label>
-          <textarea id="mission-desc" rows="4" placeholder="Describe the objective. Nexus will break this into verifiable checklist items." class="settings-textarea"></textarea>
+
+        <!-- Step 2: Confirmation -->
+        <div id="mission-confirm-step" class="hidden">
+          <h3>Confirm Mission</h3>
+          <div id="mission-confirm-autonomous-warning" class="mission-confirm-warning hidden">
+            <strong>Autonomous Mode Enabled</strong>
+            <p>Agents will plan and execute checklist items without per-step human review. Only confirm if you intend to run this mission in autonomous mode.</p>
+          </div>
+          <div class="setup-field">
+            <label>Title</label>
+            <div id="mission-confirm-title" class="mission-confirm-value"></div>
+          </div>
+          <div class="setup-field">
+            <label>Goal</label>
+            <div id="mission-confirm-desc" class="mission-confirm-value mission-confirm-desc"></div>
+          </div>
+          <div id="mission-confirm-mode" class="setup-field hidden">
+            <label>Mode</label>
+            <div class="mission-confirm-value">Autonomous</div>
+          </div>
+          <div class="form-buttons">
+            <button id="mission-create-btn" class="btn-approve">Confirm &amp; Create</button>
+            <button id="mission-back-btn" class="btn-reject">Back</button>
+          </div>
+          <div id="mission-confirm-error" class="setup-error hidden"></div>
         </div>
-        <div class="setup-field">
-          <label>Projects (optional)</label>
-          <div id="mission-project-checkboxes" class="mission-project-list"></div>
-        </div>
-        <div class="setup-field">
-          <label><input type="checkbox" id="mission-autonomous"> Enable autonomous mode for this mission</label>
-        </div>
-        <div class="form-buttons">
-          <button id="mission-create-btn" class="btn-approve">Create Mission</button>
-          <button id="mission-cancel-btn" class="btn-reject">Cancel</button>
-        </div>
-        <div id="mission-error" class="setup-error hidden"></div>
       </div>
     </div>
 
