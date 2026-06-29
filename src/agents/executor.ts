@@ -121,6 +121,7 @@ Please refine your proposal based on this feedback.
       // Tool-use loop: multi-turn conversation with code exploration tools
       response = await executeToolLoop({
         orgId,
+        agentId,
         systemPrompt,
         userMessage: fullUserMessage,
         explorer,
@@ -718,13 +719,14 @@ Please refine your proposal based on this feedback.
  */
 async function executeToolLoop(opts: {
   orgId: string;
+  agentId: string;
   systemPrompt: string;
   userMessage: string;
   explorer: import('../adapters/interfaces/source-explorer.js').SourceExplorer;
   maxRounds: number;
   modelTier: import('../adapters/interfaces/llm-provider.js').ModelTier;
 }): Promise<string> {
-  const { orgId, systemPrompt, userMessage, explorer, maxRounds, modelTier } = opts;
+  const { orgId, agentId: toolLoopAgentId, systemPrompt, userMessage, explorer, maxRounds, modelTier } = opts;
   const contents: LLMContent[] = [{ role: 'user', parts: [{ text: userMessage }] }];
 
   for (let round = 0; round < maxRounds; round++) {
@@ -759,7 +761,7 @@ async function executeToolLoop(opts: {
     for (let i = 0; i < result.functionCalls.length; i++) {
       const fc = result.functionCalls[i];
       const callId = (modelParts.find(p => p.functionCall?.name === fc.name) as any)?.functionCall?.id ?? fc.id;
-      const toolResult = await executeCodeTool(fc.name, fc.args, { orgId, explorer });
+      const toolResult = await executeCodeTool(fc.name, fc.args, { orgId, agentId: toolLoopAgentId, explorer });
       responseParts.push({
         functionResponse: { name: fc.name, response: { result: toolResult }, id: callId },
       });
