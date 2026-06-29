@@ -43,7 +43,7 @@ export class OpenAIProvider implements LLMProvider {
     logger.debug({ model, tier: options.model }, 'Calling OpenAI');
 
     const response = await withRetry(
-      () => this.client.chat.completions.create({ model, messages }),
+      () => this.client.chat.completions.create({ model, messages, max_tokens: 8192 }),
       undefined,
       `openai.generateText[${model}]`,
     );
@@ -116,7 +116,7 @@ export class OpenAIProvider implements LLMProvider {
     }));
 
     const response = await withRetry(
-      () => this.client.chat.completions.create({ model, messages, tools }),
+      () => this.client.chat.completions.create({ model, messages, tools, max_tokens: 8192 }),
       undefined,
       `openai.generateWithTools[${model}]`,
     );

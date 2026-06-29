@@ -16,9 +16,13 @@ interface OrgBuffer {
 
 export class UsageReporter {
   private buffers: Map<string, OrgBuffer> = new Map();
+  private runningTotals: Map<string, number> = new Map();
   private timer: ReturnType<typeof setInterval> | null = null;
 
   record(orgId: string, usage: TokenUsage): void {
+    const totalTokens = usage.inputTokens + usage.outputTokens;
+    this.runningTotals.set(orgId, (this.runningTotals.get(orgId) ?? 0) + totalTokens);
+
     const existing = this.buffers.get(orgId);
     if (existing) {
       existing.inputTokens += usage.inputTokens;
@@ -36,6 +40,10 @@ export class UsageReporter {
     if (buf.turns >= config.USAGE_FLUSH_TURN_THRESHOLD) {
       void this.flush(orgId);
     }
+  }
+
+  getTotalTokens(orgId: string): number {
+    return this.runningTotals.get(orgId) ?? 0;
   }
 
   async flush(orgId: string): Promise<void> {
