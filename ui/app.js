@@ -2298,6 +2298,37 @@ if (tabBar) {
   }
 }
 
+// Helper: show mission form step, hide confirmation step
+function showMissionFormStep() {
+  document.getElementById('mission-form-step').classList.remove('hidden');
+  document.getElementById('mission-confirm-step').classList.add('hidden');
+}
+
+// Helper: show confirmation step, hide form step
+function showMissionConfirmStep() {
+  const title = document.getElementById('mission-title').value.trim();
+  const description = document.getElementById('mission-desc').value.trim();
+  const autonomousEl = document.getElementById('mission-autonomous');
+  const isAutonomous = autonomousEl && autonomousEl.checked;
+
+  document.getElementById('mission-confirm-title').textContent = title;
+  document.getElementById('mission-confirm-desc').textContent = description;
+
+  const warningEl = document.getElementById('mission-confirm-autonomous-warning');
+  const modeRow = document.getElementById('mission-confirm-mode');
+  if (isAutonomous) {
+    warningEl.classList.remove('hidden');
+    modeRow.classList.remove('hidden');
+  } else {
+    warningEl.classList.add('hidden');
+    modeRow.classList.add('hidden');
+  }
+
+  document.getElementById('mission-confirm-error').classList.add('hidden');
+  document.getElementById('mission-form-step').classList.add('hidden');
+  document.getElementById('mission-confirm-step').classList.remove('hidden');
+}
+
 // New mission button
 const newMissionBtn = document.getElementById('new-mission-btn');
 if (newMissionBtn) {
@@ -2317,21 +2348,24 @@ if (newMissionBtn) {
     }
     document.getElementById('mission-title').value = '';
     document.getElementById('mission-desc').value = '';
+    const autonomousEl = document.getElementById('mission-autonomous');
+    if (autonomousEl) autonomousEl.checked = false;
     document.getElementById('mission-error').classList.add('hidden');
+    showMissionFormStep();
     missionModal.classList.remove('hidden');
   });
 }
 
-// Cancel mission creation
+// Cancel mission creation (from form step)
 const missionCancelBtn = document.getElementById('mission-cancel-btn');
 if (missionCancelBtn) {
   missionCancelBtn.addEventListener('click', () => missionModal.classList.add('hidden'));
 }
 
-// Create mission
-const missionCreateBtn = document.getElementById('mission-create-btn');
-if (missionCreateBtn) {
-  missionCreateBtn.addEventListener('click', async () => {
+// Review & Create — validate form and advance to confirmation step
+const missionReviewBtn = document.getElementById('mission-review-btn');
+if (missionReviewBtn) {
+  missionReviewBtn.addEventListener('click', () => {
     const title = document.getElementById('mission-title').value.trim();
     const description = document.getElementById('mission-desc').value.trim();
     const errorEl = document.getElementById('mission-error');
@@ -2341,6 +2375,24 @@ if (missionCreateBtn) {
       errorEl.classList.remove('hidden');
       return;
     }
+    errorEl.classList.add('hidden');
+    showMissionConfirmStep();
+  });
+}
+
+// Back — return to form step from confirmation
+const missionBackBtn = document.getElementById('mission-back-btn');
+if (missionBackBtn) {
+  missionBackBtn.addEventListener('click', () => showMissionFormStep());
+}
+
+// Confirm & Create — submit mission after explicit confirmation
+const missionCreateBtn = document.getElementById('mission-create-btn');
+if (missionCreateBtn) {
+  missionCreateBtn.addEventListener('click', async () => {
+    const title = document.getElementById('mission-title').value.trim();
+    const description = document.getElementById('mission-desc').value.trim();
+    const errorEl = document.getElementById('mission-confirm-error');
 
     const checkboxes = document.querySelectorAll('#mission-project-checkboxes input:checked');
     const projectIds = Array.from(checkboxes).map(cb => cb.value);
@@ -2356,6 +2408,7 @@ if (missionCreateBtn) {
       const data = await resp.json();
       if (data.success) {
         missionModal.classList.add('hidden');
+        showMissionFormStep();
         await loadMissions();
         switchToChannel(data.mission.channelId);
         appendSystemMessage('Mission created. Nexus is generating a checklist — this may take a moment...');
@@ -2375,7 +2428,10 @@ if (missionCreateBtn) {
 // Close modal on overlay click
 if (missionModal) {
   missionModal.addEventListener('click', (e) => {
-    if (e.target === missionModal) missionModal.classList.add('hidden');
+    if (e.target === missionModal) {
+      missionModal.classList.add('hidden');
+      showMissionFormStep();
+    }
   });
 }
 
