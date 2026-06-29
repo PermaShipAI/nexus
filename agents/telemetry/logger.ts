@@ -55,6 +55,17 @@ export function logAdministrativeIntentClarificationEvent(details: { confidenceS
   logger.info({ event: 'administrative_intent_clarification_triggered', ...details });
 }
 
+export function logToolRejectionEvent(details: {
+  toolName: string;
+  agentId: string;
+  orgId: string;
+  taskId: string;
+  currentStatus: string;
+  attemptedStatus: string;
+}): void {
+  logger.warn({ event: 'tool_state_rejection', ...details });
+}
+
 export function logAdrEvent(
   event: 'adr_auto_drafted' | 'adr_human_approved' | 'duplicate_proposal_prevented',
   details: Record<string, unknown>,

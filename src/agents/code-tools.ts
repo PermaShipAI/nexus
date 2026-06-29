@@ -6,6 +6,7 @@ import type { LLMFunctionDeclaration } from '../adapters/interfaces/llm-provider
 import type { SourceExplorer } from '../adapters/interfaces/source-explorer.js';
 import { getProjectRegistry } from '../adapters/registry.js';
 import { logger } from '../logger.js';
+import { updateTaskStatusTool } from '../tools/update_task_status.js';
 
 export const CODE_TOOL_DECLARATIONS: LLMFunctionDeclaration[] = [
   {
@@ -57,10 +58,28 @@ export const CODE_TOOL_DECLARATIONS: LLMFunctionDeclaration[] = [
       required: ['project'],
     },
   },
+  {
+    name: 'update_task_status',
+    description: 'Update the status of a task. Cannot transition tasks out of "proposed" state — those require human approval via the Nexus Command web dashboard.',
+    parameters: {
+      type: 'object',
+      properties: {
+        task_id: { type: 'string', description: 'The ID of the task to update' },
+        new_status: {
+          type: 'string',
+          enum: ['approved', 'in_progress', 'completed'],
+          description: 'The new status for the task',
+        },
+        reason: { type: 'string', description: 'Optional reason for the status change' },
+      },
+      required: ['task_id', 'new_status'],
+    },
+  },
 ];
 
 interface CodeToolContext {
   orgId: string;
+  agentId: string;
   explorer: SourceExplorer;
 }
 
@@ -83,6 +102,21 @@ export async function executeCodeTool(
   args: Record<string, unknown>,
   ctx: CodeToolContext,
 ): Promise<string> {
+  // Non-project tools — handle before project resolution
+  if (name === 'update_task_status') {
+    try {
+      const taskId = args.task_id as string;
+      const newStatus = args.new_status as 'approved' | 'in_progress' | 'completed';
+      if (!taskId) return 'Error: "task_id" parameter is required.';
+      if (!newStatus) return 'Error: "new_status" parameter is required.';
+      const result = await updateTaskStatusTool({ orgId: ctx.orgId, taskId, newStatus, agentId: ctx.agentId });
+      return JSON.stringify(result);
+    } catch (err) {
+      logger.error({ err, tool: name }, 'Code tool execution failed');
+      return `Tool error: ${(err as Error).message}`;
+    }
+  }
+
   const project = args.project as string;
   if (!project) return 'Error: "project" parameter is required.';
 
