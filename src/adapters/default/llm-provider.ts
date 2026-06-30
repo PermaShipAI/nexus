@@ -30,6 +30,7 @@ export class DefaultLLMProvider implements LLMProvider {
     const model = this.genAI.getGenerativeModel({
       model: modelId,
       systemInstruction: options.systemInstruction,
+      generationConfig: { maxOutputTokens: 8192 },
     });
     const result = await withRetry(
       () => model.generateContent({ contents: options.contents as Content[] }),
@@ -48,6 +49,7 @@ export class DefaultLLMProvider implements LLMProvider {
       model: modelId,
       systemInstruction: options.systemInstruction,
       tools: [{ functionDeclarations: options.tools as FunctionDeclaration[] }],
+      generationConfig: { maxOutputTokens: 8192 },
     });
     const result = await withRetry(
       () => model.generateContent({ contents: options.contents as Content[] }),
