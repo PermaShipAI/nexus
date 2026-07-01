@@ -206,8 +206,8 @@ async function run(): Promise<void> {
         project: requireArg(values, 'project'),
         repoKey: str(values['repo-key']),
         agentId: validateAgentId(requireArg(values, 'agent')),
-        agentDiscussionContext: str(values['agent-discussion-context']),
-        fallbackPlan: str(values['fallback-plan']),
+        agentDiscussionContext: str(values['agent-discussion-context']) ?? '',
+        fallbackPlan: str(values['fallback-plan']) ?? '',
       });
       printResult(result);
       break;
