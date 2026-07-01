@@ -1,3 +1,10 @@
+export interface ClarificationEmbed {
+  title: string;
+  description: string;
+  inferredSetting: string;
+  renderedOptions: string[];
+}
+
 export interface RouteResult {
   agentId: string;
   intent: string;
@@ -11,6 +18,7 @@ export interface RouteResult {
   isFallback: boolean;
   fallbackMessage?: string;
   actionableOptions?: string[];
+  clarificationEmbed?: ClarificationEmbed;
   isCircuitBroken?: boolean;
   isStrictConsultation?: boolean;
   needsDeepResearch?: boolean;

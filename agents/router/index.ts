@@ -2,7 +2,7 @@ import { readFileSync } from 'fs';
 import { join } from 'path';
 import { GoogleGenerativeAI } from '@google/generative-ai';
 import { IntentResponseSchema, INTENT_RESPONSE_JSON_SCHEMA } from '../schemas/intent.js';
-import type { RouteResult, FeatureFlags } from '../types/routing.js';
+import type { RouteResult, FeatureFlags, ClarificationEmbed } from '../types/routing.js';
 import { logRoutingDecision, logger, logSecurityEvent, logAdministrativeIntentClarificationEvent } from '../telemetry/logger.js';
 import { buildIntentPrompt } from './prompts.js';
 import { checkForInjection } from '../../src/core/guardrails/prompt_injection.js';
@@ -27,28 +27,42 @@ try {
 function buildClarificationMessage(
   intent: string,
   extractedEntities: Record<string, unknown>,
-): { fallbackMessage: string; actionableOptions?: string[] } {
+): { fallbackMessage: string; actionableOptions?: string[]; clarificationEmbed?: ClarificationEmbed } {
   if (intent === 'AdministrativeAction') {
     const settingKey = extractedEntities['settingKey'] as string | undefined;
     const settingValue = extractedEntities['settingValue'] as string | undefined;
 
     if (settingKey && !settingValue) {
+      const optionA = `enable ${settingKey}`;
+      const optionB = `disable ${settingKey}`;
       return {
-        fallbackMessage: `What value should **${settingKey}** be set to? Please specify the desired value.`,
-        actionableOptions: undefined,
+        fallbackMessage: `I detected a request to modify an administrative setting (\`settingKey: ${settingKey}\`), but I need clarification. Did you mean to ${optionA} or ${optionB}?`,
+        clarificationEmbed: {
+          title: 'Administrative Setting Clarification',
+          description: `I detected a request to modify an administrative setting (\`settingKey: ${settingKey}\`), but I need clarification. Did you mean to **${optionA}** or **${optionB}**?`,
+          inferredSetting: settingKey,
+          renderedOptions: [optionA, optionB],
+        },
       };
     }
 
+    const optionA = 'enable autonomous mode';
+    const optionB = 'disable autonomous mode';
     return {
-      fallbackMessage:
-        "Which setting would you like to configure? Please specify the setting name and value. For example:",
+      fallbackMessage: `I detected a request to modify an administrative setting (\`settingKey: unknown\`), but I need clarification. Did you mean to ${optionA} or ${optionB}?`,
       actionableOptions: [
-        'enable autonomous mode',
+        optionA,
+        optionB,
         'set log level to debug',
-        'disable rate limiting',
         'enable maintenance mode',
         'set request timeout to 30 seconds',
       ],
+      clarificationEmbed: {
+        title: 'Administrative Setting Clarification',
+        description: `I detected a request to modify an administrative setting (\`settingKey: unknown\`), but I need clarification. Did you mean to **${optionA}** or **${optionB}**?`,
+        inferredSetting: 'unknown',
+        renderedOptions: [optionA, optionB],
+      },
     };
   }
 
@@ -176,7 +190,7 @@ export async function routeMessage(
       const intentData = validation.data;
 
       if (intentData.confidenceScore < 0.6) {
-        const { fallbackMessage, actionableOptions } = buildClarificationMessage(
+        const { fallbackMessage, actionableOptions, clarificationEmbed } = buildClarificationMessage(
           intentData.intent,
           intentData.extractedEntities ?? {},
         );
@@ -193,9 +207,16 @@ export async function routeMessage(
           isFallback: true,
           fallbackMessage,
           actionableOptions,
+          clarificationEmbed,
         };
         if (intentData.intent === 'AdministrativeAction') {
-          logAdministrativeIntentClarificationEvent({ confidenceScore: intentData.confidenceScore, channelId, userName });
+          logAdministrativeIntentClarificationEvent({
+            confidenceScore: intentData.confidenceScore,
+            channelId,
+            userName,
+            inferredSetting: clarificationEmbed?.inferredSetting ?? 'unknown',
+            renderedOptions: clarificationEmbed?.renderedOptions ?? [],
+          });
         }
         logRoutingDecision(lowConfidenceResult, elapsedMs);
         return [lowConfidenceResult];
