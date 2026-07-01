@@ -7,6 +7,26 @@ import { getTenantResolver } from '../adapters/registry.js';
 import { getAllAgents } from '../agents/registry.js';
 import { checkForInjection } from '../core/guardrails/prompt_injection.js';
 
+/** Cached team list string — agent registry doesn't change at runtime */
+let cachedTeamList: string | null = null;
+
+function getTeamList(allowedAgentIds?: string[]): string {
+  // If a subset of agents is requested, bypass cache (rare path for proposal threads)
+  if (allowedAgentIds?.length) {
+    const allowed = new Set(allowedAgentIds);
+    return getAllAgents()
+      .filter((a) => allowed.has(a.id))
+      .map((a) => `- ${a.id}: ${a.title}`)
+      .join('\n');
+  }
+  if (!cachedTeamList) {
+    cachedTeamList = getAllAgents()
+      .map((a) => `- ${a.id}: ${a.title}`)
+      .join('\n');
+  }
+  return cachedTeamList;
+}
+
 const INJECTION_REFUSAL: RouteResult = {
   agentId: 'none',
   intent: 'GeneralInquiry',
@@ -40,6 +60,8 @@ export async function routeMessage(
 
   logger.info({ messageLength: content.length, orgId }, 'Routing incoming message');
 
+  const routingStart = Date.now();
+
   try {
     const orgName = await getTenantResolver().getOrgName(orgId);
 
@@ -49,13 +71,7 @@ export async function routeMessage(
       ? `RELEVANT KNOWLEDGE:\n${knowledge.map(k => `- ${k.topic}: ${k.content}`).join('\n')}`
       : 'No specific relevant knowledge found.';
 
-    // Build team members list — constrained to allowed agents if specified
-    let agents = getAllAgents();
-    if (allowedAgentIds?.length) {
-      const allowed = new Set(allowedAgentIds);
-      agents = agents.filter(a => allowed.has(a.id));
-    }
-    const teamList = agents.map(a => `- ${a.id}: ${a.title}`).join('\n');
+    const teamList = getTeamList(allowedAgentIds);
 
     const prompt = `
 You are the ${orgName} Team Router. Your job is to analyze incoming messages and route them to the most appropriate AI specialist agent(s).
@@ -86,11 +102,12 @@ Example: [{"agentId": "sre", "intent": "investigation", "subMessage": "Investiga
 
       // Detect deep research requests based on investigation keywords
       const deepResearchKeywords = /\b(investigate|trace through|audit thoroughly|analyze security of|deep dive|root cause analysis)\b/i;
+      const elapsedMs = Date.now() - routingStart;
       for (const res of results) {
         if (res.needsCodeAccess && deepResearchKeywords.test(content)) {
           res.needsDeepResearch = true;
         }
-        logRoutingDecision(res, 0);
+        logRoutingDecision(res, elapsedMs);
       }
 
       return results;

@@ -395,8 +395,6 @@ async function handleIncomingMessage(message: UnifiedMessage, isPublic: boolean,
     const agent = getAgent(route.agentId as AgentId);
     if (!agent) continue;
 
-    await isAutonomousMode(orgId);
-
     const response = await executeAgent({
       orgId,
       agentId: route.agentId as AgentId,
