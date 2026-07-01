@@ -1,3 +1,4 @@
+import { z } from 'zod';
 import { db } from '../db/index.js';
 import { pendingActions, tickets as ticketsTable } from '../db/schema.js';
 import { eq, desc, and, gte, ne } from 'drizzle-orm';
@@ -10,6 +11,23 @@ import { parseArgs } from '../utils/parse-args.js';
 import { onProposalCreated } from '../nexus/scheduler.js';
 import { logCrossAgentConflictResolved } from '../telemetry/cross-agent.js';
 import { logGuardrailEvent } from '../telemetry/index.js';
+
+const TicketProposalInputSchema = z.object({
+  orgId: z.string(),
+  kind: z.enum(['bug', 'feature', 'task']),
+  title: z.string(),
+  description: z.string(),
+  project: z.string(),
+  repoKey: z.string().optional(),
+  priority: z.number().optional(),
+  agentId: z.string(),
+  source: z.enum(['user', 'idle']).optional(),
+  channelId: z.string().optional(),
+  agentDiscussionContext: z.string({ required_error: "agentDiscussionContext is required" }).min(1, "agentDiscussionContext is required"),
+  fallbackPlan: z.string({ required_error: "fallbackPlan is required" }).refine(v => v.startsWith('**Fallback:**'), {
+    message: "fallbackPlan must begin with '**Fallback:**'",
+  }),
+});
 
 export interface TicketProposalInput {
   orgId: string;
@@ -25,9 +43,9 @@ export interface TicketProposalInput {
   /** Channel where this proposal originated (mission channel for mission-scoped autonomous mode) */
   channelId?: string;
   /** Synthesized prose summary of agent discussion context (max 1500 chars). */
-  agentDiscussionContext?: string;
+  agentDiscussionContext: string;
   /** Fallback plan for non-primary execution paths. Must begin with "**Fallback:**". */
-  fallbackPlan?: string;
+  fallbackPlan: string;
 }
 
 export interface TicketProposalResult {
@@ -195,20 +213,16 @@ Where <index> is the 1-based index number from the EXISTING TICKETS list.`;
  * Shared by both CLI path and fast path (structured output).
  */
 export async function createTicketProposal(input: TicketProposalInput): Promise<TicketProposalResult> {
+  const parseResult = TicketProposalInputSchema.safeParse(input);
+  if (!parseResult.success) {
+    const msg = parseResult.error.errors[0]?.message ?? 'Invalid input';
+    logGuardrailEvent({ event: 'ticket_proposal_validation_failed', orgId: input.orgId, agentId: input.agentId, title: input.title, errors: parseResult.error.errors });
+    logger.warn({ agentId: input.agentId, orgId: input.orgId, errors: parseResult.error.errors }, 'ticket_proposal_validation_failed');
+    return { success: false, message: `Validation Failed: ${msg}` };
+  }
+
   const { orgId, kind, title, description, project, priority, agentId, source, channelId, agentDiscussionContext, fallbackPlan } = input;
   let { repoKey } = input;
-
-  // Enforce fallback plan for idle-sourced (agentops/system-initiated) proposals.
-  // Human-facing guardrail: downstream subagents must not attempt primary and fallback
-  // paths simultaneously. Reject idle proposals that omit a fallbackPlan entirely.
-  if (source === 'idle' && !fallbackPlan) {
-    logGuardrailEvent({ event: 'agentops_fallback_missing', orgId, agentId, title });
-    logger.warn({ agentId, orgId, title }, 'agentops_fallback_missing: idle proposal rejected — fallbackPlan is required');
-    return {
-      success: false,
-      message: 'Idle proposals must include a fallbackPlan. Add a "**Fallback:**" section describing the alternative execution path.',
-    };
-  }
 
   // Compose enriched description from base description + optional sections
   let fullDescription = description;
