@@ -51,7 +51,13 @@ export function logToolStrippingEvent(details: { agentId: string; orgId: string;
   logger.info({ event: 'tool_stripping_activated', ...details });
 }
 
-export function logAdministrativeIntentClarificationEvent(details: { confidenceScore: number; channelId: string; userName: string }): void {
+export function logAdministrativeIntentClarificationEvent(details: {
+  confidenceScore: number;
+  channelId: string;
+  userName: string;
+  inferredSetting: string;
+  renderedOptions: string[];
+}): void {
   logger.info({ event: 'administrative_intent_clarification_triggered', ...details });
 }
 

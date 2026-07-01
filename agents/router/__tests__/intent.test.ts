@@ -543,11 +543,15 @@ describe('routeMessage', () => {
 
     await routeMessage('turn that thing on', 'channel-20', 'user20');
 
-    expect(mockLogAdminClarificationFn).toHaveBeenCalledWith({
-      confidenceScore: 0.3,
-      channelId: 'channel-20',
-      userName: 'user20',
-    });
+    expect(mockLogAdminClarificationFn).toHaveBeenCalledWith(
+      expect.objectContaining({
+        confidenceScore: 0.3,
+        channelId: 'channel-20',
+        userName: 'user20',
+        inferredSetting: 'unknown',
+        renderedOptions: expect.arrayContaining(['enable autonomous mode', 'disable autonomous mode']),
+      }),
+    );
   });
 
   // ---------------------------------------------------------------------------
@@ -569,6 +573,59 @@ describe('routeMessage', () => {
     await routeMessage('hmm not sure what I need', 'channel-21', 'user21');
 
     expect(mockLogAdminClarificationFn).not.toHaveBeenCalled();
+  });
+
+  // ---------------------------------------------------------------------------
+  // Test 23: Low-confidence AdministrativeAction (no entities) → clarificationEmbed with inferredSetting 'unknown'
+  // ---------------------------------------------------------------------------
+  it('includes clarificationEmbed with inferredSetting "unknown" and two renderedOptions for ambiguous AdministrativeAction', async () => {
+    const geminiPayload = {
+      intent: 'AdministrativeAction',
+      confidenceScore: 0.45,
+      targetAgent: 'nexus',
+      extractedEntities: {},
+      reasoning: 'No settingKey extractable.',
+      needsCodeAccess: false,
+      isStrategySession: false,
+      requiresConfirmation: false,
+    };
+    mockGenerateContent.mockResolvedValue({ response: { text: () => JSON.stringify(geminiPayload) } });
+
+    const results = await routeMessage('change some system settings', 'channel-23', 'user23');
+
+    expect(results[0].isFallback).toBe(true);
+    expect(results[0].clarificationEmbed).toBeDefined();
+    expect(results[0].clarificationEmbed!.inferredSetting).toBe('unknown');
+    expect(results[0].clarificationEmbed!.renderedOptions).toHaveLength(2);
+    expect(results[0].fallbackMessage).toMatch(/I detected a request to modify an administrative setting/);
+    expect(results[0].fallbackMessage).not.toMatch(/Please clarify/);
+  });
+
+  // ---------------------------------------------------------------------------
+  // Test 24: Low-confidence AdministrativeAction with known settingKey → embed uses key-specific options
+  // ---------------------------------------------------------------------------
+  it('includes clarificationEmbed with key-specific options when settingKey is known but value is absent', async () => {
+    const geminiPayload = {
+      intent: 'AdministrativeAction',
+      confidenceScore: 0.45,
+      targetAgent: 'nexus',
+      extractedEntities: { settingKey: 'autonomousMode' },
+      reasoning: 'settingKey known but settingValue unclear.',
+      needsCodeAccess: false,
+      isStrategySession: false,
+      requiresConfirmation: false,
+    };
+    mockGenerateContent.mockResolvedValue({ response: { text: () => JSON.stringify(geminiPayload) } });
+
+    const results = await routeMessage('toggle autonomous mode somehow', 'channel-24', 'user24');
+
+    expect(results[0].isFallback).toBe(true);
+    expect(results[0].clarificationEmbed).toBeDefined();
+    expect(results[0].clarificationEmbed!.inferredSetting).toBe('autonomousMode');
+    expect(results[0].clarificationEmbed!.renderedOptions).toContain('enable autonomousMode');
+    expect(results[0].clarificationEmbed!.renderedOptions).toContain('disable autonomousMode');
+    expect(results[0].fallbackMessage).toContain('settingKey: autonomousMode');
+    expect(results[0].fallbackMessage).not.toMatch(/Please clarify/);
   });
 
   // ---------------------------------------------------------------------------

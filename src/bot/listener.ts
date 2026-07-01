@@ -373,13 +373,26 @@ async function handleIncomingMessage(message: UnifiedMessage, isPublic: boolean,
   // If the router returned a fallback clarification, send it to the user and stop
   const clarificationRoute = routes.find(r => r.isFallback && r.fallbackMessage && !r.isCircuitBroken);
   if (clarificationRoute) {
-    await getCommunicationAdapter().sendMessage(
-      {
-        content: `**[System]** ${clarificationRoute.fallbackMessage}`,
-        actionable_suggestions: clarificationRoute.actionableOptions,
-      },
-      { thread_id: message.channelId, orgId },
-    );
+    if (clarificationRoute.clarificationEmbed) {
+      const { title, description, renderedOptions } = clarificationRoute.clarificationEmbed;
+      await getCommunicationAdapter().sendMessage(
+        {
+          embed_title: title,
+          embed_description: description,
+          embed_color: 0xF5A623,
+          actionable_suggestions: renderedOptions,
+        },
+        { thread_id: message.channelId, orgId },
+      );
+    } else {
+      await getCommunicationAdapter().sendMessage(
+        {
+          content: `**[System]** ${clarificationRoute.fallbackMessage}`,
+          actionable_suggestions: clarificationRoute.actionableOptions,
+        },
+        { thread_id: message.channelId, orgId },
+      );
+    }
     return;
   }
 
