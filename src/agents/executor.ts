@@ -144,6 +144,7 @@ Please refine your proposal based on this feedback.
 
     // Strip thought blocks
     let cleaned = response.replace(/<thought>[\s\S]*?<\/thought>/g, '').trim();
+    const lengthAfterThoughtStrip = cleaned.length; // baseline for detecting action-block-only responses
     logger.info({ agentId, outputLength: cleaned.length }, 'Gemini API response received');
 
     // Debug: log response snippet and check for proposal-related content
@@ -612,8 +613,12 @@ Please refine your proposal based on this feedback.
 
     await checkPendingActions(input, executionStart);
 
-    // Suppress verbose response if agent created proposals during this execution
-    const proposalCount = await agentCreatedProposalsSince(agentId, orgId, executionStart);
+    // If the cleaned text is shorter than the thought-stripped baseline, the agent emitted
+    // XML action blocks (proposals, approvals, mission ops, etc.) that were processed and
+    // stripped. Use this local flag for the empty-response acknowledgment check so we don't
+    // have to round-trip the DB; fall back to the DB count for CLI/deep-research paths.
+    const actionBlocksStripped = cleaned.trim().length < lengthAfterThoughtStrip;
+    const proposalCount = actionBlocksStripped ? 1 : await agentCreatedProposalsSince(agentId, orgId, executionStart);
     return suppressProposalDetails(agentId, cleaned, proposalCount);
   } catch (err) {
     logger.error({ err, agentId, source }, 'Gemini API execution failed');
@@ -950,15 +955,20 @@ async function agentCreatedProposalsSince(agentId: string, orgId: string, since:
   return recent.length;
 }
 
-function suppressProposalDetails(agentId: string, response: string, proposalCount: number): string {
-  if (proposalCount === 0) return response;
+function suppressProposalDetails(agentId: string, response: string, proposalCount: number): string | null {
+  const trimmed = response.trim();
 
-  // If the agent already narrated their proposal, they don't need to do it again in the final response
-  // We want to avoid "I've created a ticket..." if the system is about to announce it anyway.
-  if (proposalCount > 0) {
-    logger.info({ agentId, proposalCount }, 'Suppressing redundant proposal narration');
-    return response; 
+  if (!trimmed) {
+    if (proposalCount > 0) {
+      // Agent created proposals but left no conversational text after XML stripping.
+      // Return a brief acknowledgment so the user knows their request was processed,
+      // without revealing proposal details (which Nexus communicates after review).
+      logger.info({ agentId, proposalCount }, 'Agent response empty after proposal stripping; substituting acknowledgment');
+      return "I've reviewed your request and flagged it for the team.";
+    }
+    // Truly empty with no side-effects — suppress entirely so listener skips gracefully.
+    return null;
   }
 
-  return response;
+  return trimmed;
 }

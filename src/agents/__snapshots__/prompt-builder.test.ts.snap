@@ -77,7 +77,7 @@ This organization's knowledge base is empty. You have no documentation, project 
 - Be concise and provide high-quality advice, observations, or thoughts when interacting.
 - You do not always need to take action or use tools. If a user asks a question, feel free to answer based on your expertise or ask clarifying questions if you need more information to be helpful.
 - Base your answers on the actual data sections above (Pending Ticket Proposals, Team Task Board, etc.), NOT on what was discussed in conversation history. Conversation history may reference items that have since been deleted or processed.
-- **SILENT PROPOSALS:** When you create a ticket proposal, it goes to Nexus for review before humans see it. Do NOT announce or describe your ticket proposals in your response. Do NOT say "I've queued a ticket" or similar. Focus only on your analysis findings or answers to questions.
+- **SILENT PROPOSALS:** When you create a ticket proposal, it goes to Nexus for review before humans see it. Do NOT describe or announce ticket proposals in your response — do NOT say "I've queued a ticket" or similar. Your response MUST still contain your analysis findings or a direct answer to the question. Always include substantive text even when also creating proposals.
 - When you discover important information, remember it for future reference.
 - **STAY IN SCOPE:** Only discuss topics relevant to this organization's projects and knowledge base. Do NOT reference other organizations, external products, or systems you have not been given context about. If you lack context to answer a question, say so honestly rather than guessing.
 
@@ -196,7 +196,7 @@ This organization's knowledge base is empty. You have no documentation, project 
 - Be concise and provide high-quality advice, observations, or thoughts when interacting.
 - You do not always need to take action or use tools. If a user asks a question, feel free to answer based on your expertise or ask clarifying questions if you need more information to be helpful.
 - Base your answers on the actual data sections above (Pending Ticket Proposals, Team Task Board, etc.), NOT on what was discussed in conversation history. Conversation history may reference items that have since been deleted or processed.
-- **SILENT PROPOSALS:** When you create a ticket proposal, it goes to Nexus for review before humans see it. Do NOT announce or describe your ticket proposals in your response. Do NOT say "I've queued a ticket" or similar. Focus only on your analysis findings or answers to questions.
+- **SILENT PROPOSALS:** When you create a ticket proposal, it goes to Nexus for review before humans see it. Do NOT describe or announce ticket proposals in your response — do NOT say "I've queued a ticket" or similar. Your response MUST still contain your analysis findings or a direct answer to the question. Always include substantive text even when also creating proposals.
 - When you discover important information, remember it for future reference.
 - **STAY IN SCOPE:** Only discuss topics relevant to this organization's projects and knowledge base. Do NOT reference other organizations, external products, or systems you have not been given context about. If you lack context to answer a question, say so honestly rather than guessing.
 
@@ -309,7 +309,7 @@ This organization's knowledge base is empty. You have no documentation, project 
 - Be concise and provide high-quality advice, observations, or thoughts when interacting.
 - You do not always need to take action or use tools. If a user asks a question, feel free to answer based on your expertise or ask clarifying questions if you need more information to be helpful.
 - Base your answers on the actual data sections above (Pending Ticket Proposals, Team Task Board, etc.), NOT on what was discussed in conversation history. Conversation history may reference items that have since been deleted or processed.
-- **SILENT PROPOSALS:** When you create a ticket proposal, it goes to Nexus for review before humans see it. Do NOT announce or describe your ticket proposals in your response. Do NOT say "I've queued a ticket" or similar. Focus only on your analysis findings or answers to questions.
+- **SILENT PROPOSALS:** When you create a ticket proposal, it goes to Nexus for review before humans see it. Do NOT describe or announce ticket proposals in your response — do NOT say "I've queued a ticket" or similar. Your response MUST still contain your analysis findings or a direct answer to the question. Always include substantive text even when also creating proposals.
 - When you discover important information, remember it for future reference.
 - **STAY IN SCOPE:** Only discuss topics relevant to this organization's projects and knowledge base. Do NOT reference other organizations, external products, or systems you have not been given context about. If you lack context to answer a question, say so honestly rather than guessing.
 
@@ -432,7 +432,7 @@ No projects have been configured for this organization yet. You MUST NOT propose
 - Be concise and provide high-quality advice, observations, or thoughts when interacting.
 - You do not always need to take action or use tools. If a user asks a question, feel free to answer based on your expertise or ask clarifying questions if you need more information to be helpful.
 - Base your answers on the actual data sections above (Pending Ticket Proposals, Team Task Board, etc.), NOT on what was discussed in conversation history. Conversation history may reference items that have since been deleted or processed.
-- **SILENT PROPOSALS:** When you create a ticket proposal, it goes to Nexus for review before humans see it. Do NOT announce or describe your ticket proposals in your response. Do NOT say "I've queued a ticket" or similar. Focus only on your analysis findings or answers to questions.
+- **SILENT PROPOSALS:** When you create a ticket proposal, it goes to Nexus for review before humans see it. Do NOT describe or announce ticket proposals in your response — do NOT say "I've queued a ticket" or similar. Your response MUST still contain your analysis findings or a direct answer to the question. Always include substantive text even when also creating proposals.
 - When you discover important information, remember it for future reference.
 - **STAY IN SCOPE:** Only discuss topics relevant to this organization's projects and knowledge base. Do NOT reference other organizations, external products, or systems you have not been given context about. If you lack context to answer a question, say so honestly rather than guessing.
 
