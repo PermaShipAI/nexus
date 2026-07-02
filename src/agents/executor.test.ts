@@ -149,6 +149,48 @@ describe('executor', () => {
     );
   });
 
+  it('should return an acknowledgment when response is empty after proposal stripping', async () => {
+    // LLM returns only a ticket-proposal block with no conversational text
+    mockGenerateText.mockResolvedValue(
+      '<ticket-proposal>{"kind":"bug","title":"Login fails","description":"Users cannot log in","project":"auth"}</ticket-proposal>',
+    );
+
+    const result = await executeAgent({
+      orgId: 'org-1',
+      agentId: 'sre',
+      channelId: 'chan-1',
+      userId: 'user-1',
+      userName: 'Alice',
+      userMessage: 'There is a login bug',
+      needsCodeAccess: false,
+      source: 'user',
+    });
+
+    // The proposal was processed, so the user should receive a brief acknowledgment
+    // rather than silence (empty/null response).
+    expect(result).toBe("I've reviewed your request and flagged it for the team.");
+    expect(vi.mocked(createTicketProposal)).toHaveBeenCalled();
+  });
+
+  it('should return null when response is empty with no proposals', async () => {
+    // LLM returns a response that is entirely within thought tags (stripped to empty)
+    mockGenerateText.mockResolvedValue('<thought>Internal reasoning only</thought>');
+
+    const result = await executeAgent({
+      orgId: 'org-1',
+      agentId: 'sre',
+      channelId: 'chan-1',
+      userId: 'user-1',
+      userName: 'Alice',
+      userMessage: 'What is the status?',
+      needsCodeAccess: false,
+      source: 'user',
+    });
+
+    // No proposals and no text → null so listener skips silently
+    expect(result).toBeNull();
+  });
+
   it('should return [error] when the LLM throws and source is user', async () => {
     // Simulate an API error such as a timeout or rate-limit rejection
     mockGenerateText.mockRejectedValue(new Error('Connection timeout after 30s'));
