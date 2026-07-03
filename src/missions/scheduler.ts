@@ -127,6 +127,8 @@ async function reconcileItemsWithTickets(
       // the work didn't actually meet criteria) or are being actively worked on.
       // Re-marking them agent_complete creates a verify-reopen infinite loop.
       if ((status === 'review_approved' || merged === 'merged') && item.status === 'pending') {
+        // Must go through in_progress first to satisfy the state machine
+        await updateMissionItem(item.id, { status: 'in_progress' });
         await updateMissionItem(item.id, {
           status: 'agent_complete',
           completedByAgentId: 'executor',
