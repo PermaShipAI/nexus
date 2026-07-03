@@ -1,6 +1,8 @@
 import { eq, and, lte, inArray } from 'drizzle-orm';
 import { db } from '../db/index.js';
 import { logger } from '../logger.js';
+import { assertValidMissionItemTransition, StateTransitionError } from './state-machine.js';
+import { logGuardrailEvent } from '../telemetry/index.js';
 import {
   missions,
   missionItems,
@@ -258,6 +260,31 @@ export async function updateMissionItem(
   itemId: string,
   updates: Partial<Pick<MissionItem, 'status' | 'assignedAgentId' | 'completedByAgentId' | 'verifiedAt' | 'heartbeatCount'>>,
 ): Promise<MissionItem | null> {
+  // Validate state transition before writing to DB
+  if (updates.status !== undefined) {
+    const [current] = await db
+      .select({ status: missionItems.status })
+      .from(missionItems)
+      .where(eq(missionItems.id, itemId))
+      .limit(1);
+    if (!current) {
+      throw new Error('Mission item not found: ' + itemId);
+    }
+    try {
+      assertValidMissionItemTransition(itemId, current.status, updates.status);
+    } catch (err) {
+      if (err instanceof StateTransitionError) {
+        logGuardrailEvent({
+          event: 'state_transition_hallucination_blocked',
+          itemId,
+          fromStatus: current.status,
+          toStatus: updates.status,
+        });
+      }
+      throw err;
+    }
+  }
+
   // Filter out undefined values so we don't overwrite fields with null
   const cleanUpdates: Record<string, unknown> = { updatedAt: new Date() };
   for (const [k, v] of Object.entries(updates)) {

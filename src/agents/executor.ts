@@ -15,6 +15,7 @@ import { getTicketTracker } from '../adapters/registry.js';
 import { resolveAutonomousMode } from '../settings/service.js';
 import { updateProjectSettings } from '../tools/update_project_settings.js';
 import { getMissionItem, updateMissionItem, addMissionItems, addSubSteps } from '../missions/service.js';
+import { StateTransitionError } from '../missions/state-machine.js';
 import { onMissionItemChanged } from '../missions/scheduler.js';
 import { checkAndTriggerAdrDrafting } from './adr-service.js';
 import { shouldCreateSuggestion } from '../idle/throttle.js';
@@ -144,6 +145,7 @@ Please refine your proposal based on this feedback.
 
     // Strip thought blocks
     let cleaned = response.replace(/<thought>[\s\S]*?<\/thought>/g, '').trim();
+    const blockedTransitionMessages: string[] = [];
     logger.info({ agentId, outputLength: cleaned.length }, 'Gemini API response received');
 
     // Debug: log response snippet and check for proposal-related content
@@ -407,10 +409,21 @@ Please refine your proposal based on this feedback.
             continue;
           }
           const completedItem = await getMissionItem(parsed.itemId);
-          await updateMissionItem(parsed.itemId, {
-            status: 'agent_complete',
-            completedByAgentId: agentId,
-          });
+          try {
+            await updateMissionItem(parsed.itemId, {
+              status: 'agent_complete',
+              completedByAgentId: agentId,
+            });
+          } catch (err) {
+            if (err instanceof StateTransitionError) {
+              logger.warn({ err, itemId: parsed.itemId }, 'State transition hallucination blocked — skipping action');
+              blockedTransitionMessages.push(
+                `[STATE_TRANSITION_BLOCKED] State transition rejected: item ${err.itemId} cannot transition from '${err.fromStatus}' to '${err.toStatus}'. Await manual approval or correct lifecycle.`,
+              );
+              continue;
+            }
+            throw err;
+          }
           logger.info({ agentId, itemId: parsed.itemId }, 'Mission item marked agent_complete');
           if (completedItem) onMissionItemChanged(completedItem.missionId);
         } catch (err) {
@@ -426,10 +439,21 @@ Please refine your proposal based on this feedback.
           const parsed = JSON.parse(match[1].trim()) as { itemId: string };
           if (!parsed.itemId) continue;
           const verifiedItem = await getMissionItem(parsed.itemId);
-          await updateMissionItem(parsed.itemId, {
-            status: 'verified',
-            verifiedAt: new Date(),
-          });
+          try {
+            await updateMissionItem(parsed.itemId, {
+              status: 'verified',
+              verifiedAt: new Date(),
+            });
+          } catch (err) {
+            if (err instanceof StateTransitionError) {
+              logger.warn({ err, itemId: parsed.itemId }, 'State transition hallucination blocked — skipping action');
+              blockedTransitionMessages.push(
+                `[STATE_TRANSITION_BLOCKED] State transition rejected: item ${err.itemId} cannot transition from '${err.fromStatus}' to '${err.toStatus}'. Await manual approval or correct lifecycle.`,
+              );
+              continue;
+            }
+            throw err;
+          }
           logger.info({ agentId, itemId: parsed.itemId }, 'Mission item verified');
           if (verifiedItem) onMissionItemChanged(verifiedItem.missionId);
         } catch (err) {
@@ -444,7 +468,18 @@ Please refine your proposal based on this feedback.
         try {
           const parsed = JSON.parse(match[1].trim()) as { itemId: string; reason: string };
           if (!parsed.itemId) continue;
-          await updateMissionItem(parsed.itemId, { status: 'in_progress', heartbeatCount: 1 });
+          try {
+            await updateMissionItem(parsed.itemId, { status: 'in_progress', heartbeatCount: 1 });
+          } catch (err) {
+            if (err instanceof StateTransitionError) {
+              logger.warn({ err, itemId: parsed.itemId }, 'State transition hallucination blocked — skipping action');
+              blockedTransitionMessages.push(
+                `[STATE_TRANSITION_BLOCKED] State transition rejected: item ${err.itemId} cannot transition from '${err.fromStatus}' to '${err.toStatus}'. Await manual approval or correct lifecycle.`,
+              );
+              continue;
+            }
+            throw err;
+          }
           logger.info({ agentId, itemId: parsed.itemId, reason: parsed.reason }, 'Mission item reopened');
           // NOTE: do NOT trigger onMissionItemChanged here — reopening should
           // wait for the normal heartbeat cycle, not trigger an early one that
@@ -510,10 +545,21 @@ Please refine your proposal based on this feedback.
 
           // Mark the original sub-step as done (but NOT the phase)
           if (!item.isPhase) {
-            await updateMissionItem(parsed.itemId, {
-              status: 'verified',
-              completedByAgentId: agentId,
-            });
+            try {
+              await updateMissionItem(parsed.itemId, {
+                status: 'verified',
+                completedByAgentId: agentId,
+              });
+            } catch (err) {
+              if (err instanceof StateTransitionError) {
+                logger.warn({ err, itemId: parsed.itemId }, 'State transition hallucination blocked — skipping action');
+                blockedTransitionMessages.push(
+                  `[STATE_TRANSITION_BLOCKED] State transition rejected: item ${err.itemId} cannot transition from '${err.fromStatus}' to '${err.toStatus}'. Await manual approval or correct lifecycle.`,
+                );
+                continue;
+              }
+              throw err;
+            }
           }
 
           // Add replacements as sub-steps under the phase
@@ -533,10 +579,21 @@ Please refine your proposal based on this feedback.
           const parsed = JSON.parse(match[1].trim()) as { itemId: string; reason: string };
           if (!parsed.itemId) continue;
           // Mark as verified (effectively removes it from the active checklist)
-          await updateMissionItem(parsed.itemId, {
-            status: 'verified',
-            completedByAgentId: 'removed',
-          });
+          try {
+            await updateMissionItem(parsed.itemId, {
+              status: 'verified',
+              completedByAgentId: 'removed',
+            });
+          } catch (err) {
+            if (err instanceof StateTransitionError) {
+              logger.warn({ err, itemId: parsed.itemId }, 'State transition hallucination blocked — skipping action');
+              blockedTransitionMessages.push(
+                `[STATE_TRANSITION_BLOCKED] State transition rejected: item ${err.itemId} cannot transition from '${err.fromStatus}' to '${err.toStatus}'. Await manual approval or correct lifecycle.`,
+              );
+              continue;
+            }
+            throw err;
+          }
           logger.info({ agentId, itemId: parsed.itemId, reason: parsed.reason }, 'Mission item removed');
         } catch (err) {
           logger.warn({ err, agentId }, 'Failed to parse/process mission-remove-item block');
@@ -608,6 +665,11 @@ Please refine your proposal based on this feedback.
       cleaned = cleaned.replace(/<update-settings>\s*([\s\S]*?)(?:\s*<\/update-settings>|$)/gi, '').trim();
 
 
+    }
+
+    // Prepend any blocked state transition messages so the LLM can correct itself
+    if (blockedTransitionMessages.length > 0) {
+      cleaned = blockedTransitionMessages.join('\n') + (cleaned ? '\n\n' + cleaned : '');
     }
 
     await checkPendingActions(input, executionStart);
