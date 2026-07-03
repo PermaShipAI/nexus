@@ -11,6 +11,7 @@ import {
   type MissionItem,
   type LocalProject,
 } from '../db/schema.js';
+import { assertValidMissionItemTransition } from './state-machine.js';
 
 export async function createMission(input: {
   orgId: string;
@@ -258,6 +259,12 @@ export async function updateMissionItem(
   itemId: string,
   updates: Partial<Pick<MissionItem, 'status' | 'assignedAgentId' | 'completedByAgentId' | 'verifiedAt' | 'heartbeatCount'>>,
 ): Promise<MissionItem | null> {
+  // Enforce state machine when a status transition is requested
+  if (updates.status !== undefined) {
+    const current = await getMissionItem(itemId);
+    assertValidMissionItemTransition(itemId, current?.status ?? null, updates.status);
+  }
+
   // Filter out undefined values so we don't overwrite fields with null
   const cleanUpdates: Record<string, unknown> = { updatedAt: new Date() };
   for (const [k, v] of Object.entries(updates)) {

@@ -15,6 +15,7 @@ import { getTicketTracker } from '../adapters/registry.js';
 import { resolveAutonomousMode } from '../settings/service.js';
 import { updateProjectSettings } from '../tools/update_project_settings.js';
 import { getMissionItem, updateMissionItem, addMissionItems, addSubSteps } from '../missions/service.js';
+import { StateTransitionError } from '../missions/state-machine.js';
 import { onMissionItemChanged } from '../missions/scheduler.js';
 import { checkAndTriggerAdrDrafting } from './adr-service.js';
 import { shouldCreateSuggestion } from '../idle/throttle.js';
@@ -161,6 +162,7 @@ Please refine your proposal based on this feedback.
       const proposalRegex = /<ticket-proposal>\s*([\s\S]*?)(?:<\/ticket-proposal>|$)/gi;
       const proposalBlocks: string[] = [];
       let match: RegExpExecArray | null;
+      const blockedTransitionMessages: string[] = [];
       while ((match = proposalRegex.exec(cleaned)) !== null) {
         if (match[1].trim()) proposalBlocks.push(match[1].trim());
       }
@@ -407,12 +409,21 @@ Please refine your proposal based on this feedback.
             continue;
           }
           const completedItem = await getMissionItem(parsed.itemId);
-          await updateMissionItem(parsed.itemId, {
-            status: 'agent_complete',
-            completedByAgentId: agentId,
-          });
-          logger.info({ agentId, itemId: parsed.itemId }, 'Mission item marked agent_complete');
-          if (completedItem) onMissionItemChanged(completedItem.missionId);
+          try {
+            await updateMissionItem(parsed.itemId, {
+              status: 'agent_complete',
+              completedByAgentId: agentId,
+            });
+            logger.info({ agentId, itemId: parsed.itemId }, 'Mission item marked agent_complete');
+            if (completedItem) onMissionItemChanged(completedItem.missionId);
+          } catch (transitionErr) {
+            if (transitionErr instanceof StateTransitionError) {
+              logger.warn({ agentId, itemId: parsed.itemId, from: transitionErr.from, to: transitionErr.to }, 'Blocked illegal mission item state transition (mission-item-complete)');
+              blockedTransitionMessages.push(`[STATE_TRANSITION_BLOCKED] Cannot mark item ${parsed.itemId} as agent_complete: already in '${transitionErr.from}' state.`);
+            } else {
+              throw transitionErr;
+            }
+          }
         } catch (err) {
           logger.warn({ err, agentId }, 'Failed to parse/process mission-item-complete block');
         }
@@ -426,12 +437,21 @@ Please refine your proposal based on this feedback.
           const parsed = JSON.parse(match[1].trim()) as { itemId: string };
           if (!parsed.itemId) continue;
           const verifiedItem = await getMissionItem(parsed.itemId);
-          await updateMissionItem(parsed.itemId, {
-            status: 'verified',
-            verifiedAt: new Date(),
-          });
-          logger.info({ agentId, itemId: parsed.itemId }, 'Mission item verified');
-          if (verifiedItem) onMissionItemChanged(verifiedItem.missionId);
+          try {
+            await updateMissionItem(parsed.itemId, {
+              status: 'verified',
+              verifiedAt: new Date(),
+            });
+            logger.info({ agentId, itemId: parsed.itemId }, 'Mission item verified');
+            if (verifiedItem) onMissionItemChanged(verifiedItem.missionId);
+          } catch (transitionErr) {
+            if (transitionErr instanceof StateTransitionError) {
+              logger.warn({ agentId, itemId: parsed.itemId, from: transitionErr.from, to: transitionErr.to }, 'Blocked illegal mission item state transition (mission-verify)');
+              blockedTransitionMessages.push(`[STATE_TRANSITION_BLOCKED] Cannot verify item ${parsed.itemId}: must be in 'agent_complete' state, currently '${transitionErr.from}'.`);
+            } else {
+              throw transitionErr;
+            }
+          }
         } catch (err) {
           logger.warn({ err, agentId }, 'Failed to parse/process mission-verify block');
         }
@@ -444,11 +464,20 @@ Please refine your proposal based on this feedback.
         try {
           const parsed = JSON.parse(match[1].trim()) as { itemId: string; reason: string };
           if (!parsed.itemId) continue;
-          await updateMissionItem(parsed.itemId, { status: 'in_progress', heartbeatCount: 1 });
-          logger.info({ agentId, itemId: parsed.itemId, reason: parsed.reason }, 'Mission item reopened');
-          // NOTE: do NOT trigger onMissionItemChanged here — reopening should
-          // wait for the normal heartbeat cycle, not trigger an early one that
-          // re-enters the verify loop.
+          try {
+            await updateMissionItem(parsed.itemId, { status: 'in_progress', heartbeatCount: 1 });
+            logger.info({ agentId, itemId: parsed.itemId, reason: parsed.reason }, 'Mission item reopened');
+            // NOTE: do NOT trigger onMissionItemChanged here — reopening should
+            // wait for the normal heartbeat cycle, not trigger an early one that
+            // re-enters the verify loop.
+          } catch (transitionErr) {
+            if (transitionErr instanceof StateTransitionError) {
+              logger.warn({ agentId, itemId: parsed.itemId, from: transitionErr.from, to: transitionErr.to }, 'Blocked illegal mission item state transition (mission-reopen)');
+              blockedTransitionMessages.push(`[STATE_TRANSITION_BLOCKED] Cannot reopen item ${parsed.itemId}: '${transitionErr.from}' → in_progress is not permitted.`);
+            } else {
+              throw transitionErr;
+            }
+          }
         } catch (err) {
           logger.warn({ err, agentId }, 'Failed to parse/process mission-reopen block');
         }
@@ -510,10 +539,19 @@ Please refine your proposal based on this feedback.
 
           // Mark the original sub-step as done (but NOT the phase)
           if (!item.isPhase) {
-            await updateMissionItem(parsed.itemId, {
-              status: 'verified',
-              completedByAgentId: agentId,
-            });
+            try {
+              await updateMissionItem(parsed.itemId, {
+                status: 'verified',
+                completedByAgentId: agentId,
+              });
+            } catch (transitionErr) {
+              if (transitionErr instanceof StateTransitionError) {
+                logger.warn({ agentId, itemId: parsed.itemId, from: transitionErr.from, to: transitionErr.to }, 'Blocked illegal mission item state transition (mission-replace-item)');
+                blockedTransitionMessages.push(`[STATE_TRANSITION_BLOCKED] Cannot mark replaced item ${parsed.itemId} as verified: currently in '${transitionErr.from}' state.`);
+              } else {
+                throw transitionErr;
+              }
+            }
           }
 
           // Add replacements as sub-steps under the phase
@@ -533,11 +571,20 @@ Please refine your proposal based on this feedback.
           const parsed = JSON.parse(match[1].trim()) as { itemId: string; reason: string };
           if (!parsed.itemId) continue;
           // Mark as verified (effectively removes it from the active checklist)
-          await updateMissionItem(parsed.itemId, {
-            status: 'verified',
-            completedByAgentId: 'removed',
-          });
-          logger.info({ agentId, itemId: parsed.itemId, reason: parsed.reason }, 'Mission item removed');
+          try {
+            await updateMissionItem(parsed.itemId, {
+              status: 'verified',
+              completedByAgentId: 'removed',
+            });
+            logger.info({ agentId, itemId: parsed.itemId, reason: parsed.reason }, 'Mission item removed');
+          } catch (transitionErr) {
+            if (transitionErr instanceof StateTransitionError) {
+              logger.warn({ agentId, itemId: parsed.itemId, from: transitionErr.from, to: transitionErr.to }, 'Blocked illegal mission item state transition (mission-remove-item)');
+              blockedTransitionMessages.push(`[STATE_TRANSITION_BLOCKED] Cannot remove item ${parsed.itemId}: '${transitionErr.from}' → verified is not permitted.`);
+            } else {
+              throw transitionErr;
+            }
+          }
         } catch (err) {
           logger.warn({ err, agentId }, 'Failed to parse/process mission-remove-item block');
         }
@@ -607,6 +654,10 @@ Please refine your proposal based on this feedback.
       }
       cleaned = cleaned.replace(/<update-settings>\s*([\s\S]*?)(?:\s*<\/update-settings>|$)/gi, '').trim();
 
+      // Prepend any blocked state transition warnings so the agent can self-correct
+      if (blockedTransitionMessages.length > 0) {
+        cleaned = blockedTransitionMessages.join('\n') + (cleaned ? '\n\n' + cleaned : '');
+      }
 
     }
 
