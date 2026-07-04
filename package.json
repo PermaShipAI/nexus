@@ -109,7 +109,7 @@
     "test": "vitest",
     "test:run": "vitest run",
     "test:unit": "vitest run --exclude '**/security-integration.test.ts' --exclude '**/integration/**'",
-    "test:integration": "vitest run src/local/security-integration.test.ts src/tests/integration/",
+    "test:integration": "vitest run src/local/security-integration.test.ts src/tests/integration/ src/tests/security/",
     "test:security": "vitest run src/tests/security/",
     "test:coverage": "vitest run --coverage",
     "test:eval:security": "tsx agents/tests/evals/run-evals.ts",
