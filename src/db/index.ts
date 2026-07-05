@@ -10,10 +10,10 @@ import { logger } from '../logger.js';
 
 const DATABASE_URL = process.env.DATABASE_URL;
 
-let _migrateFn: ((db: any, opts: { migrationsFolder: string }) => Promise<void>) | null = null;
+let _migrateFn: ((db: PostgresJsDatabase<typeof schema>, opts: { migrationsFolder: string }) => Promise<void>) | null = null;
 let _pgliteClient: PGlite | null = null;
 
-async function manualMigratePglite(db: any, opts: { migrationsFolder: string }): Promise<void> {
+async function manualMigratePglite(_db: PostgresJsDatabase<typeof schema>, opts: { migrationsFolder: string }): Promise<void> {
   const client = _pgliteClient;
   if (!client) throw new Error('PGlite client not initialized');
   
