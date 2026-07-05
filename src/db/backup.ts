@@ -1,5 +1,6 @@
 import { writeFileSync, readFileSync, existsSync, mkdirSync } from 'node:fs';
 import { join } from 'node:path';
+import { type PgTable } from 'drizzle-orm/pg-core';
 import { db } from './index.js';
 import {
   agents,
@@ -100,7 +101,7 @@ export async function restoreFromBackup(): Promise<boolean> {
     console.log(`\n  Restoring data from backup (${data.timestamp})...\n`);
 
     // Restore in dependency order
-    const restoreTable = async (table: any, rows: any[], name: string) => {
+    const restoreTable = async (table: PgTable, rows: unknown[], name: string) => {
       if (!rows || rows.length === 0) return;
       try {
         // Convert date strings back to Date objects
