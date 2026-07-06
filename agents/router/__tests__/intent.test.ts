@@ -4,9 +4,10 @@ import type { RouteResult } from '../../types/routing';
 
 // Use vi.hoisted to create stable spy references that survive vi.resetModules().
 // These fn references are used both in the vi.mock factory and in the tests.
-const { mockLogSecurityEventFn, mockLogAdminClarificationFn } = vi.hoisted(() => ({
+const { mockLogSecurityEventFn, mockLogAdminClarificationFn, mockLogClassificationFailedFn } = vi.hoisted(() => ({
   mockLogSecurityEventFn: vi.fn(),
   mockLogAdminClarificationFn: vi.fn(),
+  mockLogClassificationFailedFn: vi.fn(),
 }));
 
 // These mocks must be declared before any dynamic imports.
@@ -17,6 +18,7 @@ vi.mock('../../telemetry/logger.js', () => ({
   logRoutingDecision: vi.fn(),
   logSecurityEvent: mockLogSecurityEventFn,
   logAdministrativeIntentClarificationEvent: mockLogAdminClarificationFn,
+  logClassificationFailedEvent: mockLogClassificationFailedFn,
   logger: {
     info: vi.fn(),
     warn: vi.fn(),
@@ -593,5 +595,52 @@ describe('routeMessage', () => {
     expect(results[0].intent).toBe('AdministrativeAction');
     expect(results[0].confidenceScore).toBeGreaterThanOrEqual(0.6);
     expect(results[0].confidenceScore).toBeLessThan(0.8);
+  });
+
+  // ---------------------------------------------------------------------------
+  // Test 23: exhausts 2 retries and calls logClassificationFailedEvent when LLM always returns malformed JSON
+  // ---------------------------------------------------------------------------
+  it('exhausts 2 retries and calls logClassificationFailedEvent when LLM always returns malformed JSON', async () => {
+    mockGenerateContent.mockResolvedValue({ response: { text: () => 'not json' } });
+
+    const result = await routeMessage('do something', 'channel-23', 'user23');
+
+    expect(mockGenerateContent).toHaveBeenCalledTimes(3);
+    expect(mockLogClassificationFailedFn).toHaveBeenCalledTimes(1);
+    expect(mockLogClassificationFailedFn).toHaveBeenCalledWith({
+      channelId: expect.any(String),
+      userName: expect.any(String),
+      attempts: 3,
+      reason: expect.any(String),
+    });
+    expect(result[0].isFallback).toBe(true);
+    expect(result[0].confidenceScore).toBe(0);
+  });
+
+  // ---------------------------------------------------------------------------
+  // Test 24: succeeds on second retry when first two responses are malformed
+  // ---------------------------------------------------------------------------
+  it('succeeds on second retry when first two responses are malformed', async () => {
+    const validGeminiPayload = {
+      intent: 'InvestigateBug',
+      confidenceScore: 0.85,
+      targetAgent: 'sre',
+      extractedEntities: {},
+      reasoning: 'User is reporting a bug',
+      needsCodeAccess: false,
+      isStrategySession: false,
+      requiresConfirmation: false,
+    };
+
+    mockGenerateContent
+      .mockResolvedValueOnce({ response: { text: () => 'bad json' } })
+      .mockResolvedValueOnce({ response: { text: () => 'bad json' } })
+      .mockResolvedValueOnce({ response: { text: () => JSON.stringify(validGeminiPayload) } });
+
+    const result = await routeMessage('the router is crashing', 'channel-24', 'user24');
+
+    expect(result[0].isFallback).toBe(false);
+    expect(mockGenerateContent).toHaveBeenCalledTimes(3);
+    expect(mockLogClassificationFailedFn).not.toHaveBeenCalled();
   });
 });

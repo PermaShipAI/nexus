@@ -55,6 +55,10 @@ export function logAdministrativeIntentClarificationEvent(details: { confidenceS
   logger.info({ event: 'administrative_intent_clarification_triggered', ...details });
 }
 
+export function logClassificationFailedEvent(details: { channelId: string; userName: string; attempts: number; reason: string }): void {
+  logger.warn({ event: 'classification_failed', ...details });
+}
+
 export function logAdrEvent(
   event: 'adr_auto_drafted' | 'adr_human_approved' | 'duplicate_proposal_prevented',
   details: Record<string, unknown>,

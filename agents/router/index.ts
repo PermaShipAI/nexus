@@ -3,7 +3,7 @@ import { join } from 'path';
 import { GoogleGenerativeAI } from '@google/generative-ai';
 import { IntentResponseSchema, INTENT_RESPONSE_JSON_SCHEMA } from '../schemas/intent.js';
 import type { RouteResult, FeatureFlags } from '../types/routing.js';
-import { logRoutingDecision, logger, logSecurityEvent, logAdministrativeIntentClarificationEvent } from '../telemetry/logger.js';
+import { logRoutingDecision, logger, logSecurityEvent, logAdministrativeIntentClarificationEvent, logClassificationFailedEvent } from '../telemetry/logger.js';
 import { buildIntentPrompt } from './prompts.js';
 import { checkForInjection } from '../../src/core/guardrails/prompt_injection.js';
 import { isIntentLocked, CIRCUIT_BREAKER_MESSAGE } from './circuit_breaker.js';
@@ -92,6 +92,8 @@ const AGENT_IDS = [
   'nexus',
 ];
 
+const MAX_CLASSIFY_ATTEMPTS = 3;
+
 const PARSE_ERROR_FALLBACK = (content: string): RouteResult => ({
   agentId: 'none',
   intent: 'GeneralInquiry',
@@ -150,30 +152,40 @@ export async function routeMessage(
         },
       });
 
-      const response = await model.generateContent(prompt);
-      const text = response.response.text();
+      let intentData: ReturnType<typeof IntentResponseSchema.safeParse>['data'] | undefined;
+      let lastReason = 'unknown';
+
+      for (let attempt = 1; attempt <= MAX_CLASSIFY_ATTEMPTS; attempt++) {
+        const response = await model.generateContent(prompt);
+        const text = response.response.text();
+
+        let parsed: any;
+        try {
+          parsed = JSON.parse(text ?? '');
+        } catch {
+          lastReason = 'json_parse_error';
+          logger.warn({ event: 'classification_attempt_failed', attempt, reason: 'json_parse_error', channelId, userName });
+          continue;
+        }
+
+        const validation = IntentResponseSchema.safeParse(parsed);
+        if (!validation.success) {
+          lastReason = 'schema_validation_error';
+          logger.warn({ event: 'classification_attempt_failed', attempt, reason: 'schema_validation_error', channelId, userName });
+          continue;
+        }
+
+        intentData = validation.data;
+        break;
+      }
+
       const elapsedMs = Date.now() - startTime;
 
-      let parsed: any;
-      try {
-        parsed = JSON.parse(text ?? '');
-      } catch {
-        logger.warn({ channelId, userName }, 'Failed to JSON.parse Gemini response');
+      if (!intentData) {
+        logClassificationFailedEvent({ channelId, userName, attempts: MAX_CLASSIFY_ATTEMPTS, reason: lastReason });
         logRoutingDecision(PARSE_ERROR_FALLBACK(content), elapsedMs);
         return [PARSE_ERROR_FALLBACK(content)];
       }
-
-      const validation = IntentResponseSchema.safeParse(parsed);
-      if (!validation.success) {
-        logger.warn(
-          { channelId, userName, issues: validation.error.issues },
-          'Gemini response failed Zod validation',
-        );
-        logRoutingDecision(PARSE_ERROR_FALLBACK(content), elapsedMs);
-        return [PARSE_ERROR_FALLBACK(content)];
-      }
-
-      const intentData = validation.data;
 
       if (intentData.confidenceScore < 0.6) {
         const { fallbackMessage, actionableOptions } = buildClarificationMessage(
