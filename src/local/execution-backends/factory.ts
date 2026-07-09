@@ -5,11 +5,14 @@ import { ClaudeCodeBackend } from './claude-code.js';
 import { GeminiCliBackend } from './gemini-cli.js';
 import { CodexCliBackend } from './codex-cli.js';
 import { OpenClawBackend } from './openclaw.js';
+import { DockerClaudeBackend } from './docker-claude.js';
 
 export function createExecutionBackend(backendOverride?: string): ExecutionBackend {
   const timeout = config.EXECUTION_TIMEOUT_MS;
 
   switch (backendOverride ?? config.EXECUTION_BACKEND) {
+    case 'docker-claude':
+    case 'sandboxed-claude-code': return new DockerClaudeBackend(timeout);
     case 'claude-code': return new ClaudeCodeBackend(timeout);
     case 'gemini-cli':  return new GeminiCliBackend(timeout);
     case 'codex-cli':   return new CodexCliBackend(timeout);
