@@ -572,6 +572,31 @@ describe('routeMessage', () => {
   });
 
   // ---------------------------------------------------------------------------
+  // Test 23: Partial extraction + score < 0.6 → actionableOptions derived from settingKey
+  // ---------------------------------------------------------------------------
+  it('provides actionableOptions derived from settingKey when settingKey is present but settingValue is absent and score is below 0.6', async () => {
+    const geminiPayload = {
+      intent: 'AdministrativeAction',
+      confidenceScore: 0.45,
+      targetAgent: 'nexus',
+      extractedEntities: { settingKey: 'rateLimiting' },
+      reasoning: 'User wants to change rateLimiting but did not specify the target value.',
+      needsCodeAccess: false,
+      isStrategySession: false,
+      requiresConfirmation: false,
+    };
+    mockGenerateContent.mockResolvedValue({ response: { text: () => JSON.stringify(geminiPayload) } });
+
+    const results = await routeMessage('change rate limiting', 'channel-23', 'user23');
+
+    expect(results[0].isFallback).toBe(true);
+    expect(results[0].fallbackMessage).toContain('rateLimiting');
+    expect(results[0].actionableOptions).toBeDefined();
+    expect(results[0].actionableOptions!.length).toBeGreaterThan(0);
+    expect(results[0].actionableOptions!.some(opt => opt.includes('rateLimiting'))).toBe(true);
+  });
+
+  // ---------------------------------------------------------------------------
   // Test 22: Partial extraction (settingKey present, settingValue absent) → score between 0.6 and 0.8
   // ---------------------------------------------------------------------------
   it('routes AdministrativeAction with partial extraction (0.6–0.8) to agent without fallback', async () => {
