@@ -594,4 +594,30 @@ describe('routeMessage', () => {
     expect(results[0].confidenceScore).toBeGreaterThanOrEqual(0.6);
     expect(results[0].confidenceScore).toBeLessThan(0.8);
   });
+
+  // ---------------------------------------------------------------------------
+  // Test 23: Ambiguous AdministrativeAction with settingKey but no settingValue and score < 0.6
+  //          → clarification fallback with actionableOptions derived from settingKey
+  // ---------------------------------------------------------------------------
+  it('provides actionableOptions derived from settingKey when settingKey is present but settingValue is absent and score is below 0.6', async () => {
+    const geminiPayload = {
+      intent: 'AdministrativeAction',
+      confidenceScore: 0.45,
+      targetAgent: 'nexus',
+      extractedEntities: { settingKey: 'rateLimiting' },
+      reasoning: 'settingKey present but settingValue not discernible; confidence below threshold.',
+      needsCodeAccess: false,
+      isStrategySession: false,
+      requiresConfirmation: false,
+    };
+    mockGenerateContent.mockResolvedValue({ response: { text: () => JSON.stringify(geminiPayload) } });
+
+    const results = await routeMessage('change rate limiting', 'channel-23', 'user23');
+
+    expect(results[0].isFallback).toBe(true);
+    expect(results[0].fallbackMessage).toContain('rateLimiting');
+    expect(results[0].actionableOptions).toBeDefined();
+    expect(results[0].actionableOptions!.length).toBeGreaterThan(0);
+    expect(results[0].actionableOptions!.some(opt => opt.includes('rateLimiting'))).toBe(true);
+  });
 });
