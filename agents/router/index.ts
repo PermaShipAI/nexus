@@ -34,8 +34,12 @@ function buildClarificationMessage(
 
     if (settingKey && !settingValue) {
       return {
-        fallbackMessage: `What value should **${settingKey}** be set to? Please specify the desired value.`,
-        actionableOptions: undefined,
+        fallbackMessage: `What value should **${settingKey}** be set to? Please specify the desired value. For example:`,
+        actionableOptions: [
+          `set ${settingKey} to enabled`,
+          `set ${settingKey} to disabled`,
+          `set ${settingKey} to default`,
+        ],
       };
     }
 
