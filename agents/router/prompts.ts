@@ -16,12 +16,6 @@ Classify the following user message into exactly one of these 10 intents:
 
 Available agents: ${agentList.join(', ')}
 
-User message:
-<user_input>
-${content}
-</user_input>
-
-
 Analyze the message and return a structured classification with:
 - intent: one of the 10 intents listed above
 - confidenceScore: a number between 0 and 1 indicating your confidence
