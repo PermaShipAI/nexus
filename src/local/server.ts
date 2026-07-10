@@ -596,7 +596,7 @@ export async function createLocalServer(_port = 3000) {
         try {
           await execFileAsync('git', ['init', '-b', 'main'], { cwd: pathCheck.resolved, timeout: 10_000 });
           await execFileAsync('git', ['add', '.'], { cwd: pathCheck.resolved, timeout: 30_000 });
-          await execFileAsync('git', ['commit', '-m', 'Initial commit (auto-created by Nexus Command)'], {
+          await execFileAsync('git', ['commit', '--allow-empty', '-m', 'Initial commit (auto-created by Nexus Command)'], {
             cwd: pathCheck.resolved,
             timeout: 30_000,
             env: { ...process.env, GIT_AUTHOR_NAME: 'Nexus Command', GIT_AUTHOR_EMAIL: 'nexus@local', GIT_COMMITTER_NAME: 'Nexus Command', GIT_COMMITTER_EMAIL: 'nexus@local' },
