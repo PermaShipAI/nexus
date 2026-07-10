@@ -38,7 +38,7 @@ function extractSummary(content: string): string {
 
 /** Load all persona files from disk */
 export function loadPersonas(): AgentDefinition[] {
-  const files = readdirSync(PERSONAS_DIR).filter((f) => f.endsWith('.md'));
+  const files = readdirSync(PERSONAS_DIR).filter((f) => f.endsWith('.md')).sort();
   const definitions: AgentDefinition[] = [];
 
   for (const file of files) {
