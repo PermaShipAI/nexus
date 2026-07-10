@@ -18,7 +18,7 @@ export class FileKnowledgeSource implements KnowledgeSource {
     _projectId: string,
   ): Promise<KnowledgeDocument[]> {
     try {
-      const files = await readdir(this.knowledgeDir);
+      const files = (await readdir(this.knowledgeDir)).sort();
       const docs: KnowledgeDocument[] = [];
 
       for (const file of files) {
