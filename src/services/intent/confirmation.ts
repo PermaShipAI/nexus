@@ -1,5 +1,6 @@
 import { randomUUID } from "crypto";
 import { logGuardrailEvent } from "../../telemetry/index.js";
+import { confirmationGateTotal } from "../../telemetry/prometheus.js";
 
 export interface PendingConfirmation {
   id: string;
@@ -64,6 +65,7 @@ const cleanupInterval = setInterval(() => {
         intent: confirmation.intent,
         confirmationId: id,
       });
+      confirmationGateTotal.inc({ intent: confirmation.intent, outcome: 'expired' });
     }
   }
 }, 60_000);
