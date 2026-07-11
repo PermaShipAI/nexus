@@ -35,6 +35,7 @@ import {
   removePendingConfirmation,
   buildConfirmationPrompt,
 } from '../services/intent/confirmation.js';
+import { confirmationGateTotal, confirmationResolutionLatencyMs } from '../telemetry/prometheus.js';
 import {
   createMission,
   getMission,
@@ -224,6 +225,7 @@ export async function createLocalServer(_port = 3000) {
           userId: confirmation.userId,
           confirmationId: confirmation.id,
         });
+        confirmationGateTotal.inc({ intent: confirmation.intent, outcome: 'shown' });
 
         broadcast('confirmation_required', {
           confirmationId: confirmation.id,
@@ -404,6 +406,7 @@ export async function createLocalServer(_port = 3000) {
     removePendingConfirmation(id);
     pendingIntentMessages.delete(id);
 
+    const elapsedMsConfirm = Date.now() - pending.createdAt.getTime();
     const { logGuardrailEvent } = await import('../telemetry/index.js');
     logGuardrailEvent({
       event: 'confirmation_gate_confirmed',
@@ -411,8 +414,10 @@ export async function createLocalServer(_port = 3000) {
       channelId: pending.channelId,
       userId: pending.userId,
       confirmationId: id,
-      elapsedMs: Date.now() - pending.createdAt.getTime(),
+      elapsedMs: elapsedMsConfirm,
     });
+    confirmationGateTotal.inc({ intent: pending.intent, outcome: 'confirmed' });
+    confirmationResolutionLatencyMs.observe({ intent: pending.intent, outcome: 'confirmed' }, elapsedMsConfirm);
 
     broadcast('confirmation_resolved', { confirmationId: id, status: 'confirmed' });
 
@@ -435,6 +440,7 @@ export async function createLocalServer(_port = 3000) {
     removePendingConfirmation(id);
     pendingIntentMessages.delete(id);
 
+    const elapsedMsDismiss = Date.now() - pending.createdAt.getTime();
     const { logGuardrailEvent } = await import('../telemetry/index.js');
     logGuardrailEvent({
       event: 'confirmation_gate_dismissed',
@@ -442,8 +448,10 @@ export async function createLocalServer(_port = 3000) {
       channelId: pending.channelId,
       userId: pending.userId,
       confirmationId: id,
-      elapsedMs: Date.now() - pending.createdAt.getTime(),
+      elapsedMs: elapsedMsDismiss,
     });
+    confirmationGateTotal.inc({ intent: pending.intent, outcome: 'dismissed' });
+    confirmationResolutionLatencyMs.observe({ intent: pending.intent, outcome: 'cancelled' }, elapsedMsDismiss);
 
     broadcast('confirmation_resolved', { confirmationId: id, status: 'cancelled' });
     return { success: true };
