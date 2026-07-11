@@ -29,6 +29,8 @@ import { cloneRepo } from './git-clone.js';
 import { config } from '../config.js';
 import { isAutonomousMode, setSetting, getSetting } from '../settings/service.js';
 import { routeIntent } from '../intent/router.js';
+import { routeMessage } from '../router/index.js';
+import type { RouteResult } from '../../agents/types/routing.js';
 import {
   createPendingConfirmation,
   getPendingConfirmation,
@@ -116,6 +118,8 @@ export async function createLocalServer(_port = 3000) {
 
   // Maps confirmationId -> UnifiedMessage for the local intent confirmation gate
   const pendingIntentMessages = new Map<string, UnifiedMessage>();
+  // Maps confirmationId -> pre-computed RouteResult[] so confirmed messages skip re-routing
+  const pendingIntentRoutes = new Map<string, RouteResult[]>();
 
   server.get('/ws', { websocket: true }, (socket, request) => {
     const url = new URL(request.url, 'http://localhost');
@@ -206,15 +210,34 @@ export async function createLocalServer(_port = 3000) {
           routeResult.intent.kind,
           routeResult.intent.params as Record<string, unknown>,
         );
+
+        // Determine the actual target agent(s) by running the message router now,
+        // before showing the confirmation gate. This ensures the stored targetAgent
+        // reflects where the message will actually be routed, and allows us to
+        // reuse the routing decision after the user confirms (avoiding a second LLM call).
+        let routes: RouteResult[] = [];
+        let targetAgent = 'nexus';
+        try {
+          routes = await routeMessage(content.trim(), LOCAL_CHANNEL_ID, unified.authorName, LOCAL_ORG_ID);
+          if (routes.length > 0 && routes[0].agentId) {
+            targetAgent = routes[0].agentId;
+          }
+        } catch (routeErr) {
+          logger.debug({ routeErr }, 'Pre-confirmation routing failed — will re-route on confirm');
+        }
+
         const confirmation = createPendingConfirmation({
           channelId: LOCAL_CHANNEL_ID,
           userId: 'local-user',
           intent: routeResult.intent.kind,
           extractedEntities: routeResult.intent.params as Record<string, unknown>,
-          targetAgent: 'nexus',
+          targetAgent,
           confirmationPrompt,
         });
         pendingIntentMessages.set(confirmation.id, unified);
+        if (routes.length > 0) {
+          pendingIntentRoutes.set(confirmation.id, routes);
+        }
 
         const { logGuardrailEvent } = await import('../telemetry/index.js');
         logGuardrailEvent({
@@ -403,6 +426,8 @@ export async function createLocalServer(_port = 3000) {
 
     removePendingConfirmation(id);
     pendingIntentMessages.delete(id);
+    const precomputedRoutes = pendingIntentRoutes.get(id);
+    pendingIntentRoutes.delete(id);
 
     const { logGuardrailEvent } = await import('../telemetry/index.js');
     logGuardrailEvent({
@@ -416,7 +441,14 @@ export async function createLocalServer(_port = 3000) {
 
     broadcast('confirmation_resolved', { confirmationId: id, status: 'confirmed' });
 
-    processWebhookMessage(unified).catch(err => {
+    // Attach pre-computed routes so the message is delivered to the same agent(s)
+    // that were selected before the user saw the confirmation gate, rather than
+    // re-running the LLM router (which could produce a different result).
+    const confirmedUnified = precomputedRoutes && precomputedRoutes.length > 0
+      ? { ...unified, confirmedRoutes: precomputedRoutes }
+      : unified;
+
+    processWebhookMessage(confirmedUnified).catch(err => {
       logger.error({ err }, 'Confirmed intent message processing failed');
       broadcast('error', { message: 'Message processing failed after confirmation' });
     });
@@ -434,6 +466,7 @@ export async function createLocalServer(_port = 3000) {
 
     removePendingConfirmation(id);
     pendingIntentMessages.delete(id);
+    pendingIntentRoutes.delete(id);
 
     const { logGuardrailEvent } = await import('../telemetry/index.js');
     logGuardrailEvent({

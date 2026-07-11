@@ -50,6 +50,11 @@ export interface UnifiedMessage {
   projectHint?: string; // Channel-mapped project name from comms
   /** Pre-validated image attachments. Must be validated via validateImageAttachments before being set. */
   attachments?: ImageAttachment[];
+  /**
+   * Pre-computed routing from the intent confirmation gate. When set, skips the LLM router
+   * so the message is delivered to the same agent(s) that were selected before the user confirmed.
+   */
+  confirmedRoutes?: RouteResult[];
 }
 
 /**
@@ -355,7 +360,9 @@ async function handleIncomingMessage(message: UnifiedMessage, isPublic: boolean,
 
   const routes: RouteResult[] = steeringContext && targetAgentId
     ? [{ agentId: targetAgentId, intent: 'steering', subMessage: message.content, confidenceScore: 1.0, reasoning: 'steering', extractedEntities: {}, needsCodeAccess: true, isStrategySession: false, isFallback: false }]
-    : await routeMessage(message.content, message.channelId, userName, orgId);
+    : message.confirmedRoutes && message.confirmedRoutes.length > 0
+      ? message.confirmedRoutes
+      : await routeMessage(message.content, message.channelId, userName, orgId);
   
   const strategyRoute = routes.find((r) => r.isStrategySession);
   if (strategyRoute) {
