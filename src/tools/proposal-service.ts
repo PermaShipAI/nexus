@@ -210,14 +210,35 @@ export async function createTicketProposal(input: TicketProposalInput): Promise<
     };
   }
 
+  // Enforce agentDiscussionContext length limit.
+  // Raw transcript dumps balloon token costs and obscure signal — reject over-length context.
+  if (agentDiscussionContext && agentDiscussionContext.length > 1500) {
+    logGuardrailEvent({ event: 'discussion_context_too_long', orgId, agentId, title, length: agentDiscussionContext.length });
+    logger.warn({ agentId, orgId, title, length: agentDiscussionContext.length }, 'discussion_context_too_long: proposal rejected — agentDiscussionContext exceeds 1500 chars');
+    return {
+      success: false,
+      message: `agentDiscussionContext must be ≤ 1500 characters (got ${agentDiscussionContext.length}). Synthesize key points into a concise prose summary — do NOT paste raw conversation transcripts.`,
+    };
+  }
+
+  // Enforce fallbackPlan label format when provided.
+  // Auto-normalizing silently masks mislabeled plans; reject instead so the agent fixes it explicitly.
+  if (fallbackPlan && !fallbackPlan.startsWith('**Fallback:**')) {
+    logGuardrailEvent({ event: 'agentops_fallback_malformed', orgId, agentId, title });
+    logger.warn({ agentId, orgId, title }, 'agentops_fallback_malformed: fallbackPlan must begin with "**Fallback:**"');
+    return {
+      success: false,
+      message: 'fallbackPlan must begin with "**Fallback:**". Example: "**Fallback:** If the primary approach fails, revert to manual review."',
+    };
+  }
+
   // Compose enriched description from base description + optional sections
   let fullDescription = description;
   if (agentDiscussionContext) {
     fullDescription += `\n\n## Agent Discussion Context\n${agentDiscussionContext}`;
   }
   if (fallbackPlan) {
-    const normalizedFallback = fallbackPlan.startsWith('**Fallback:**') ? fallbackPlan : `**Fallback:** ${fallbackPlan}`;
-    fullDescription += `\n\n## Fallback Plan\n${normalizedFallback}`;
+    fullDescription += `\n\n## Fallback Plan\n${fallbackPlan}`;
   }
 
   if (fullDescription.length > 4000) {
