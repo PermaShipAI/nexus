@@ -602,6 +602,7 @@ html, body { height: 100%; font-family: var(--font); background: var(--bg); colo
 .proposal-card-badge.nexus_review { background: rgba(18, 179, 179, 0.15); color: var(--accent); }
 .proposal-card-badge.approved { background: rgba(63, 185, 80, 0.15); color: var(--success); }
 .proposal-card-badge.rejected { background: rgba(248, 81, 73, 0.15); color: var(--danger); }
+.proposal-card-badge.waiting_for_human { background: rgba(255, 149, 0, 0.15); color: #ff9500; }
 
 .proposal-card-meta {
   font-size: 11px;
@@ -997,6 +998,7 @@ html, body { height: 100%; font-family: var(--font); background: var(--bg); colo
 .checklist-status-badge.paused { background: rgba(255, 193, 7, 0.15); color: #ffc107; }
 .checklist-status-badge.completed { background: rgba(63, 185, 80, 0.15); color: var(--success); }
 .checklist-status-badge.draft { background: rgba(122, 133, 153, 0.15); color: var(--text-muted); }
+.checklist-status-badge.waiting_for_human { background: rgba(255, 149, 0, 0.15); color: #ff9500; }
 
 .checklist-progress {
   margin-bottom: 8px;
