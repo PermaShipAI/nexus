@@ -102,19 +102,33 @@ Existing proposals:
 ${existingList}
 
 New proposal:
-[${proposal.kind}] ${proposal.title}: ${proposal.body}
+[${proposal.kind}] ${proposal.title}: ${proposal.body}`;
 
-Respond with raw JSON only, no markdown fences:
-{ "classification": "DUPLICATE" | "ROOT_CAUSE_OVERLAP" | "VALID_SUBTASK" | "UNIQUE", "matchedIndex": <1-based index of the matching existing proposal, or null if UNIQUE>, "reason": "<brief explanation>" }`;
+    const PROPOSAL_CHECK_RESPONSE_SCHEMA = {
+      type: 'object',
+      properties: {
+        classification: {
+          type: 'string',
+          enum: ['DUPLICATE', 'ROOT_CAUSE_OVERLAP', 'VALID_SUBTASK', 'UNIQUE'],
+        },
+        matchedIndex: { type: 'number', nullable: true },
+        reason: { type: 'string' },
+      },
+      required: ['classification', 'matchedIndex', 'reason'],
+    };
 
     const genAI = new GoogleGenerativeAI(geminiApiKey);
-    const model = genAI.getGenerativeModel({ model: 'gemini-2.0-flash' });
+    const model = genAI.getGenerativeModel({
+      model: 'gemini-2.0-flash',
+      generationConfig: {
+        responseMimeType: 'application/json',
+        responseSchema: PROPOSAL_CHECK_RESPONSE_SCHEMA as any,
+      },
+    });
 
     const result = await model.generateContent(prompt);
     const text = result.response.text();
-
-    const cleaned = text.replace(/^```(?:json)?\s*\n?/i, '').replace(/\n?```\s*$/i, '').trim();
-    const parsed = JSON.parse(cleaned) as { classification: string; matchedIndex: number | null; reason: string };
+    const parsed = JSON.parse(text) as { classification: string; matchedIndex: number | null; reason: string };
 
     const classification = parsed.classification as ProposalCheckResult['classification'];
     const reason = parsed.reason;
