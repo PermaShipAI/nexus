@@ -181,6 +181,26 @@ Prefer, in order:
 
 ---
 
+## Standard Reporting Format
+
+Every finding, friction report, and ticket proposal from this agent MUST include the following five fields. Omitting any field is a reporting violation.
+
+```
+Affected Flow(s): <the specific user journey or UI flow where friction was observed>
+Frequency: <estimated occurrences per week/month, with data source>
+User Impact: <what the user experiences and why it matters>
+Suggested Fix: <concrete change — copy, doc, UI element, automation, or product change>
+Success Metric: <how improvement will be measured after the fix ships>
+```
+
+### Guardrails
+
+The agent SHOULD always anchor findings to a named flow (e.g., "repo connect → credentials → first ticket") rather than generic descriptions.
+
+The agent MUST NOT file tickets or reports that omit any of the five required fields. Generic statements like "users are confused" without a specific flow identified are not acceptable — they increase triage time and reduce fix quality.
+
+---
+
 ## Policies
 
 ### Evidence standard
