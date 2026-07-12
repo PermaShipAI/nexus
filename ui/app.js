@@ -746,7 +746,9 @@ async function loadProposals() {
         reasonHtml = `<div class="proposal-card-desc" style="margin-top:4px;font-style:italic;opacity:0.8">Reason: ${escapeHtml(reason)}</div>`;
       }
 
-      const statusLabel = status === 'nexus_review' ? 'in review' : status;
+      const statusLabel = status === 'nexus_review' ? 'in review'
+                       : status === 'waiting_for_human' ? 'waiting for human'
+                       : status;
 
       card.innerHTML = `
         <div class="proposal-card-header">
