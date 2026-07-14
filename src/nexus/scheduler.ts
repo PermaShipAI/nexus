@@ -13,6 +13,7 @@ import { logCircuitBreakerTripped } from '../telemetry/cross-agent.js';
 import type { AgentId } from '../agents/types.js';
 import {
   resolveAutonomousMode,
+  isEnforceManualUI,
   isNexusReportsEnabled
 } from '../settings/service.js';
 import { getTicketTracker } from '../adapters/registry.js';
@@ -140,7 +141,8 @@ You MUST include exactly one of the above blocks.`;
 
   // Agent also failed to produce a structured decision — force-resolve
   const autonomous = await resolveAutonomousMode({ orgId, channelId: proposal.channelId, repoKey: args['repo-key'] as string | undefined });
-  if (autonomous) {
+  const enforceManual = await isEnforceManualUI(orgId);
+  if (autonomous && !enforceManual) {
     // In autonomous mode, trust the original agent's judgement — create ticket directly
     logger.warn({ proposalId: proposal.id }, 'Force-approving stuck proposal (autonomous mode)');
     try {

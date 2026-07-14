@@ -135,6 +135,15 @@ export async function isPublicChannel(channelId: string): Promise<boolean> {
   return !!existing;
 }
 
+/**
+ * When true, all ticket proposals require manual human approval via the UI,
+ * regardless of autonomous mode settings at any scope level.
+ */
+export async function isEnforceManualUI(orgId: string): Promise<boolean> {
+  const value = await getSetting('enforce_manual_ui', orgId);
+  return value === true;
+}
+
 export async function isNexusReportsEnabled(orgId: string): Promise<boolean> {
   const value = await getSetting('nexus_reports', orgId);
   return value !== false; // defaults to on

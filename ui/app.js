@@ -182,6 +182,7 @@ function connect() {
         break;
       case 'settings_changed':
         if (data.autonomousMode !== undefined) autonomousToggle.checked = data.autonomousMode;
+        if (data.enforceManualUI !== undefined && enforceManualUIToggle) enforceManualUIToggle.checked = data.enforceManualUI;
         if (data.executionBackend) {
           executorSelect.value = data.executionBackend;
           isExecutorNoop = (data.executionBackend === 'noop');
@@ -1314,6 +1315,7 @@ const configLlmEl = document.getElementById('config-llm');
 const executorSelect = document.getElementById('executor-select');
 const permashipHint = document.getElementById('permaship-hint');
 const autonomousToggle = document.getElementById('autonomous-toggle');
+const enforceManualUIToggle = document.getElementById('enforce-manual-ui-toggle');
 const worktreeToggle = document.getElementById('worktree-toggle');
 const agentsPausedToggle = document.getElementById('agents-paused-toggle');
 
@@ -1328,6 +1330,7 @@ async function loadConfig() {
     updateSettingsCue();
     permashipHint.classList.toggle('hidden', backend !== 'permaship');
     autonomousToggle.checked = cfg.autonomousMode || false;
+    if (enforceManualUIToggle) enforceManualUIToggle.checked = cfg.enforceManualUI || false;
     if (worktreeToggle) worktreeToggle.checked = cfg.useWorktrees || false;
     if (agentsPausedToggle) agentsPausedToggle.checked = cfg.agentsPaused || false;
     if (maxExecutorsInput) maxExecutorsInput.value = cfg.maxExecutors ?? 5;
@@ -1418,6 +1421,21 @@ autonomousToggle.addEventListener('change', async () => {
     appendSystemMessage('Failed to update autonomous mode.');
   }
 });
+
+if (enforceManualUIToggle) {
+  enforceManualUIToggle.addEventListener('change', async () => {
+    try {
+      await apiFetch('/api/settings/enforce-manual-ui', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ enabled: enforceManualUIToggle.checked }),
+      });
+    } catch (err) {
+      enforceManualUIToggle.checked = !enforceManualUIToggle.checked;
+      appendSystemMessage('Failed to update enforce manual UI setting.');
+    }
+  });
+}
 
 if (worktreeToggle) {
   worktreeToggle.addEventListener('change', async () => {
