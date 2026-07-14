@@ -8,26 +8,21 @@ const API_KEY = process.env['INTERNAL_SECRET'] ?? process.env['PERMASHIP_API_KEY
 const TIMEOUT_MS = 3000;
 
 export async function verifyAdminRole(userId: string): Promise<boolean> {
-  try {
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), TIMEOUT_MS);
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), TIMEOUT_MS);
 
-    let response: Response;
-    try {
-      response = await fetch(
-        `${ORG_API_BASE}/api/orgs/${ORG_ID}/members/${userId}`,
-        {
-          method: 'GET',
-          headers: {
-            'Authorization': `Bearer ${API_KEY}`,
-            'Content-Type': 'application/json',
-          },
-          signal: controller.signal,
-        }
-      );
-    } finally {
-      clearTimeout(timeoutId);
-    }
+  try {
+    const response = await fetch(
+      `${ORG_API_BASE}/api/orgs/${ORG_ID}/members/${userId}`,
+      {
+        method: 'GET',
+        headers: {
+          'Authorization': `Bearer ${API_KEY}`,
+          'Content-Type': 'application/json',
+        },
+        signal: controller.signal,
+      }
+    );
 
     if (!response.ok) {
       logger.warn({ userId, status: response.status }, 'rbac:member_check_failed');
@@ -40,5 +35,7 @@ export async function verifyAdminRole(userId: string): Promise<boolean> {
   } catch (err) {
     logger.warn({ userId, err }, 'rbac:verify_admin_role_error');
     return false;
+  } finally {
+    clearTimeout(timeoutId);
   }
 }
