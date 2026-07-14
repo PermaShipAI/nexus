@@ -27,7 +27,7 @@ import { LOCAL_ORG_ID, LOCAL_WORKSPACE_ID, LOCAL_CHANNEL_ID } from './tenant-res
 import { LocalProjectRegistry } from './project-registry.js';
 import { cloneRepo } from './git-clone.js';
 import { config } from '../config.js';
-import { isAutonomousMode, setSetting, getSetting } from '../settings/service.js';
+import { isAutonomousMode, isEnforceManualUI, setSetting, getSetting } from '../settings/service.js';
 import { routeIntent } from '../intent/router.js';
 import {
   createPendingConfirmation,
@@ -706,6 +706,7 @@ export async function createLocalServer(_port = 3000) {
   /** Get system configuration (read-only) */
   server.get('/api/config', async () => {
     const autonomous = await isAutonomousMode(LOCAL_ORG_ID);
+    const enforceManualUI = await isEnforceManualUI(LOCAL_ORG_ID);
     const useWorktrees = await getSetting('use_worktrees', LOCAL_ORG_ID) === true;
     const agentsPaused = await getSetting('agents_paused', LOCAL_ORG_ID) === true;
     const maxExecutorsVal = await getSetting('max_executors', LOCAL_ORG_ID);
@@ -716,6 +717,7 @@ export async function createLocalServer(_port = 3000) {
       llmProvider: config.LLM_PROVIDER,
       executionBackend: config.EXECUTION_BACKEND,
       autonomousMode: autonomous,
+      enforceManualUI,
       useWorktrees,
       agentsPaused,
       maxExecutors,
@@ -889,6 +891,14 @@ export async function createLocalServer(_port = 3000) {
     await setSetting('autonomous_mode', enabled, LOCAL_ORG_ID, 'local-ui');
     broadcast('settings_changed', { autonomousMode: enabled });
     return { success: true, autonomousMode: enabled };
+  });
+
+  /** Enforce manual UI — require human approval for all proposals regardless of autonomous mode */
+  server.post('/api/settings/enforce-manual-ui', async (request) => {
+    const { enabled } = request.body as { enabled: boolean };
+    await setSetting('enforce_manual_ui', enabled, LOCAL_ORG_ID, 'local-ui');
+    broadcast('settings_changed', { enforceManualUI: enabled });
+    return { success: true, enforceManualUI: enabled };
   });
 
   /** Pause/resume all agents globally */

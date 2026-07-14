@@ -12,7 +12,7 @@ import { createTicketProposal } from '../tools/proposal-service.js';
 
 import type { TicketProposalInput } from '../tools/proposal-service.js';
 import { getTicketTracker } from '../adapters/registry.js';
-import { resolveAutonomousMode } from '../settings/service.js';
+import { resolveAutonomousMode, isEnforceManualUI } from '../settings/service.js';
 import { updateProjectSettings } from '../tools/update_project_settings.js';
 import { getMissionItem, updateMissionItem, addMissionItems, addSubSteps } from '../missions/service.js';
 import { onMissionItemChanged } from '../missions/scheduler.js';
@@ -228,7 +228,8 @@ Please refine your proposal based on this feedback.
             // so mission-scoped autonomous mode is detected correctly
             const proposalChannelId = action.channelId ?? channelId;
             const autonomous = await resolveAutonomousMode({ orgId, channelId: proposalChannelId, repoKey: updatedArgs['repo-key'] as string | undefined });
-            if (autonomous) {
+            const enforceManual = await isEnforceManualUI(orgId);
+            if (autonomous && !enforceManual) {
               // Auto-create ticket
               const ticketResult = await getTicketTracker().createTicket({
                 orgId,
