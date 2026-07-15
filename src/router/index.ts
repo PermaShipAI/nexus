@@ -7,6 +7,8 @@ import { getTenantResolver } from '../adapters/registry.js';
 import { getAllAgents } from '../agents/registry.js';
 import { checkForInjection } from '../core/guardrails/prompt_injection.js';
 
+let cachedFullTeamList: string | null = null;
+
 const INJECTION_REFUSAL: RouteResult = {
   agentId: 'none',
   intent: 'GeneralInquiry',
@@ -50,12 +52,22 @@ export async function routeMessage(
       : 'No specific relevant knowledge found.';
 
     // Build team members list — constrained to allowed agents if specified
-    let agents = getAllAgents();
+    // Cache the full list to avoid rebuilding it on every message
+    let teamList: string;
     if (allowedAgentIds?.length) {
       const allowed = new Set(allowedAgentIds);
-      agents = agents.filter(a => allowed.has(a.id));
+      teamList = getAllAgents()
+        .filter(a => allowed.has(a.id))
+        .map(a => `- ${a.id}: ${a.title}`)
+        .join('\n');
+    } else {
+      if (!cachedFullTeamList) {
+        cachedFullTeamList = getAllAgents()
+          .map(a => `- ${a.id}: ${a.title}`)
+          .join('\n');
+      }
+      teamList = cachedFullTeamList;
     }
-    const teamList = agents.map(a => `- ${a.id}: ${a.title}`).join('\n');
 
     const prompt = `
 You are the ${orgName} Team Router. Your job is to analyze incoming messages and route them to the most appropriate AI specialist agent(s).

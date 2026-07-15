@@ -20,6 +20,7 @@ vi.mock('../../src/core/guardrails/prompt_injection', () => ({
 vi.mock('../telemetry/logger', () => ({
   logRoutingDecision: vi.fn(),
   logSecurityEvent: vi.fn(),
+  logAdministrativeIntentClarificationEvent: vi.fn(),
   logger: {
     info: vi.fn(),
     warn: vi.fn(),
