@@ -97,7 +97,7 @@ Fields:
 - **project** (required): MUST be an exact project name from the "Available Projects" section above. NEVER guess or invent project names.
 - **repoKey** (optional): Repository key. Omit to let the system resolve it automatically from the project configuration.
 - **agentDiscussionContext** (optional): Synthesized prose summary of agent discussion relevant to this ticket. Max 1500 characters. Do NOT paste raw transcripts — synthesize key points only.
-- **fallbackPlan** (optional): Alternative execution path if the primary plan is blocked. MUST begin with \`**Fallback:**\`.
+- **fallbackPlan** (required): Alternative execution path if the primary plan is blocked. MUST begin with \`**Fallback:**\`. Proposals without a fallbackPlan will be rejected.
 
 You may include multiple proposal blocks. Do NOT mention the proposals in your conversational response — they are processed silently.
 
@@ -216,7 +216,7 @@ Fields:
 - **project** (required): MUST be an exact project name from the "Available Projects" section above. NEVER guess or invent project names.
 - **repoKey** (optional): Repository key. Omit to let the system resolve it automatically from the project configuration.
 - **agentDiscussionContext** (optional): Synthesized prose summary of agent discussion relevant to this ticket. Max 1500 characters. Do NOT paste raw transcripts — synthesize key points only.
-- **fallbackPlan** (optional): Alternative execution path if the primary plan is blocked. MUST begin with \`**Fallback:**\`.
+- **fallbackPlan** (required): Alternative execution path if the primary plan is blocked. MUST begin with \`**Fallback:**\`. Proposals without a fallbackPlan will be rejected.
 
 You may include multiple proposal blocks. Do NOT mention the proposals in your conversational response — they are processed silently.
 
@@ -329,7 +329,7 @@ Fields:
 - **project** (required): MUST be an exact project name from the "Available Projects" section above. NEVER guess or invent project names.
 - **repoKey** (optional): Repository key. Omit to let the system resolve it automatically from the project configuration.
 - **agentDiscussionContext** (optional): Synthesized prose summary of agent discussion relevant to this ticket. Max 1500 characters. Do NOT paste raw transcripts — synthesize key points only.
-- **fallbackPlan** (optional): Alternative execution path if the primary plan is blocked. MUST begin with \`**Fallback:**\`.
+- **fallbackPlan** (required): Alternative execution path if the primary plan is blocked. MUST begin with \`**Fallback:**\`. Proposals without a fallbackPlan will be rejected.
 
 You may include multiple proposal blocks. Do NOT mention the proposals in your conversational response — they are processed silently.
 
@@ -452,7 +452,7 @@ Fields:
 - **project** (required): MUST be an exact project name from the "Available Projects" section above. NEVER guess or invent project names.
 - **repoKey** (optional): Repository key. Omit to let the system resolve it automatically from the project configuration.
 - **agentDiscussionContext** (optional): Synthesized prose summary of agent discussion relevant to this ticket. Max 1500 characters. Do NOT paste raw transcripts — synthesize key points only.
-- **fallbackPlan** (optional): Alternative execution path if the primary plan is blocked. MUST begin with \`**Fallback:**\`.
+- **fallbackPlan** (required): Alternative execution path if the primary plan is blocked. MUST begin with \`**Fallback:**\`. Proposals without a fallbackPlan will be rejected.
 
 You may include multiple proposal blocks. Do NOT mention the proposals in your conversational response — they are processed silently.
 

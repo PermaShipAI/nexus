@@ -198,15 +198,15 @@ export async function createTicketProposal(input: TicketProposalInput): Promise<
   const { orgId, kind, title, description, project, priority, agentId, source, channelId, agentDiscussionContext, fallbackPlan } = input;
   let { repoKey } = input;
 
-  // Enforce fallback plan for idle-sourced (agentops/system-initiated) proposals.
+  // Enforce fallback plan for all proposals.
   // Human-facing guardrail: downstream subagents must not attempt primary and fallback
-  // paths simultaneously. Reject idle proposals that omit a fallbackPlan entirely.
-  if (source === 'idle' && !fallbackPlan) {
+  // paths simultaneously. Reject any proposal that omits a fallbackPlan entirely.
+  if (!fallbackPlan) {
     logGuardrailEvent({ event: 'agentops_fallback_missing', orgId, agentId, title });
-    logger.warn({ agentId, orgId, title }, 'agentops_fallback_missing: idle proposal rejected — fallbackPlan is required');
+    logger.warn({ agentId, orgId, title, source }, 'agentops_fallback_missing: proposal rejected — fallbackPlan is required for all proposals');
     return {
       success: false,
-      message: 'Idle proposals must include a fallbackPlan. Add a "**Fallback:**" section describing the alternative execution path.',
+      message: 'All proposals must include a fallbackPlan. Add a "**Fallback:**" section describing the alternative execution path.',
     };
   }
 
