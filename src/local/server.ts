@@ -310,7 +310,7 @@ export async function createLocalServer(_port = 3000) {
       .limit(1);
 
     if (!action) return { success: false, error: 'Action not found' };
-    if (action.status !== 'pending') {
+    if (action.status !== 'pending' && action.status !== 'waiting_for_human') {
       return { success: false, error: `Proposal is already ${action.status}` };
     }
 
@@ -357,7 +357,7 @@ export async function createLocalServer(_port = 3000) {
       .limit(1);
 
     if (!action) return { success: false, error: 'Action not found' };
-    if (action.status !== 'pending') {
+    if (action.status !== 'pending' && action.status !== 'waiting_for_human') {
       return { success: false, error: `Proposal is already ${action.status}` };
     }
 
