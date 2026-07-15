@@ -649,7 +649,7 @@ npx tsx src/tools/cli.ts create-ticket --kind bug --title "Ticket title" --descr
 - The \`repo-key\` should match the project's configured repository. If you are unsure, omit the \`--repo-key\` flag and the system will automatically resolve the correct repo from the project configuration.
 - Kind options: bug, feature, task
 - \`--agent-discussion-context\` (optional): Synthesized prose summary of agent discussion context (max 1500 chars). Do NOT paste raw transcripts.
-- \`--fallback-plan\` (optional): Alternative execution path if the primary plan is blocked. Must begin with \`**Fallback:**\`.
+- \`--fallback-plan\` (required): Alternative execution path if the primary plan is blocked. Must begin with \`**Fallback:**\`. Proposals without a fallback plan will be rejected.
 
 ## Add shared knowledge (visible to all agents)
 \`\`\`bash
@@ -939,7 +939,7 @@ Fields:
 - **project** (required): MUST be an exact project name from the "Available Projects" section above. NEVER guess or invent project names.
 - **repoKey** (optional): Repository key. Omit to let the system resolve it automatically from the project configuration.
 - **agentDiscussionContext** (optional): Synthesized prose summary of agent discussion relevant to this ticket. Max 1500 characters. Do NOT paste raw transcripts — synthesize key points only.
-- **fallbackPlan** (optional): Alternative execution path if the primary plan is blocked. MUST begin with \`**Fallback:**\`.
+- **fallbackPlan** (required): Alternative execution path if the primary plan is blocked. MUST begin with \`**Fallback:**\`. Proposals without a fallbackPlan will be rejected.
 
 You may include multiple proposal blocks. Do NOT mention the proposals in your conversational response — they are processed silently.${agentId === 'nexus' ? `
 
